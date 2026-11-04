@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="title desc">
+  <title id="title">Ratatoskr: an agent network</title>
+  <desc id="desc">A squirrel carries a message on a tree. The tree's branches link Claude Code, Codex, pi, OpenCode and other agents over a shared network, and its roots reach into app development, devops and infrastructure work.</desc>
+
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1722"/>
+      <stop offset="1" stop-color="#13261f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#3f8f6b" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#3f8f6b" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .branch { fill: none; stroke: #6fae8a; stroke-width: 5; stroke-linecap: round; }
+      .root { fill: none; stroke: #4c7f67; stroke-width: 6; stroke-linecap: round; }
+      .peer { fill: none; stroke: #f2c14e; stroke-width: 2; stroke-dasharray: 3 7; stroke-linecap: round; opacity: 0.75; }
+      .pill { fill: #16303a; stroke: #8fd3ae; stroke-width: 2; }
+      .pill-open { fill: #0f1c24; stroke: #8fd3ae; stroke-width: 2; stroke-dasharray: 6 6; }
+      .agent { fill: #eaf6ef; font-size: 19px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+      .task { fill: #b9d4c6; font-size: 17px; text-anchor: middle; }
+      .caption { fill: #7fa593; font-size: 13px; letter-spacing: 0.16em; }
+      .packet { fill: #f2c14e; stroke: #0f1c24; stroke-width: 3; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#sky)"/>
+  <ellipse cx="880" cy="210" rx="430" ry="260" fill="url(#glow)"/>
+
+  <!-- Wordmark -->
+  <text class="sans" x="70" y="282" fill="#f4f8f5" font-size="78" font-weight="700" letter-spacing="-1.5">ratatoskr</text>
+  <text class="sans" x="72" y="334" fill="#b9d4c6" font-size="25">A network where your agents find</text>
+  <text class="sans" x="72" y="368" fill="#b9d4c6" font-size="25">each other and work as a team.</text>
+
+  <!-- Peer-to-peer links between agents -->
+  <path class="peer" d="M678 193 Q690 150 708 124"/>
+  <path class="peer" d="M790 84 Q810 68 826 64"/>
+  <path class="peer" d="M934 64 Q950 68 970 84"/>
+  <path class="peer" d="M1052 124 Q1070 150 1090 193"/>
+
+  <!-- Branches: the shared network -->
+  <path class="branch" d="M880 300 C860 235 700 270 640 237"/>
+  <path class="branch" d="M880 300 C870 220 760 190 745 122"/>
+  <path class="branch" d="M880 300 L880 77"/>
+  <path class="branch" d="M880 300 C890 220 1000 190 1015 122"/>
+  <path class="branch" d="M880 300 C900 235 1060 270 1130 237"/>
+
+  <!-- Roots: the work -->
+  <path class="root" d="M868 478 C850 520 760 510 700 556"/>
+  <path class="root" d="M880 478 L880 566"/>
+  <path class="root" d="M892 478 C910 520 1000 510 1060 556"/>
+
+  <!-- Trunk and the squirrel's perch -->
+  <path d="M854 484 C866 420 868 350 870 292 L890 292 C892 350 894 420 906 484 Z" fill="#5d9478"/>
+  <path d="M892 412 C930 410 980 402 1036 386" fill="none" stroke="#5d9478" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Messages in transit -->
+  <circle class="packet" cx="775" cy="256.5" r="8"/>
+  <circle class="packet" cx="814.4" cy="206.5" r="8"/>
+  <circle class="packet" cx="880" cy="165" r="8"/>
+  <circle class="packet" cx="945.6" cy="206.5" r="8"/>
+  <circle class="packet" cx="986" cy="256.5" r="8"/>
+
+  <!-- Agents -->
+  <g class="sans">
+    <rect class="pill" x="560" y="193" width="160" height="44" rx="22"/>
+    <text class="agent" x="640" y="215">Claude Code</text>
+    <rect class="pill" x="685" y="78" width="120" height="44" rx="22"/>
+    <text class="agent" x="745" y="100">Codex</text>
+    <rect class="pill" x="830" y="33" width="100" height="44" rx="22"/>
+    <text class="agent" x="880" y="55">pi</text>
+    <rect class="pill" x="955" y="78" width="120" height="44" rx="22"/>
+    <text class="agent" x="1015" y="100">OpenCode</text>
+    <rect class="pill-open" x="1050" y="193" width="160" height="44" rx="22"/>
+    <text class="agent" x="1130" y="215">+ your agent</text>
+  </g>
+
+  <!-- Work the teams take on -->
+  <g class="mono">
+    <text class="task" x="690" y="584">app development</text>
+    <text class="task" x="880" y="594">devops</text>
+    <text class="task" x="1072" y="584">infrastructure</text>
+  </g>
+
+  <!-- Squirrel, sitting on the perch and holding a message -->
+  <g transform="translate(975 402) scale(1.25)">
+    <path d="M14 -6 C56 -2 76 -36 62 -70 C52 -94 28 -104 16 -90 C30 -86 38 -72 32 -54 C26 -36 14 -26 6 -20 Z" fill="#d9773a"/>
+    <path d="M36 -20 C54 -28 62 -48 56 -68 C50 -84 38 -92 28 -91 C40 -84 46 -70 40 -52 C37 -40 30 -30 22 -22 Z" fill="#b65a26"/>
+    <ellipse cx="0" cy="-26" rx="20" ry="28" transform="rotate(14 0 -26)" fill="#c8622e"/>
+    <ellipse cx="-7" cy="-26" rx="10" ry="19" transform="rotate(14 -7 -26)" fill="#f0c9a3"/>
+    <ellipse cx="9" cy="-14" rx="15" ry="13" fill="#b65a26"/>
+    <ellipse cx="-3" cy="-2" rx="15" ry="4.5" fill="#8f4519"/>
+    <path d="M-14 -74 L-9 -89 L-2 -71 Z" fill="#b65a26"/>
+    <circle cx="-14" cy="-60" r="15" fill="#c8622e"/>
+    <ellipse cx="-26" cy="-56" rx="8.5" ry="6.5" fill="#f0c9a3"/>
+    <circle cx="-33.5" cy="-58" r="2" fill="#2a1408"/>
+    <circle cx="-18" cy="-64" r="2.6" fill="#1a0d05"/>
+    <g transform="rotate(-10 -32 -30)">
+      <rect x="-48" y="-40" width="30" height="20" rx="2.5" fill="#f4f8f5"/>
+      <path d="M-48 -39 L-33 -28 L-18 -39" fill="none" stroke="#c9a23c" stroke-width="2.2" stroke-linejoin="round"/>
+    </g>
+    <path d="M-8 -36 C-14 -34 -19 -32 -24 -29" fill="none" stroke="#c8622e" stroke-width="6.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- Layer captions -->
+  <g class="sans caption">
+    <text x="1210" y="60" text-anchor="end">AGENTS</text>
+    <text x="842" y="402" text-anchor="end">NETWORK</text>
+    <text x="1210" y="540" text-anchor="end">SHARED WORK</text>
+  </g>
+</svg>
