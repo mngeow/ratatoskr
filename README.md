@@ -1,6 +1,6 @@
 # ratatoskr
 
-![Ratatoskr, the horned squirrel of Norse myth, runs up the world tree Yggdrasil with a message, between the eagle at its crown and the dragon Níðhöggr at its roots. The branches connect Claude Code, Codex, pi, OpenCode and other agents, and the three roots reach into app development, devops and infrastructure work.](assets/ratatoskr-banner.svg)
+![Ratatoskr, drawn as a fierce gold beast in the style of Viking Age carving, with a drill-tooth tusk and a rune-stick message in its claws, encircled by the serpent Níðhöggr carved with its name in runes. Around the ring, a network links Claude Code, Codex, pi, OpenCode and other agents, along with app development, devops and infrastructure work.](assets/ratatoskr-banner.svg)
 
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
