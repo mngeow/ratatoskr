@@ -1,0 +1,27 @@
+name: ratatoskr-lead
+version: "1.0"
+description: Ratatoskr specialist - lead
+profiles:
+  default:
+    uses:
+      skills: []
+      guidance: []
+      subagents: []
+      plugins: [openrig-core]
+      runtime_resources: []
+resources:
+  guidance:
+    - id: role
+      path: guidance.md
+  plugins:
+    - id: openrig-core
+      source:
+        kind: local
+        path: openrig-home:plugins/openrig-core
+startup:
+  files:
+    - path: guidance.md
+      orientation: role
+      delivery_hint: send_text
+      required: true
+  actions: []

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal Approach Proposal</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2; --surface: #ffffff; --surface-2: #efede6; --ink: #1f2328; --muted: #5d636b; --line: #d4d1c7;
+  --accent: #8a5a00; --accent-soft: #f6e8c9;
+  --ok: #24713f; --ok-soft: #dcf0e2; --warn: #93590a; --warn-soft: #f8ead0; --bad: #a3322b; --bad-soft: #f8dfdc;
+  --info: #4b4f9e; --info-soft: #e3e4f6; --seen: #17697a; --seen-soft: #d9eef2;
+  --term: #15181c; --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a; --surface: #1e2125; --surface-2: #2a2e33; --ink: #e8e9eb; --muted: #a3a9b1; --line: #3b4047;
+    --accent: #e6b65c; --accent-soft: #3d3120;
+    --ok: #7bd096; --ok-soft: #1c3525; --warn: #e6b65c; --warn-soft: #3d3120; --bad: #f0938b; --bad-soft: #43221f;
+    --info: #a9adf2; --info-soft: #2b2d4d; --seen: #6cc4d6; --seen-soft: #18353c;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a; --surface: #1e2125; --surface-2: #2a2e33; --ink: #e8e9eb; --muted: #a3a9b1; --line: #3b4047;
+  --accent: #e6b65c; --accent-soft: #3d3120;
+  --ok: #7bd096; --ok-soft: #1c3525; --warn: #e6b65c; --warn-soft: #3d3120; --bad: #f0938b; --bad-soft: #43221f;
+  --info: #a9adf2; --info-soft: #2b2d4d; --seen: #6cc4d6; --seen-soft: #18353c;
+  --term: #0d0f12;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main { max-width: 900px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.3rem; line-height: 1.3; margin: 44px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+p, ul, ol { margin: 0 0 12px; }
+ul, ol { padding-left: 22px; }
+li { margin-bottom: 4px; }
+a { color: var(--accent); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .87em; }
+code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
+.pill { font-size: .78rem; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.pill.status { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: 12px 16px; margin: 0 0 16px; }
+.note > :last-child { margin-bottom: 0; }
+.scroll { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; background: var(--surface); }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--line); }
+th { background: var(--surface-2); font-weight: 600; }
+.tag { display: inline-block; font-size: .68rem; line-height: 1.5; font-weight: 600; padding: 0 5px; border-radius: 4px; vertical-align: 1px; white-space: nowrap; }
+.t-seen { background: var(--seen-soft); color: var(--seen); }
+.t-docs { background: var(--info-soft); color: var(--info); }
+.t-mem { background: var(--surface-2); color: var(--muted); }
+.t-test { background: var(--warn-soft); color: var(--warn); }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 8px; }
+.caption { font-size: .84rem; color: var(--muted); margin: 0 0 18px; }
+.window { background: var(--term); color: var(--term-ink); border-radius: 8px; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .76rem; line-height: 1.5; }
+.panes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
+.pane { border: 1px solid #454b53; border-radius: 4px; padding: 0 8px 8px; min-width: 0; min-height: 120px; }
+.pane.focus { border-color: #ec9670; }
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin: 0 -8px 8px; padding: 2px 8px; background: #262b31; }
+.control { margin: 0 6px 6px; padding: 0 8px 6px; border: 1px solid #7f83d8; border-radius: 4px; }
+.control .head { background: #2b2d4d; }
+.dim { color: #8c939b; } .g { color: #7bd096; } .y { color: #e6b65c; } .c { color: #ec9670; } .x { color: #6cc4d6; }
+@media (max-width: 520px) { .panes { grid-template-columns: 1fr; } .pane { min-height: 80px; } }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; }
+.step { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: .82rem; line-height: 1.35; }
+.step.k { background: var(--info-soft); border-color: var(--info); }
+.arrow { align-self: center; color: var(--muted); }
+.good { color: var(--ok); font-weight: 600; } .worse { color: var(--bad); font-weight: 600; } .same { color: var(--muted); font-weight: 600; }
+.dec { background: var(--accent-soft); border: 1.5px solid var(--accent); border-radius: 8px; padding: 14px 18px; margin: 0 0 14px; }
+.dec > :last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Terminal Approach Proposal</h1>
+<p class="lede">Should Claude Code and Codex stay embedded inside Bubble Tea, or run in native tmux panes with Bubble Tea as a control pane?</p>
+<div class="meta">
+  <span class="pill status">NOT ADOPTED: the user chose option B, keep embedded panes</span>
+  <span class="pill">Nothing here has been run</span>
+  <span class="pill">Testing is still not authorized (GR-3)</span>
+  <span class="pill">2026-11-04</span>
+  <span class="pill">Owner: design.architect</span>
+</div>
+
+<div class="note">
+  <p><strong>Outcome, 2026-11-04: the user chose option B.</strong> Panes stay embedded in Bubble Tea, and tmux isn't used. This document is kept as a record of the alternative. The rest of it is unchanged from when it was proposed, so it doesn't describe the current design. See <a href="mvp-two-pane-bridge.html">the design</a>.</p>
+</div>
+
+<div class="note">
+  <p><strong>Recommendation at the time: switch to tmux panes, with Bubble Tea as a control pane.</strong> Embedding means hosting two demanding terminal apps inside a young emulator, and most of the risk sits there. tmux removes that, and it also keeps agents alive when an SSH connection drops.</p>
+  <p><strong>This conflicts with your decision to embed the panes.</strong> Bubble Tea would no longer be the whole window. tmux also becomes a required install, and <code>rtk</code> loses sight of your keystrokes, which weakens draft protection (section 4). Only you can make this change: the current design stays in force until you do.</p>
+</div>
+
+<p><strong>How to read the evidence.</strong>
+<span class="tag t-seen">SEEN</span> observed on this machine.
+<span class="tag t-docs">DOCS</span> from man pages or source, read but not run.
+<span class="tag t-mem">MEMORY</span> general knowledge, not checked for this proposal.
+<span class="tag t-test">TEST</span> unknown until tested. Unlabelled text is proposal.</p>
+
+<h2>1. Why reconsider now</h2>
+<p>No test has shown embedded panes failing. Reading the source shows how much has to go right. From <code>docs/implementation/pane-risks.md</code> <span class="tag t-docs">DOCS</span>:</p>
+<ul>
+  <li><strong>Keyboard:</strong> <code>x/vt</code> v0.1.0 has no Kitty, CSI-u or modifyOtherKeys support. Harnesses see a legacy terminal, and modified keys beyond the fallback don't work.</li>
+  <li><strong>Scrollback:</strong> currently bounded at one line, because the library's zero setting has no effect. Scrolling back through an agent's output would need separate work.</li>
+  <li><strong>Terminal queries:</strong> unsupported ones are ignored, so a harness that waits on one could hang or degrade.</li>
+  <li><strong>Hard concurrency:</strong> cancellation on macOS, emulator close and write ordering each need careful handling, and all of it is untested.</li>
+  <li><strong>Lifetime:</strong> agents live inside the TUI process, so a dropped SSH session to your Ubuntu server may kill them.</li>
+</ul>
+<p>Each is fixable, but together they make the team responsible for a terminal host, which isn't the product. This is what frontend's first version already had to deal with.</p>
+
+<h2>2. What you would see</h2>
+<div class="figure">
+  <div class="window" role="img" aria-label="Mock window: native Claude Code and Codex tmux panes on top, Bubble Tea control pane along the bottom.">
+    <div class="panes">
+      <div class="pane focus">
+        <div class="head"><span class="c">● Claude Code [focused]</span><span class="g">idle</span></div>
+        <div class="dim">The real harness, in a tmux pane</div>
+        <div>Sending the review request to Codex.</div>
+        <div class="dim">⏺ ratatoskr · send_message</div>
+        <div class="dim">&gt; _</div>
+      </div>
+      <div class="pane">
+        <div class="head"><span class="x">● Codex</span><span class="y">busy · 1 held</span></div>
+        <div class="dim">The real harness, in a tmux pane</div>
+        <div class="dim">&lt;ratatoskr-message from="claude" id="m3"&gt;</div>
+        <div>Please review internal/parser...</div>
+        <div class="y">• Working (12s)</div>
+      </div>
+    </div>
+    <div class="control">
+      <div class="head"><span>rtk control (Bubble Tea)</span><span>relay budget 17/20</span></div>
+      <div><span class="c">claude</span> → <span class="x">codex</span> m3 <span class="g">accepted</span> <span class="dim">Please review internal/parser...</span></div>
+      <div><span class="c">claude</span> → <span class="x">codex</span> m4 <span class="y">held: codex busy</span> <span class="dim">Also check the error paths...</span></div>
+      <div class="dim">F1 Claude · F2 Codex · F3 log · F4 deliver held · F10 quit</div>
+    </div>
+  </div>
+</div>
+<p class="caption">Figure 1. Illustrative mock; the text is invented. It looks much like the embedded design. The difference is underneath: tmux draws the two agent panes, and Bubble Tea draws only the bottom strip.</p>
+
+<h3>How it runs</h3>
+<div class="figure">
+  <div class="flow">
+    <span class="step"><code>rtk</code> starts a private tmux server</span><span class="arrow">→</span>
+    <span class="step k"><code>rtk ui</code> in the control pane: Bubble Tea, router, SQLite, MCP server</span><span class="arrow">→</span>
+    <span class="step">Harnesses in two sibling panes</span><span class="arrow">→</span>
+    <span class="step"><code>rtk</code> attaches your terminal</span>
+  </div>
+</div>
+<p class="caption">Figure 2. Everything is still one Go binary, launched as <code>rtk</code>. Running <code>rtk</code> again while a session exists reattaches to it.</p>
+
+<h2>3. Your questions, answered</h2>
+<div class="scroll"><table>
+  <tr><th>Topic</th><th>With tmux</th><th>Compared with embedded</th></tr>
+  <tr><td><strong>rtk</strong></td><td>Still the one command. It sets up and attaches the session, and runs the control pane.</td><td class="same">Same command</td></tr>
+  <tr><td><strong>Bubble Tea</strong></td><td>Kept for the control pane: status, message log, history, warnings. GR-2 still holds.</td><td class="worse">No longer the whole window. Pane borders and layout are tmux's, though rtk can set their text.</td></tr>
+  <tr><td><strong>Harness terminal behaviour</strong></td><td>Harnesses talk to tmux, a mature terminal layer with its own scrollback and extended key support <span class="tag t-docs">DOCS</span>. Claude Code and Codex already run under tmux on this machine, in this team's own seats <span class="tag t-seen">SEEN</span>. <strong>This isn't fully native:</strong> tmux is still a layer, and Shift+Enter also depends on your outer terminal <span class="tag t-test">TEST</span>.</td><td class="good">Much stronger. It has real-world use with these harnesses, against no use at all for embedded.</td></tr>
+  <tr><td><strong>Message delivery</strong></td><td><code>tmux load-buffer</code>, then <code>paste-buffer -p -r -d</code>, then <code>send-keys Enter</code>. OpenRig uses the same method, so it's known to work at least there. MCP sending is unchanged.</td><td class="same">Same idea, same router. Exit codes replace direct write results, so partial writes are less visible.</td></tr>
+  <tr><td><strong>Delivery gate</strong></td><td>Unchanged: hook events, session ID binding, hold on uncertainty, F4 override. Still no screen reading for state.</td><td class="same">Same, with the same open questions about hooks and Codex trust</td></tr>
+  <tr><td><strong>Draft protection</strong></td><td>rtk can't see your keys. It can only see when you last pressed one, using tmux's <code>client_activity</code> <span class="tag t-docs">DOCS</span>. See section 4.</td><td class="worse">Worse. This is the main cost.</td></tr>
+  <tr><td><strong>Permission prompts</strong></td><td>Exactly as you chose: the harness shows its own prompt in its pane, a "needs you" badge appears, and you answer there.</td><td class="same">Same, and more likely to render properly</td></tr>
+  <tr><td><strong>Terminal ownership</strong></td><td>A private tmux server on its own socket (<code>-L</code>) with its own config (<code>-f</code>) <span class="tag t-docs">DOCS</span>. Your own tmux sessions and <code>~/.tmux.conf</code> aren't touched. Starting rtk inside your own tmux nests it, so its keys need care <span class="tag t-test">TEST</span>.</td><td class="worse">tmux owns the panes, not rtk</td></tr>
+  <tr><td><strong>SSH drop</strong></td><td>Agents and rtk keep running on the server. Reconnect and run <code>rtk</code>.</td><td class="good">Clear win. It may also remove the need to wrap rtk in tmux or screen by hand.</td></tr>
+  <tr><td><strong>rtk crash</strong></td><td>The harnesses are no longer its children, so they'd keep running with no message server. Proposed: a small wrapper in the control pane shuts down the private tmux server when <code>rtk ui</code> exits <span class="tag t-test">TEST</span>. Session ID binding stays as the backstop.</td><td class="same">Different mechanism, similar result</td></tr>
+  <tr><td><strong>Setup</strong></td><td>tmux becomes a required install: <code>brew install tmux</code> on macOS, <code>sudo apt install tmux</code> on Ubuntu. rtk checks for it at startup and sets a minimum version. Here it's 3.8 <span class="tag t-seen">SEEN</span>; older Ubuntu releases may have older versions, and the floor isn't set yet <span class="tag t-mem">MEMORY</span>.</td><td class="worse">One more thing to install. Windows, already deferred, gets harder.</td></tr>
+  <tr><td><strong>Go and SQLite</strong></td><td>All code stays Go, calling tmux as an external program. <code>x/vt</code> and <code>creack/pty</code> drop out. Message history doesn't change.</td><td class="good">Two fewer risky dependencies</td></tr>
+</table></div>
+
+<h2>4. What tmux does not fix</h2>
+<p>tmux removes emulator risk. It doesn't make delivery safe by itself:</p>
+<ul>
+  <li><strong>Drafts can be merged, and this is the main loss.</strong> Embedded could over-hold, but it knew you'd typed something. Under tmux, the proposed rule is: hold while any key was pressed in the last 10 seconds, then deliver when idle. <strong>If you leave a half-written prompt and pause, an arriving message is pasted after it and both are submitted.</strong> F4 still delivers immediately.</li>
+  <li><strong>Typing races.</strong> Your keystroke can land between the check and the paste, or between the paste and Enter. The window is small, but it's there. OpenRig documents the same race <span class="tag t-docs">DOCS</span>.</li>
+  <li><strong>The gate still depends on hooks.</strong> If a hook misreports, a paste can still reach a prompt. Codex's hook trust review and session ID behaviour are still unknown <span class="tag t-test">TEST</span>.</li>
+  <li><strong>Paste behaviour per harness is still untested.</strong> Paste timing and how each harness treats a paste aren't verified on this design <span class="tag t-test">TEST</span>.</li>
+  <li><strong>New failure modes.</strong> tmux version differences, terminal type settings, key bindings when nested, and a leftover private server after a crash.</li>
+</ul>
+<p><strong>A possible later fix for drafts:</strong> OpenRig reads the visible input box before pasting, and refuses if it holds text or can't be read <span class="tag t-docs">DOCS</span>. That's screen reading per harness, which breaks on updates, but its failure mode is to hold, so it's much safer than using the screen for agent state. I'd leave it out of the first version.</p>
+
+<h2>5. Alternatives considered</h2>
+<div class="scroll"><table>
+  <tr><th>Option</th><th>Verdict</th><th>Why</th></tr>
+  <tr><td><strong>A. tmux panes + Bubble Tea control pane</strong></td><td><strong>Recommended</strong></td><td>Removes the largest risk, gains SSH survival and scrollback, and has real use with these harnesses.</td></tr>
+  <tr><td><strong>B. Keep embedded, with <code>x/vt</code></strong></td><td>Viable, higher risk</td><td>The only way to make the whole window Bubble Tea, with full key visibility. Existing code stays useful. Its risks stay open until testing, and may need rework then.</td></tr>
+  <tr><td>C. Embedded with another Go emulator</td><td>Not recommended</td><td>Same type of risk with a different library. I didn't evaluate specific ones, and nothing suggests they'd fix the whole problem.</td></tr>
+  <tr><td>D. Bubble Tea drawing tmux panes through control mode</td><td>Rejected</td><td>Pane output still has to be emulated to draw it, so it has both sets of problems.</td></tr>
+  <tr><td>E. Other multiplexers, such as herdr or Zellij</td><td>Not for now</td><td>agent-net hosts sessions in herdr <span class="tag t-docs">DOCS</span>, but these are less commonly installed and I didn't evaluate them. Not simpler for you.</td></tr>
+  <tr><td>F. Separate terminal windows</td><td>Rejected</td><td>Simplest code, but it drops your requirement for panes in one window.</td></tr>
+</table></div>
+
+<h2>6. Effect on the work so far</h2>
+<ul>
+  <li><strong>Kept as is:</strong> <code>internal/store</code>, message states, MCP tool and SQLite history.</li>
+  <li><strong>Small changes expected:</strong> the router gets draft information from key timing, and sees your submissions through the <code>UserPromptSubmit</code> hook when the prompt has no message frame. Whether that hook carries the prompt on both harnesses is unverified <span class="tag t-test">TEST</span>. <code>internal/agent</code> launches through tmux, and its terminal settings are redone. F4 moves to a tmux key binding, because rtk no longer receives your keys. Exit codes come from tmux (<code>pane_dead_status</code>) instead of a child process. A write's result becomes "tmux accepted the command", which is weaker than "every byte reached the PTY", so the status wording must say so. "Run ended" no longer proves the agents ended, unless the shutdown wrapper worked. Lead reviewed this by reading the code: store, server, hooks and session binding carry over.</li>
+  <li><strong>Replaced:</strong> <code>internal/pane</code> becomes a thin tmux driver behind the existing <code>PasteSubmit</code> boundary. The parts of <code>internal/tui</code> that render panes and forward keys go; its log, status and history stay.</li>
+  <li><strong>Cost:</strong> most of the recently written pane code would be retired. Nothing gets deleted until you decide. That's cheap now compared with later, which is your point in raising this.</li>
+</ul>
+
+<h2>7. Decision needed</h2>
+<div class="dec">
+  <p><strong>Replace decision 2, "panes embedded in Bubble Tea"?</strong></p>
+  <ul>
+    <li><strong>Option A (recommended):</strong> native tmux panes with a Bubble Tea control pane. Accepts a required tmux install, Bubble Tea no longer being the whole window, and the draft risk in section 4.</li>
+    <li><strong>Option B:</strong> keep embedded and accept that its risks stay open until testing. Pause ends and pane work resumes.</li>
+  </ul>
+  <p>If you choose A, one setting has a default you may want to change: the 10-second rule for drafts. The stricter alternative never auto-delivers to the pane you're focused on, which is safer but means pressing F4 whenever you're waiting in that pane for a reply.</p>
+</div>
+<p>Neither option authorizes testing, and <a href="mvp-two-pane-bridge.html">the current design</a> stays in force until you choose. Neither proves the choice works: A has better evidence, but it hasn't been run on this design either.</p>
+
+<h2>8. Sources</h2>
+<ul>
+  <li><code>docs/implementation/pane-risks.md</code> and <code>docs/implementation/interfaces.md</code> (frontend and lead, source reading).</li>
+  <li><code>man tmux</code>, version 3.8: <code>-L</code>, <code>-f</code>, <code>extended-keys</code>, <code>paste-buffer</code>, <code>remain-on-exit</code>, <code>client_activity</code>, <code>pane_dead_status</code>.</li>
+  <li>OpenRig 0.7.7: <code>docs/reference/seat-delivery.md</code>; delivery method from <code>/Users/mngeow/Projects/compare/ratatoskr-design-consult/consult.md</code>.</li>
+  <li>agent-net at <code>989e42bd</code>: <code>docs/antigravity.md</code>, for herdr.</li>
+  <li>Observed here: <code>rig ps</code> shows Claude Code and Codex seats running on this Mac, and this session's <code>TMUX</code> variable is set. That shows the harnesses run under tmux here, not that this design works.</li>
+</ul>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,113 @@
+version: "0.2"
+name: team-ratatoskr
+summary: Go application team with architect-led external consultation, lead integration and supervised first-version implementation.
+culture_file: CULTURE.md
+docs:
+  - path: README.md
+startup:
+  files:
+    - path: context.md
+      delivery_hint: send_text
+      required: true
+pods:
+  - id: design
+    label: Architecture
+    members:
+      - id: architect
+        label: Architect
+        agent_ref: local:agents/architect
+        runtime: claude-code
+        profile: default
+        cwd: ../..
+    edges: []
+  - id: delivery
+    label: Integration
+    members:
+      - id: lead
+        label: Lead Engineer
+        agent_ref: local:agents/lead
+        runtime: claude-code
+        profile: default
+        cwd: ../..
+    edges: []
+  - id: engineering
+    label: Application Engineering
+    members:
+      - id: frontend
+        label: Frontend Engineer
+        agent_ref: local:agents/frontend
+        runtime: codex
+        model: gpt-6.1-sol
+        profile: default
+        cwd: ../..
+      - id: backend
+        label: Backend Engineer
+        agent_ref: local:agents/backend
+        runtime: claude-code
+        profile: default
+        cwd: ../..
+    edges: []
+  - id: build
+    label: Supervised Implementation
+    members:
+      - id: monkey
+        label: Code Monkey
+        agent_ref: local:agents/monkey
+        runtime: pi
+        model: deepseek/deepseek-flash
+        profile: default
+        cwd: ../..
+    edges: []
+  - id: platform
+    label: Infrastructure and Networking
+    members:
+      - id: devops
+        label: DevOps Engineer
+        agent_ref: local:agents/devops
+        runtime: codex
+        profile: default
+        cwd: ../..
+    edges: []
+edges:
+  - kind: delegates_to
+    from: design.architect
+    to: delivery.lead
+  - kind: delegates_to
+    from: delivery.lead
+    to: engineering.frontend
+  - kind: delegates_to
+    from: delivery.lead
+    to: engineering.backend
+  - kind: delegates_to
+    from: delivery.lead
+    to: platform.devops
+  - kind: delegates_to
+    from: engineering.frontend
+    to: build.monkey
+  - kind: delegates_to
+    from: engineering.backend
+    to: build.monkey
+  - kind: escalates_to
+    from: delivery.lead
+    to: design.architect
+  - kind: escalates_to
+    from: engineering.frontend
+    to: delivery.lead
+  - kind: escalates_to
+    from: engineering.backend
+    to: delivery.lead
+  - kind: escalates_to
+    from: platform.devops
+    to: delivery.lead
+  - kind: collaborates_with
+    from: engineering.backend
+    to: platform.devops
+  - kind: collaborates_with
+    from: engineering.frontend
+    to: platform.devops
+  - kind: collaborates_with
+    from: build.monkey
+    to: engineering.frontend
+  - kind: collaborates_with
+    from: build.monkey
+    to: engineering.backend

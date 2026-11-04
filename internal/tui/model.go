@@ -1,0 +1,1221 @@
+package tui
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/mngeow/ratatoskr/internal/pane"
+	"github.com/mngeow/ratatoskr/internal/protocol"
+)
+
+// Pane is the part of a pane the UI uses. Defined here, satisfied by
+// *pane.Pane. The UI never starts or stops anything: App owns the processes.
+type Pane interface {
+	Resize(width, height int) error
+	RequestResize(width, height int) error
+	Snapshot() pane.Frame
+	SendKey(key uv.KeyPressEvent) error
+	Paste(text string) error
+	SendMouse(event uv.MouseEvent) error
+	MouseEnabled(event uv.MouseEvent) bool
+	InputReady() bool
+	Err() error
+}
+
+// Router is the part of the delivery router the UI talks to.
+type Router interface {
+	UserDraft(agent protocol.AgentID, drafting bool)
+	UserSubmitted(agent protocol.AgentID)
+	DeliverHeld(agent protocol.AgentID)
+	Snapshot() protocol.Snapshot
+	History(q protocol.HistoryQuery) ([]protocol.MessageView, error)
+	Runs(limit int) ([]protocol.RunView, error)
+	MessageDetail(id string) (protocol.MessageDetail, error)
+	PendingOnQuit() int
+}
+
+// Slot is one agent's place on screen. A nil Pane with a StartErr shows the
+// failure; a nil Pane without one shows the agent as offline. Both are valid.
+type Slot struct {
+	ID       protocol.AgentID
+	Name     string
+	Pane     Pane
+	StartErr error
+}
+
+// Layout constants. chromeRows is everything that is not a child screen:
+// title, pane headers, separator, two message rows, feedback and hints.
+const (
+	chromeRows          = 7
+	recentMessageRows   = 2
+	messageHistoryLimit = 200
+	historyQueryLimit   = 200
+	minUsableWidth      = 40
+	minUsableHeight     = 10
+	refreshInterval     = time.Second / 30
+	inputQueueLimit     = 128
+	separatorColumn     = "│"
+)
+
+// Model is the Bubble Tea model: two panes, a status line, the message log and
+// conservative draft tracking.
+//
+// UNTESTED. Under GR-3 (docs/design/ground-rules.md) nothing here has been run:
+// only gofmt, go vet and go build have been applied. Every behavioural claim in
+// this file is unverified, and no harness has ever been rendered by it.
+type Model struct {
+	router Router
+	events <-chan protocol.Event
+	slots  [2]Slot
+
+	focus     int
+	logMode   bool
+	logLoaded bool
+	logErr    error
+	log       []protocol.MessageView
+
+	quitArmed bool
+	feedback  string
+	banner    string
+
+	width, height int
+
+	snap     protocol.Snapshot
+	messages []protocol.MessageView
+	drafts   map[protocol.AgentID]bool
+
+	eventsClosed      bool
+	eventWaiting      bool
+	input             [2][]inputAction
+	inputRunning      [2]bool
+	nextInput         uint64
+	frames            [2]pane.Frame
+	historyGeneration uint64
+	historyPending    bool
+	historyDirty      bool
+	historyLast       time.Time
+	draftEpoch        [2]uint64
+	inputStarted      [2]time.Time
+	history           historyState
+	interrupt         interruptState
+	mouse             mouseState
+	now               func() time.Time
+}
+
+type inputAction struct {
+	control int // 1 clears router draft; 2 requests held delivery
+
+	key        uv.KeyPressEvent
+	text       string
+	paste      bool
+	mouse      bool
+	mouseEvent uv.MouseEvent
+	submit     bool
+	// drafting marks an action that counts as the user typing. A wheel turn does
+	// not, so it must not keep a draft alive after Enter.
+	drafting bool
+	// priorDraft records whether a draft already existed before this action
+	// marked one, so a refused mouse event can be rolled back without clearing
+	// somebody else's draft.
+	priorDraft bool
+	seq        uint64
+	epoch      uint64
+}
+type inputDone struct {
+	index int
+	seq   uint64
+	err   error
+}
+
+// Messages the model sends itself.
+type (
+	eventMsg        protocol.Event
+	tickMsg         time.Time
+	eventsClosedMsg struct{}
+	historyMsg      struct {
+		messages   []protocol.MessageView
+		err        error
+		generation uint64
+		runID      string
+	}
+)
+
+var (
+	_ tea.Model = (*Model)(nil)
+	_ Pane      = (*pane.Pane)(nil)
+)
+
+// New builds the model. It validates the parts it cannot work without - a
+// router and exactly two slots with unique, non-empty agent IDs - and keeps the
+// slots in the order it was given, because F1 and F2 mean first and second.
+//
+// New does not start panes and does not read the router: Init seeds the first
+// snapshot.
+//
+// UNTESTED.
+func New(router Router, events <-chan protocol.Event, slots []Slot) (*Model, error) {
+	if router == nil {
+		return nil, errors.New("tui: New: nil router")
+	}
+	if len(slots) != 2 {
+		return nil, fmt.Errorf("tui: New: need exactly two slots, got %d", len(slots))
+	}
+
+	seen := make(map[protocol.AgentID]struct{}, len(slots))
+	for i, slot := range slots {
+		if slot.ID == "" {
+			return nil, fmt.Errorf("tui: New: slot %d has an empty agent ID", i+1)
+		}
+		if _, duplicate := seen[slot.ID]; duplicate {
+			return nil, fmt.Errorf("tui: New: duplicate agent ID %q", slot.ID)
+		}
+		seen[slot.ID] = struct{}{}
+	}
+
+	return &Model{
+		router: router,
+		events: events,
+		slots:  [2]Slot{slots[0], slots[1]},
+		drafts: make(map[protocol.AgentID]bool, 2),
+		// The clock is injectable so the Ctrl+C window can be tested without a
+		// sleep; production always uses time.Now.
+		now:   time.Now,
+		mouse: mouseState{owner: -1},
+	}, nil
+}
+
+// Init takes the first snapshot and starts the two ongoing loops: waiting for
+// one router event and the refresh tick.
+//
+// Snapshot is called directly rather than through a Cmd because the router
+// serves it from an atomic pointer and never touches the actor, so it cannot
+// block on a slow disk.
+//
+// UNTESTED.
+func (m *Model) Init() tea.Cmd {
+	m.applySnapshot(m.router.Snapshot())
+	return tea.Batch(m.waitEvent(), m.tick())
+}
+
+// Update applies one message. Exactly one event wait is outstanding at any
+// time, and a closed or nil event channel stops consumption for good.
+//
+// UNTESTED.
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		return m, m.resize(msg.Width, msg.Height)
+
+	case eventMsg:
+		m.eventWaiting = false
+		event := protocol.Event(msg)
+		m.applyEvent(event)
+		var cmds []tea.Cmd
+		if event.Resync {
+			// Events were dropped, so the snapshot, not the event, is the truth.
+			m.applySnapshot(m.router.Snapshot())
+		}
+		if cmd := m.waitEvent(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case eventsClosedMsg:
+		m.eventWaiting = false
+		m.eventsClosed = true
+		return m, nil
+
+	case tickMsg:
+		// A live refresh must never replace an older run or a message detail, so
+		// it only runs while the current run is on screen.
+		if m.logMode && m.historyDirty && !m.historyPending && !m.history.runsPending && m.history.detailID == "" &&
+			m.viewingCurrentRun() && time.Since(m.historyLast) >= 250*time.Millisecond {
+			return m, tea.Batch(m.tick(), m.fetchHistoryFor(m.currentRunID()))
+		}
+		return m, m.tick()
+
+	case historyMsg:
+		if !m.logMode || msg.generation != m.historyGeneration || msg.runID != m.currentRunID() {
+			return m, nil
+		}
+		m.installHistory(msg)
+		return m, nil
+
+	case runsMsg:
+		if !m.logMode || msg.generation != m.historyGeneration {
+			return m, nil
+		}
+		return m, m.installRuns(msg)
+
+	case detailMsg:
+		if !m.logMode || msg.generation != m.historyGeneration {
+			return m, nil
+		}
+		if msg.runID != m.currentRunID() || msg.id != m.history.detailID {
+			return m, nil
+		}
+		m.installDetail(msg)
+		return m, nil
+	case inputDone:
+		return m, m.inputCompleted(msg)
+
+	case tea.MouseClickMsg:
+		return m, m.handleMouse(msg)
+	case tea.MouseReleaseMsg:
+		return m, m.handleMouse(msg)
+	case tea.MouseWheelMsg:
+		return m, m.handleMouse(msg)
+	case tea.MouseMotionMsg:
+		return m, m.handleMouse(msg)
+
+	case tea.PasteStartMsg:
+		// Marking the draft at the start of the paste is the conservative side:
+		// the content has not reached the child yet, but the user is typing.
+		if !m.quitArmed {
+			m.markDraft()
+		}
+		return m, nil
+
+	case tea.PasteMsg:
+		return m, m.paste(msg.Content)
+
+	case tea.PasteEndMsg:
+		// A finished paste does not mean the draft is gone; only Enter does.
+		return m, nil
+
+	case tea.KeyPressMsg:
+		return m, m.key(msg)
+	}
+
+	return m, nil
+}
+
+// View renders exactly width by height cells. Child screens keep their styling;
+// every label, error and preview is stripped of control characters first.
+//
+// UNTESTED.
+func (m *Model) View() tea.View {
+	if m.width < 1 || m.height < 1 {
+		view := tea.NewView("")
+		view.AltScreen = true
+		view.MouseMode = tea.MouseModeCellMotion
+		return view
+	}
+	for i, slot := range m.slots {
+		if slot.Pane != nil {
+			m.frames[i] = slot.Pane.Snapshot()
+		}
+	}
+
+	lines := m.render()
+	view := tea.NewView(strings.Join(lines, "\n"))
+	view.AltScreen = true
+	// Cell motion, so clicks and drags arrive; the child decides whether it wants
+	// them, and everything else about the terminal stays as it was.
+	view.MouseMode = tea.MouseModeCellMotion
+	if cursor := m.cursor(); cursor != nil {
+		view.Cursor = cursor
+	}
+	return view
+}
+
+// key routes one keystroke. Control keys are the application's; everything else
+// belongs to the focused child. Ctrl+C has the interrupt/quit policy in interrupt.go.
+//
+// UNTESTED.
+func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
+	if !isCtrlC(k) {
+		m.clearInterrupt()
+	}
+	if m.quitArmed {
+		if isKey(k, tea.KeyF10) || isCtrlC(k) {
+			return tea.Quit
+		}
+		// Esc cancels the warning, anything else dismisses it, and neither is
+		// forwarded to a child.
+		m.quitArmed = false
+		m.feedback = ""
+		return nil
+	}
+
+	if isKey(k, tea.KeyF10) {
+		return m.requestQuit()
+	}
+
+	// Ctrl+C is decided before the log, the size warning and key forwarding: a
+	// pane that cannot receive it must not be able to swallow the quit path.
+	if isCtrlC(k) {
+		return m.ctrlC(k)
+	}
+	// Any other key means the user has moved on.
+	m.clearInterrupt()
+
+	if m.logMode {
+		return m.historyKey(k)
+	}
+
+	switch {
+	case isKey(k, tea.KeyF1):
+		m.setFocus(0)
+		return nil
+	case isKey(k, tea.KeyF2):
+		m.setFocus(1)
+		return nil
+	case isKey(k, tea.KeyF3):
+		return m.enterHistory()
+	case isKey(k, tea.KeyF4):
+		if m.tooSmall() {
+			m.feedback = "pane too small: enlarge the terminal before delivering"
+			return nil
+		}
+		if !m.paneInputReady(m.focus) {
+			m.feedback = "F4 delivery unavailable: pane cannot receive input"
+			return nil
+		}
+		if len(m.input[m.focus]) > 0 {
+			m.feedback = "wait for queued input before F4 delivery"
+			return nil
+		}
+		agent, ok := m.agent(m.slots[m.focus].ID)
+		if !ok || (agent.State != protocol.AgentIdle && agent.State != protocol.AgentUnknown) {
+			m.feedback = "F4 delivery waits: agent must be idle or unknown"
+			return nil
+		}
+		command := m.enqueueControl(m.focus, 2)
+		// Router owns the atomic override. Do not separately clear its gate.
+		m.drafts[m.slots[m.focus].ID] = false
+		m.feedback = "F4 requested: pastes after any text in the box and submits both"
+		return command
+	}
+
+	return m.forward(k)
+}
+
+// forward sends one key to the focused child.
+//
+// The draft is reported before the keystroke is written, never after, so the
+// router cannot deliver in the gap. Enter is the only key that clears it, and
+// only when the write succeeded: a failed write proves nothing about what the
+// child saw.
+func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
+	if m.tooSmall() {
+		// Child input is paused while the warning is up.
+		m.feedback = "terminal too small: child input is paused"
+		return nil
+	}
+
+	slot := m.slots[m.focus]
+	if slot.Pane == nil {
+		return nil
+	}
+	if !m.paneInputReady(m.focus) {
+		// No draft, no queued action: the header and feedback row already say the
+		// pane cannot receive input.
+		return nil
+	}
+
+	return m.enqueueInput(inputAction{key: toKeyPress(k), submit: isBareEnter(k)})
+}
+
+// paste forwards pasted text through the pane's own paste path, which follows
+// the child's bracketed-paste mode. The text itself is not sanitized here: a
+// paste is user input, not a message.
+func (m *Model) paste(content string) tea.Cmd {
+	if m.quitArmed {
+		return nil
+	}
+	if m.tooSmall() || m.logMode {
+		m.feedback = "paste not forwarded: pane input is paused"
+		return nil
+	}
+	slot := m.slots[m.focus]
+	if slot.Pane == nil {
+		m.feedback = "paste not forwarded: pane is offline"
+		return nil
+	}
+	if !m.paneInputReady(m.focus) {
+		// The priority line already explains it; a paste must not create a draft
+		// or a queued action for a pane that cannot receive one.
+		return nil
+	}
+	return m.enqueueInput(inputAction{text: content, paste: true})
+}
+
+// enqueueInput marks draft before scheduling any bytes. Exactly one command
+// per pane runs at a time; a stalled PTY cannot spawn a goroutine for each key.
+// UNTESTED: on overflow this input is refused visibly and draft remains held.
+func (m *Model) enqueueInput(action inputAction) tea.Cmd {
+	action.drafting = true
+	action.priorDraft = m.drafts[m.slots[m.focus].ID]
+	return m.enqueueInputFor(m.focus, action, false)
+}
+
+// enqueueInputFor is the general form: which pane, whether the action counts as
+// typing, and whether a full queue should complain. A wheel turn is neither
+// typing nor worth complaining about, so it must not bump the draft epoch.
+func (m *Model) enqueueInputFor(i int, action inputAction, silentOverflow bool) tea.Cmd {
+	if i < 0 || i >= len(m.slots) {
+		return nil
+	}
+
+	if m.slots[i].Pane == nil || !m.paneInputReady(i) {
+		return nil
+	}
+	if action.drafting {
+		m.markDraftAgent(m.slots[i].ID)
+		m.draftEpoch[i]++
+	}
+
+	if len(m.input[i]) >= inputQueueLimit {
+		if !silentOverflow {
+			m.feedback = "input queue full: key/paste not forwarded; wait and retype"
+		}
+		return nil
+	}
+
+	m.nextInput++
+	action.seq = m.nextInput
+	action.epoch = m.draftEpoch[i]
+	m.input[i] = append(m.input[i], action)
+	return m.startInput(i)
+}
+
+// hasLaterDrafting reports whether anything still queued counts as typing. A
+// wheel turn in the queue does not, so it cannot keep a draft open after Enter.
+func (m *Model) hasLaterDrafting(i int) bool {
+	for _, action := range m.input[i] {
+		if action.drafting {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) startInput(i int) tea.Cmd {
+	if m.inputRunning[i] || len(m.input[i]) == 0 {
+		return nil
+	}
+	m.inputRunning[i] = true
+	m.inputStarted[i] = m.now()
+	a, p := m.input[i][0], m.slots[i].Pane
+	router, id := m.router, m.slots[i].ID
+	return func() tea.Msg {
+		var err error
+		switch a.control {
+		case 1:
+			router.UserDraft(id, false)
+		case 2:
+			router.DeliverHeld(id)
+		default:
+			if a.drafting {
+				router.UserDraft(id, true)
+			} // ordered before any bytes; never on Update
+			switch {
+			case a.mouse:
+				err = p.SendMouse(a.mouseEvent)
+			case a.paste:
+				err = p.Paste(a.text)
+			default:
+				err = p.SendKey(a.key)
+			}
+			if err == nil && a.submit {
+				router.UserSubmitted(id)
+			}
+		}
+		return inputDone{index: i, seq: a.seq, err: err}
+	}
+}
+
+func (m *Model) inputCompleted(done inputDone) tea.Cmd {
+	i := done.index
+	if i < 0 || i >= len(m.slots) || len(m.input[i]) == 0 || m.input[i][0].seq != done.seq {
+		return nil
+	}
+	a := m.input[i][0]
+	m.input[i] = m.input[i][1:]
+	m.inputRunning[i] = false
+	m.inputStarted[i] = time.Time{}
+	switch {
+	case errors.Is(done.err, pane.ErrMouseDisabled):
+		// The child stopped wanting this event between the decision and the
+		// write. That is not the user's fault and needs no message; if this mouse
+		// event was the only thing that created the draft, undo it.
+		if a.drafting && !a.priorDraft && a.epoch == m.draftEpoch[i] && !m.hasLaterDrafting(i) {
+			m.prependControl(i, 1)
+			m.drafts[m.slots[i].ID] = false
+		}
+	case done.err != nil:
+		m.feedback = "input error (may be partial): " + sanitize(done.err.Error())
+	case a.submit:
+		// Router submission resets budget only. The draft is cleared after real
+		// PTY completion, when nothing queued after it still counts as typing and
+		// no other action has bumped the epoch since.
+		if a.epoch == m.draftEpoch[i] && !m.hasLaterDrafting(i) {
+			m.prependControl(i, 1)
+			m.drafts[m.slots[i].ID] = false
+		}
+	}
+	return m.startInput(i)
+}
+
+// markDraft reports a draft for the focused agent when the input could actually
+// reach it. Where input is intercepted - the log, a too-small terminal, a pane
+// that never started - nothing is reported, because the user is not typing into
+// a child.
+func (m *Model) markDraft() {
+	if m.tooSmall() || m.logMode {
+		return
+	}
+	if m.slots[m.focus].Pane == nil || !m.paneInputReady(m.focus) {
+		return
+	}
+	m.markDraftAgent(m.slots[m.focus].ID)
+}
+
+func (m *Model) enqueueControl(i, kind int) tea.Cmd {
+	m.nextInput++
+	m.input[i] = append(m.input[i], inputAction{seq: m.nextInput, control: kind})
+	return m.startInput(i)
+}
+func (m *Model) prependControl(i, kind int) {
+	m.nextInput++
+	m.input[i] = append([]inputAction{{seq: m.nextInput, control: kind}}, m.input[i]...)
+}
+
+func (m *Model) markDraftAgent(id protocol.AgentID) {
+	m.drafts[id] = true
+}
+
+// requestQuit quits, unless a delivery is pending or a draft is open. In that
+// case the first F10 arms a warning and the second quits.
+func (m *Model) requestQuit() tea.Cmd {
+	return m.requestQuitWithDraft(m.anyDraft())
+}
+
+// requestQuitWithDraft is the shared quit path: an explicit draft answer lets the
+// Ctrl+C policy use the state from before its own first press.
+func (m *Model) requestQuitWithDraft(hasDraft bool) tea.Cmd {
+	pending := m.router.PendingOnQuit()
+	if pending > 0 || hasDraft {
+		m.quitArmed = true
+		m.mouse = mouseState{owner: -1}
+		parts := make([]string, 0, 2)
+		if pending > 0 {
+			parts = append(parts, fmt.Sprintf("%d message(s) still queued", pending))
+		}
+		if hasDraft {
+			parts = append(parts, "a draft is open in a pane")
+		}
+		m.feedback = strings.Join(parts, "; ") + ". Press F10 or Ctrl+C again to quit, Esc to stay."
+		return nil
+	}
+	return tea.Quit
+}
+
+func (m *Model) anyDraft() bool {
+	for _, drafting := range m.drafts {
+		if drafting {
+			return true
+		}
+	}
+	return false
+}
+
+// enterLog and leaveLog are the old current-run helpers: they delegate to the
+// history view so there is one owner of log mode.
+func (m *Model) enterLog() tea.Cmd { return m.enterHistory() }
+
+func (m *Model) leaveLog() { m.leaveHistory() }
+
+// fetchHistory reads the current run, delegating to the history view.
+func (m *Model) fetchHistory() tea.Cmd {
+	return m.fetchHistoryFor("")
+}
+
+// resize records the terminal size and, when the size is usable, tells both
+// panes their new screen size. A too-small terminal is not propagated: resizing
+// a child to nothing would destroy the frame the user needs to see once the
+// terminal grows again.
+func (m *Model) resize(width, height int) tea.Cmd {
+	m.width, m.height = width, height
+	m.applySnapshot(m.router.Snapshot())
+	if m.logMode {
+		m.historyDirty = true
+	}
+	if width < 1 || height < 1 || m.tooSmall() {
+		m.mouse = mouseState{owner: -1}
+		return nil
+	}
+	left, right := paneWidths(width)
+	rows := m.screenRows()
+	if left < 1 || right < 1 || rows < 1 {
+		return nil
+	}
+	for i := range m.slots {
+		p := m.slots[i].Pane
+		if p == nil {
+			continue
+		}
+		paneWidth := left
+		if i == 1 {
+			paneWidth = right
+		}
+		// Non-blocking: the pane coalesces the request and applies the newest size
+		// from its own lifecycle worker, so a dragged window edge cannot stall the
+		// UI behind a PTY write.
+		if err := p.RequestResize(paneWidth, rows); err != nil {
+			m.feedback = fmt.Sprintf("resize %s failed: %s", m.slotName(i), sanitize(err.Error()))
+		}
+	}
+	return nil
+}
+
+func (m *Model) tooSmall() bool {
+	return m.width < minUsableWidth || m.height < minUsableHeight
+}
+
+func (m *Model) screenRows() int {
+	rows := m.height - chromeRows
+	if rows < 0 {
+		return 0
+	}
+	return rows
+}
+
+// paneWidths splits the width into two pane widths plus the one-column
+// separator. The left pane takes the smaller half when the width is odd.
+func paneWidths(width int) (int, int) {
+	usable := width - 1
+	if usable < 2 {
+		return 0, 0
+	}
+	left := usable / 2
+	return left, usable - left
+}
+
+// render builds exactly height lines of width cells.
+func (m *Model) render() []string {
+	width, height := m.width, m.height
+	if m.tooSmall() || height < chromeRows {
+		return m.renderMinimal(width, height)
+	}
+
+	lines := make([]string, 0, height)
+	lines = append(lines, fitPlain(m.titleLine(), width))
+	lines = append(lines, m.headerLine())
+
+	rows := m.screenRows()
+	switch {
+	case m.logMode:
+		lines = append(lines, m.historyLines(width, rows)...)
+	default:
+		lines = append(lines, m.screenLines(width, rows)...)
+	}
+
+	lines = append(lines, strings.Repeat("─", width))
+	if m.logMode {
+		for _, line := range m.historyHelpLines()[:recentMessageRows] {
+			lines = append(lines, fitPlain(line, width))
+		}
+	} else {
+		lines = append(lines, m.messageLines(width, recentMessageRows)...)
+	}
+	lines = append(lines, fitPlain(m.feedbackLine(), width))
+	lines = append(lines, fitPlain(m.hintsLine(), width))
+
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	return lines[:height]
+}
+
+// renderMinimal is the view for a terminal too small for the layout. It still
+// says why the big layout is missing, still renders the log when F3 opened it,
+// and still offers the quit key.
+func (m *Model) renderMinimal(width, height int) []string {
+	lines := make([]string, 0, height)
+	if m.quitArmed {
+		lines = append(lines, fitPlain(m.feedbackLine(), width))
+		if height > 1 {
+			lines = append(lines, fitPlain(m.hintsLine(), width))
+		}
+		for len(lines) < height {
+			lines = append(lines, strings.Repeat(" ", width))
+		}
+		return lines[:height]
+	}
+	if line := m.inputUnavailableLine(); line != "" {
+		lines = append(lines, fitPlain(line, width))
+	}
+	lines = append(lines, fitPlain(m.titleLine(), width))
+
+	if m.logMode {
+		lines = append(lines, fitPlain("log in a small terminal (F3/Esc back)", width))
+		rows := height - 3
+		if rows > 0 {
+			lines = append(lines, m.historyLines(width, rows)...)
+		}
+	} else {
+		lines = append(lines, fitPlain(fmt.Sprintf("terminal too small: need %dx%d, have %dx%d", minUsableWidth, minUsableHeight, width, height), width))
+		lines = append(lines, fitPlain("child input is paused", width))
+		if m.feedback != "" {
+			lines = append(lines, fitPlain(m.feedbackLine(), width))
+		}
+	}
+
+	for len(lines) < height-1 {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	if len(lines) < height {
+		lines = append(lines, fitPlain(m.hintsLine(), width))
+	}
+	return lines[:height]
+}
+
+func (m *Model) titleLine() string {
+	budget := m.snap.Budget
+	mode := "panes"
+	if m.logMode {
+		mode = "log"
+	}
+	return fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
+}
+
+// headerLine puts one header over each pane, matching the pane widths.
+func (m *Model) headerLine() string {
+	left, right := paneWidths(m.width)
+	return m.styledHeader(0, left) + separatorColumn + m.styledHeader(1, right)
+}
+
+func (m *Model) styledHeader(i, width int) string {
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	if i == m.focus {
+		style = style.Foreground(lipgloss.Color("231")).Background(lipgloss.Color("24"))
+	}
+	if agent, ok := m.agent(m.slots[i].ID); ok && agent.State == protocol.AgentNeedsYou {
+		style = style.Foreground(lipgloss.Color("220"))
+	}
+	return style.Render(fitPlain(m.headerText(i), width))
+}
+
+func (m *Model) headerText(index int) string {
+	slot := m.slots[index]
+	marker := " "
+	if m.focus == index {
+		marker = "▶"
+	}
+
+	name := sanitize(slot.Name)
+	if name == "" {
+		name = string(slot.ID)
+	}
+
+	state := "unknown"
+	held := 0
+	if agent, ok := m.agent(slot.ID); ok {
+		state = string(agent.State)
+		if agent.State == protocol.AgentNeedsYou {
+			state = "needs you"
+		}
+		held = agent.Held
+	}
+
+	draft := ""
+	if m.drafts[slot.ID] {
+		draft = "*"
+	}
+
+	header := fmt.Sprintf("%s%d %s [%s]%s", marker, index+1, name, state, draft)
+	if held > 0 {
+		header += fmt.Sprintf(" held=%d", held)
+	}
+	if slot.StartErr != nil {
+		header += " FAILED"
+	}
+	if slot.Pane != nil && !m.paneInputReady(index) {
+		header += " INPUT UNAVAILABLE"
+	} else if slot.Pane != nil && slot.Pane.Err() != nil {
+		header += " I/O WARNING"
+	}
+	return header
+}
+
+func (m *Model) screenLines(width, rows int) []string {
+	left, right := paneWidths(width)
+	if left < 1 || right < 1 || rows < 1 {
+		return nil
+	}
+	leftLines := m.paneLines(0, left, rows)
+	rightLines := m.paneLines(1, right, rows)
+
+	lines := make([]string, 0, rows)
+	for i := 0; i < rows; i++ {
+		lines = append(lines, leftLines[i]+separatorColumn+rightLines[i])
+	}
+	return lines
+}
+
+// paneLines renders one pane's screen area: its frame when it has a pane, its
+// failure or offline state when it does not. Child content keeps its styling.
+func (m *Model) paneLines(index, width, rows int) []string {
+	lines := make([]string, 0, rows)
+	slot := m.slots[index]
+
+	switch {
+	case slot.Pane == nil && slot.StartErr != nil:
+		lines = append(lines, fitPlain("start failed: "+slot.StartErr.Error(), width))
+	case slot.Pane == nil:
+		lines = append(lines, fitPlain("offline", width))
+	default:
+		frame := m.frames[index]
+		body := strings.Split(frame.Content, "\n")
+		for i := 0; i < rows && i < len(body); i++ {
+			lines = append(lines, fitStyled(body[i], width))
+		}
+	}
+
+	for len(lines) < rows {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	return lines[:rows]
+}
+
+func logLine(msg protocol.MessageView) string {
+	line := fmt.Sprintf("%s %s→%s %s", msg.At.Format("15:04:05"), sanitize(msg.From), sanitize(msg.To), sanitize(string(msg.State)))
+	if msg.Reason != "" {
+		line += " " + holdReason(msg.Reason)
+	}
+	if msg.ID != "" {
+		line += " [" + sanitize(msg.ID) + "]"
+	}
+	if msg.Preview != "" {
+		line += " " + sanitize(msg.Preview)
+	}
+	return line
+}
+
+// messageLines shows the most recent messages, newest first.
+func (m *Model) messageLines(width, rows int) []string {
+	lines := make([]string, 0, rows)
+	for i := 0; i < rows; i++ {
+		index := len(m.messages) - 1 - i
+		if index < 0 {
+			lines = append(lines, strings.Repeat(" ", width))
+			continue
+		}
+		lines = append(lines, fitPlain(messageLine(m.messages[index]), width))
+	}
+	return lines
+}
+
+func messageLine(msg protocol.MessageView) string {
+	from := sanitize(msg.From)
+	to := sanitize(msg.To)
+	if from == "" {
+		from = "?"
+	}
+	if to == "" {
+		to = "?"
+	}
+	line := fmt.Sprintf("→ %s→%s %s", from, to, sanitize(string(msg.State)))
+	if msg.Reason != "" {
+		line += " " + holdReason(msg.Reason)
+	}
+	if msg.Preview != "" {
+		line += ": " + sanitize(msg.Preview)
+	}
+	return line
+}
+
+// feedbackLine shows, in order: the quit warning, the last feedback, a pane
+// transport error, then the router's banner. Only one line is available, so the
+// most urgent wins.
+func (m *Model) feedbackLine() string {
+	// A pane that cannot receive input is the reason keystrokes appear to do
+	// nothing, so it outranks feedback, banners and history notices.
+	if m.quitArmed {
+		return m.feedback
+	}
+	if line := m.inputUnavailableLine(); line != "" {
+		return line
+	}
+	if m.feedback != "" {
+		if !m.quitArmed && m.banner != "" {
+			return m.feedback + " | " + m.banner
+		}
+		return m.feedback
+	}
+	if m.banner != "" {
+		return m.banner
+	}
+	if m.logMode && len(m.log) >= historyQueryLimit {
+		return "Showing newest 200 messages of this run; earlier messages are not listed"
+	}
+	for _, msg := range m.messages {
+		if msg.State == protocol.MessageHeld && msg.Reason == "drafting" {
+			return holdReason(msg.Reason)
+		}
+	}
+	for i := range m.slots {
+		if m.slots[i].Pane == nil {
+			continue
+		}
+		if err := m.slots[i].Pane.Err(); err != nil {
+			return fmt.Sprintf("%s: %s", m.slotName(i), err.Error())
+		}
+	}
+	return m.banner
+}
+
+func holdReason(reason string) string {
+	if reason == "drafting" {
+		return "drafting: F4 pastes after any text in the box and submits both"
+	}
+	return strings.ReplaceAll(sanitize(reason), "_", " ")
+}
+
+func (m *Model) hintsLine() string {
+	switch {
+	case m.quitArmed:
+		return "F10 or Ctrl+C quits anyway   Esc cancels"
+	case m.tooSmall():
+		return "F1/F2 focus   F3 log   F10 or Ctrl+C quits (child input paused)"
+	case m.logMode:
+		return m.historyHelpLines()[recentMessageRows]
+	default:
+		return "F10 quit   Ctrl+C interrupt; again quit   F1/F2 focus   F3 log   F4 deliver held"
+	}
+}
+
+// cursor places the terminal cursor on the focused child's cursor, offset by the
+// pane's position. It is nil when there is no live cursor to show.
+func (m *Model) cursor() *tea.Cursor {
+	if m.tooSmall() || m.logMode {
+		return nil
+	}
+	slot := m.slots[m.focus]
+	if slot.Pane == nil {
+		return nil
+	}
+	frame := m.frames[m.focus]
+	if frame.Hidden {
+		return nil
+	}
+
+	left, right := paneWidths(m.width)
+	rows := m.screenRows()
+	x, y := frame.X, frame.Y
+	if x < 0 || y < 0 {
+		return nil
+	}
+	if m.focus == 1 {
+		x += left + 1
+		if x >= left+1+right {
+			return nil
+		}
+	}
+	if x < 0 || y < 0 || y >= rows {
+		return nil
+	}
+	if m.focus == 0 && x >= left {
+		return nil
+	}
+	return &tea.Cursor{Position: tea.Position{X: x, Y: screenTop() + y}}
+}
+
+// screenTop is the first screen row: the title and the pane headers sit above it.
+func screenTop() int { return 2 }
+
+func (m *Model) agent(id protocol.AgentID) (protocol.AgentView, bool) {
+	for _, agent := range m.snap.Agents {
+		if agent.ID == id {
+			return agent, true
+		}
+	}
+	return protocol.AgentView{}, false
+}
+
+func (m *Model) slotName(index int) string {
+	if name := sanitize(m.slots[index].Name); name != "" {
+		return name
+	}
+	return string(m.slots[index].ID)
+}
+
+func (m *Model) applySnapshot(snapshot protocol.Snapshot) {
+	m.snap = snapshot
+	// Router snapshots can be shared immutable values; never mutate their slices.
+	m.snap.Agents = append([]protocol.AgentView(nil), snapshot.Agents...)
+	m.banner = snapshot.Banner
+	m.messages = trimMessages(snapshot.Messages)
+}
+
+func (m *Model) applyEvent(event protocol.Event) {
+	if m.logMode && (event.Message != nil || event.Resync) {
+		m.historyDirty = true
+	}
+	if event.Agent != nil {
+		m.upsertAgent(*event.Agent)
+	}
+	if event.Message != nil {
+		m.upsertMessage(*event.Message)
+	}
+	if event.Budget != nil {
+		m.snap.Budget = *event.Budget
+	}
+	if event.Banner != "" {
+		// An empty banner does not clear the current one: only a snapshot does,
+		// which is why a cleared banner arrives with Resync.
+		m.banner = event.Banner
+	}
+}
+
+func (m *Model) upsertAgent(view protocol.AgentView) {
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].ID == view.ID {
+			m.snap.Agents[i] = view
+			return
+		}
+	}
+	m.snap.Agents = append(m.snap.Agents, view)
+}
+
+// upsertMessage keeps the newest messageHistoryLimit messages, newest last. An
+// event for a message already known replaces it, so a state change does not
+// appear as a second message.
+func (m *Model) upsertMessage(view protocol.MessageView) {
+	for i := range m.messages {
+		if m.messages[i].ID == view.ID {
+			m.messages[i] = view
+			return
+		}
+	}
+	m.messages = append(m.messages, view)
+	if len(m.messages) > messageHistoryLimit {
+		m.messages = append([]protocol.MessageView(nil), m.messages[len(m.messages)-messageHistoryLimit:]...)
+	}
+}
+
+func trimMessages(messages []protocol.MessageView) []protocol.MessageView {
+	if len(messages) <= messageHistoryLimit {
+		return append([]protocol.MessageView(nil), messages...)
+	}
+	return append([]protocol.MessageView(nil), messages[len(messages)-messageHistoryLimit:]...)
+}
+
+// waitEvent starts one event wait. Nothing is started while a wait is already
+// outstanding, and nothing is started again after the channel closed: one event
+// per wait keeps the queue bounded.
+func (m *Model) waitEvent() tea.Cmd {
+	if m.events == nil || m.eventsClosed || m.eventWaiting {
+		return nil
+	}
+	m.eventWaiting = true
+	events := m.events
+	return func() tea.Msg {
+		event, ok := <-events
+		if !ok {
+			return eventsClosedMsg{}
+		}
+		return eventMsg(event)
+	}
+}
+
+// tick schedules the next refresh. The tick only asks for a repaint; it never
+// reads the router, so a stuck disk cannot freeze the screen and the router is
+// not polled.
+func (m *Model) tick() tea.Cmd {
+	return tea.Tick(refreshInterval, func(at time.Time) tea.Msg { return tickMsg(at) })
+}
+
+// toKeyPress copies a Bubble Tea key into the emulator's key type field by
+// field. The two structs are different types that happen to share a layout, so
+// the conversion is explicit and will keep compiling if either grows a field
+// that matters.
+func toKeyPress(k tea.KeyPressMsg) uv.KeyPressEvent {
+	return uv.KeyPressEvent{
+		Text:        k.Text,
+		Mod:         uv.KeyMod(k.Mod),
+		Code:        k.Code,
+		ShiftedCode: k.ShiftedCode,
+		BaseCode:    k.BaseCode,
+		IsRepeat:    k.IsRepeat,
+	}
+}
+
+// isKey matches a control key. Modifiers must be empty: Ctrl+F3 or Shift+F10 are
+// the child's business, not the application's.
+func isKey(k tea.KeyPressMsg, code rune) bool {
+	return k.Code == code && k.Mod&^(tea.ModCapsLock|tea.ModNumLock|tea.ModScrollLock) == 0
+}
+
+// isBareEnter is Enter with no modifier. Shift+Enter and Ctrl+J are newline
+// input, not submission, and leave the draft in place.
+func isBareEnter(k tea.KeyPressMsg) bool {
+	return isKey(k, tea.KeyEnter)
+}
+
+// sanitize removes everything that must not reach the screen: ANSI sequences
+// first, then any remaining control character. This deliberately duplicates part
+// of the router's sanitizer: the UI must not depend on the router package, and a
+// label is never allowed to move the cursor.
+func sanitize(s string) string {
+	if s == "" {
+		return ""
+	}
+	s = ansi.Strip(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			b.WriteByte(' ')
+		case r < 0x20 || r == 0x7f:
+			// Dropped.
+		case r >= 0x80 && r <= 0x9f:
+			// Dropped.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// fitPlain sanitizes a label and pads or truncates it to exactly width cells.
+func fitPlain(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = sanitize(s)
+	if ansi.StringWidth(s) > width {
+		s = ansi.Truncate(s, width, "")
+	}
+	if pad := width - ansi.StringWidth(s); pad > 0 {
+		s += strings.Repeat(" ", pad)
+	}
+	return s
+}
+
+// fitStyled pads or truncates child output to exactly width cells without
+// disturbing its styling. Child content is the only place styling is allowed.
+func fitStyled(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = strings.ReplaceAll(s, "\r", "")
+	if ansi.StringWidth(s) > width {
+		s = ansi.Truncate(s, width, "")
+	}
+	if pad := width - ansi.StringWidth(s); pad > 0 {
+		s += strings.Repeat(" ", pad)
+	}
+	// A child's final style/link must not colour or hyperlink its neighbour.
+	return s + "\x1b[0m\x1b]8;;\x1b\\"
+}

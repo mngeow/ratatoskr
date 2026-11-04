@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two-Pane Bridge</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --accent: #e6b65c;
+    --accent-soft: #3d3120;
+    --claude: #ec9670;
+    --claude-soft: #40271d;
+    --codex: #6cc4d6;
+    --codex-soft: #18353c;
+    --bridge: #a9adf2;
+    --bridge-soft: #2b2d4d;
+    --ok: #7bd096;
+    --ok-soft: #1c3525;
+    --warn: #e6b65c;
+    --warn-soft: #3d3120;
+    --bad: #f0938b;
+    --bad-soft: #43221f;
+    --term: #0d0f12;
+    --term-ink: #d9dde2;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --accent: #e6b65c;
+  --accent-soft: #3d3120;
+  --claude: #ec9670;
+  --claude-soft: #40271d;
+  --codex: #6cc4d6;
+  --codex-soft: #18353c;
+  --bridge: #a9adf2;
+  --bridge-soft: #2b2d4d;
+  --ok: #7bd096;
+  --ok-soft: #1c3525;
+  --warn: #e6b65c;
+  --warn-soft: #3d3120;
+  --bad: #f0938b;
+  --bad-soft: #43221f;
+  --term: #0d0f12;
+  --term-ink: #d9dde2;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.35rem; line-height: 1.3; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+p, ul, ol { margin: 0 0 12px; }
+ul, ol { padding-left: 22px; }
+li { margin-bottom: 4px; }
+a { color: var(--accent); }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .87em; }
+code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--term); color: var(--term-ink); padding: 14px; border-radius: 8px; overflow-x: auto; line-height: 1.45; margin: 0 0 14px; }
+pre code { background: none; padding: 0; color: inherit; overflow-wrap: normal; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
+.pill { font-size: .78rem; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.pill.status { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: 12px 16px; margin: 0 0 16px; }
+.note > :last-child { margin-bottom: 0; }
+.scroll { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; background: var(--surface); }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border: 1px solid var(--line); }
+th { background: var(--surface-2); font-weight: 600; }
+.tag { display: inline-block; font-size: .68rem; line-height: 1.5; font-weight: 600; padding: 0 5px; border-radius: 4px; vertical-align: 1px; white-space: nowrap; }
+.t-help { background: var(--ok-soft); color: var(--ok); }
+.t-docs { background: var(--bridge-soft); color: var(--bridge); }
+.t-consult { background: var(--codex-soft); color: var(--codex); }
+.t-test { background: var(--warn-soft); color: var(--warn); }
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 0 0 8px; }
+.caption { font-size: .84rem; color: var(--muted); margin: 0 0 18px; }
+
+/* Window mock */
+.window { background: var(--term); color: var(--term-ink); border-radius: 8px; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .76rem; line-height: 1.5; }
+.win-title { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: #262b31; color: #fff; }
+.win-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
+.term-pane { border: 1px solid #454b53; border-radius: 4px; padding: 0 8px 8px; min-height: 150px; min-width: 0; }
+.term-pane.focus { border-color: #ec9670; }
+.pane-head { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin: 0 -8px 8px; padding: 2px 8px; background: #262b31; }
+.b-idle { color: #7bd096; }
+.b-busy { color: #e6b65c; }
+.c-c { color: #ec9670; }
+.c-x { color: #6cc4d6; }
+.dim { color: #8c939b; }
+.win-log { margin: 0 6px 6px; padding: 4px 8px; border: 1px solid #454b53; border-radius: 4px; }
+.win-keys { padding: 4px 10px 6px; color: #8c939b; }
+@media (max-width: 520px) { .win-panes { grid-template-columns: 1fr; } .term-pane { min-height: 96px; } }
+
+/* Architecture */
+.arch { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.layer { border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; }
+.layer-label { font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.boxes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.box { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: .86rem; }
+.box strong { display: block; }
+.box small { color: var(--muted); display: block; line-height: 1.35; }
+.box.claude { background: var(--claude-soft); border-color: var(--claude); }
+.box.codex { background: var(--codex-soft); border-color: var(--codex); }
+.box.bridge { background: var(--bridge-soft); border-color: var(--bridge); }
+.link { display: flex; align-items: center; gap: 10px; padding: 2px 0 2px 22px; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.link::before { content: ""; flex: none; width: 0; height: 26px; border-left: 2px solid var(--muted); position: relative; }
+.link span::before { content: "\2195\00a0"; color: var(--muted); }
+
+/* Option tabs */
+.tabs > input { position: absolute; opacity: 0; pointer-events: none; }
+.tab-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.tab-row label { cursor: pointer; font-size: .86rem; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.tab-panel { display: none; }
+#o-a:checked ~ .tab-row label[for="o-a"],
+#o-b:checked ~ .tab-row label[for="o-b"],
+#o-c:checked ~ .tab-row label[for="o-c"],
+#o-d:checked ~ .tab-row label[for="o-d"],
+#o-e:checked ~ .tab-row label[for="o-e"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.tabs > input:focus-visible ~ .tab-row { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+#o-a:checked ~ #p-a, #o-b:checked ~ #p-b, #o-c:checked ~ #p-c, #o-d:checked ~ #p-d, #o-e:checked ~ #p-e { display: block; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; margin: 0 0 10px; }
+.step { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font-size: .8rem; line-height: 1.35; }
+.step.claude { background: var(--claude-soft); border-color: var(--claude); }
+.step.codex { background: var(--codex-soft); border-color: var(--codex); }
+.step.bridge { background: var(--bridge-soft); border-color: var(--bridge); }
+.arrow { align-self: center; color: var(--muted); }
+.flow-label { font-size: .76rem; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
+.procon { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; font-size: .9rem; }
+.procon h4 { margin: 0 0 4px; font-size: .82rem; }
+.procon ul { margin: 0; }
+
+/* Sequence */
+.seq { display: grid; grid-template-columns: repeat(3, 1fr); min-width: 600px; row-gap: 4px; position: relative; }
+.seq-head { text-align: center; font-size: .82rem; font-weight: 600; padding: 6px; border-radius: 6px; margin: 0 8px 6px; }
+.seq-head.claude { background: var(--claude-soft); color: var(--claude); }
+.seq-head.codex { background: var(--codex-soft); color: var(--codex); }
+.seq-head.bridge { background: var(--bridge-soft); color: var(--bridge); }
+.lifelines { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); pointer-events: none; }
+.lifelines i { border-left: 1px dashed var(--line); margin-left: 50%; }
+.msg { position: relative; z-index: 1; font-size: .77rem; line-height: 1.35; padding: 3px 12px 7px; text-align: center; border-bottom: 2px solid var(--muted); margin-top: 6px; }
+.msg b { color: var(--accent); margin-right: 3px; }
+.msg.r::after, .msg.l::after { content: ""; position: absolute; bottom: -6px; width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.msg.r::after { right: -1px; border-left: 8px solid var(--muted); }
+.msg.l::after { left: -1px; border-right: 8px solid var(--muted); }
+.ab, .ba { grid-column: 1 / -1; margin-left: 16.67%; margin-right: 50%; }
+.bc, .cb { grid-column: 1 / -1; margin-left: 50%; margin-right: 16.67%; }
+.self { grid-column: 2 / 3; z-index: 1; position: relative; background: var(--bridge-soft); border: 1px solid var(--bridge); border-radius: 6px; font-size: .77rem; line-height: 1.35; padding: 4px 8px; text-align: center; margin: 4px 4px; }
+
+/* State machine */
+.states { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.state { border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); font-size: .85rem; line-height: 1.4; }
+.state h4 { margin: 0 0 2px; font-size: .95rem; }
+.state.go { background: var(--ok-soft); border-color: var(--ok); }
+.state.hold { background: var(--warn-soft); border-color: var(--warn); }
+.state.stop { background: var(--bad-soft); border-color: var(--bad); }
+.state p { margin: 0 0 6px; }
+.state .why { font-weight: 600; font-size: .78rem; }
+.trans { font-size: .77rem; color: var(--muted); margin: 0; padding-left: 16px; }
+.trans li { margin-bottom: 2px; }
+
+/* Decisions */
+.dec { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 0 0 10px; }
+.dec h3 { margin: 0 0 4px; }
+.dec p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Two-Pane Bridge</h1>
+<p class="lede">A small Go program with a Bubble Tea TUI that runs Claude Code and Codex side by side and lets them message each other.</p>
+<div class="meta">
+  <span class="pill status">v0.13: the user reports mouse focus and Ctrl+C working by hand; the team has run nothing, and no test or other acceptance check has run</span>
+  <span class="pill">Implemented, compile-checked only</span>
+  <span class="pill">With delivery lead</span>
+  <span class="pill">2026-11-04</span>
+  <span class="pill">Owner: design.architect</span>
+</div>
+
+<div class="note">
+  <p><strong>The design in brief.</strong> One Go binary owns both terminal sessions. An agent <em>sends</em> by calling a <code>send_message</code> tool over MCP, which both harnesses support. The program <em>delivers</em> by typing into the recipient's pane, but only when hooks report that recipient is idle. Both directions use the same code, and neither harness needs a plugin in another language.</p>
+  <p><strong>The riskiest part is not messaging.</strong> It is whether two full-screen TUIs render and take keyboard input properly inside Bubble Tea. That gets tested first, with tmux as the known alternative if it fails (section 4).</p>
+</div>
+
+<p><strong>How to read the evidence.</strong> The team has run nothing here. The user's hand runs are the only observations. They found the mouse and Ctrl+C bugs in section 4, and the user then reported that mouse focus and Ctrl+C work on the fixed build. Everything else here is still untested. Open items are in <a href="../implementation/outstanding-issues.md">Outstanding issues</a>.
+<span class="tag t-help">HELP</span> installed CLI help (Claude Code 2.1.311, Codex 0.166.0).
+<span class="tag t-docs">DOCS</span> vendor docs read 2026-11-04.
+<span class="tag t-consult">CONSULT</span> codebase-explorer's source analysis of other projects.
+<span class="tag t-test">TEST</span> unverified, must be tested. Everything else is proposal.</p>
+
+<h2>1. Scope</h2>
+<div class="scroll"><table>
+  <tr><th>In this version</th><th>Deliberately left out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>One Bubble Tea window with a Claude Code pane and a Codex pane</li>
+        <li>You can type into either pane and answer its prompts</li>
+        <li>Claude can message Codex, and Codex can message Claude</li>
+        <li>A visible log of every message and its delivery status</li>
+        <li>Message and delivery history that survives a restart</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Discovery, teams and agent definitions</li>
+        <li>More than two agents; Pi and OpenCode</li>
+        <li>Joining sessions already open elsewhere</li>
+        <li>Multiple machines; a background daemon</li>
+        <li>Task ownership, claims and handoffs</li>
+        <li>Resuming agent sessions or resending old messages</li>
+        <li>Answering permission prompts from the TUI</li>
+      </ul>
+    </td>
+  </tr>
+</table></div>
+<p>The ground rules apply: application code is Go, and the TUI is <code>charm.land/bubbletea/v2</code>. See <a href="ground-rules.md">ground rules</a>.</p>
+
+<h2>2. What you see</h2>
+<div class="figure">
+  <div class="window" role="img" aria-label="Mock of the terminal window: Claude Code pane on the left, Codex pane on the right, message log and key hints underneath.">
+    <div class="win-title"><span>ratatoskr</span><span>2 agents · 3 messages · relay budget 17/20</span></div>
+    <div class="win-panes">
+      <div class="term-pane focus">
+        <div class="pane-head"><span class="c-c">● Claude Code [focused]</span><span class="b-idle">idle</span></div>
+        <div class="dim">&gt; Ask Codex to review the parser</div>
+        <div>Sending the review request</div>
+        <div>to Codex now.</div>
+        <div class="dim">⏺ ratatoskr · send_message</div>
+        <div>&nbsp;</div>
+        <div class="dim">&gt; _</div>
+      </div>
+      <div class="term-pane">
+        <div class="pane-head"><span class="c-x">● Codex</span><span class="b-busy">busy · 1 held</span></div>
+        <div class="dim">&lt;ratatoskr-message from="claude"</div>
+        <div class="dim">&nbsp;id="m3"&gt;</div>
+        <div>Please review internal/parser...</div>
+        <div class="dim">&lt;/ratatoskr-message&gt;</div>
+        <div>&nbsp;</div>
+        <div class="b-busy">• Working (12s)</div>
+      </div>
+    </div>
+    <div class="win-log">
+      <div><span class="c-c">claude</span> → <span class="c-x">codex</span> m3 <span class="b-idle">accepted</span> <span class="dim">Please review internal/parser...</span></div>
+      <div><span class="c-c">claude</span> → <span class="c-x">codex</span> m4 <span class="b-busy">held: codex busy</span> <span class="dim">Also check the error paths...</span></div>
+    </div>
+    <div class="win-keys">F1 or click: Claude · F2 or click: Codex · F3 log · F4 deliver held · F10 quit · Ctrl+C twice quit · other keys go to the focused pane</div>
+  </div>
+</div>
+<p class="caption">Figure 1. Illustrative mock. The agent text is invented and the key bindings are placeholders for frontend to refine.</p>
+
+<h2>3. Architecture</h2>
+<div class="figure">
+  <div class="arch">
+    <div class="layer">
+      <p class="layer-label">One Go binary, launched as rtk</p>
+      <div class="boxes">
+        <div class="box"><strong>tui</strong><small>Bubble Tea model: layout, focus, status, message log</small></div>
+        <div class="box"><strong>pane</strong><small>PTY plus terminal emulator for each agent</small></div>
+        <div class="box bridge"><strong>router</strong><small>Queues, per-agent state, delivery gate, relay budget</small></div>
+        <div class="box bridge"><strong>server</strong><small>Localhost HTTP: MCP tool and hook events</small></div>
+        <div class="box"><strong>agent</strong><small>How to launch each harness and its config</small></div>
+        <div class="box bridge"><strong>store</strong><small>SQLite: runs, messages, state history</small></div>
+      </div>
+    </div>
+    <div class="link"><span>PTY input and output (paste, keys, screen) · MCP calls and hook events over 127.0.0.1</span></div>
+    <div class="layer">
+      <p class="layer-label">Child processes, run as you with your existing logins</p>
+      <div class="boxes">
+        <div class="box claude"><strong>Claude Code</strong><small>Interactive TUI in a PTY. Sends through MCP; hooks report state.</small></div>
+        <div class="box codex"><strong>Codex</strong><small>Interactive TUI in a PTY. Sends through MCP; hooks report state.</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">Figure 2. Components. The router is the only part that decides whether a message may be delivered.</p>
+
+<div class="scroll"><table>
+  <tr><th>Dependency</th><th>Why</th><th>Latest on Go proxy, 2026-11-04</th></tr>
+  <tr><td><code>charm.land/bubbletea/v2</code>, <code>lipgloss/v2</code>, <code>bubbles/v2</code></td><td>Required by the ground rules; layout and widgets</td><td>v2.1.1, v2.0.6, v2.2.1</td></tr>
+  <tr><td><code>github.com/creack/pty</code></td><td>Runs the harnesses in real terminals</td><td>v1.1.24</td></tr>
+  <tr><td><code>github.com/charmbracelet/x/vt</code></td><td>Terminal emulator that turns a harness's output into a screen. <strong>Young library, and the main risk.</strong></td><td>v0.1.0</td></tr>
+  <tr><td><code>github.com/modelcontextprotocol/go-sdk</code></td><td>The MCP server</td><td>v1.8.0</td></tr>
+  <tr><td><code>modernc.org/sqlite</code></td><td>Message history. Pure Go, so builds stay simple on macOS and Linux; agent-net made the same choice. <span class="tag t-consult">CONSULT</span></td><td>v1.61.1</td></tr>
+</table></div>
+
+<h2>4. How the panes work</h2>
+<div class="note"><p><strong>Reconfirmed by the user, 2026-11-04: keep panes embedded in Bubble Tea.</strong> The user considered <a href="terminal-approach-proposal.html">a proposal to switch to tmux panes</a> and chose not to. The known risks stay open and untested until the user has testing run.</p></div>
+<div class="scroll"><table>
+  <tr><th></th><th>A. Embedded in Bubble Tea (chosen)</th><th>B. tmux splits (known alternative)</th></tr>
+  <tr><th>How</th><td>Go runs each harness in a PTY, feeds its output to an emulator, and draws the result inside a Bubble Tea pane.</td><td>Go creates a tmux window with split panes. Bubble Tea runs in a third pane as a status and log bar.</td></tr>
+  <tr><th>Gains</th><td>One binary with no other dependency. The whole window is the TUI. The program sees every keystroke, so it can avoid pasting over something you're typing.</td><td>tmux has already solved rendering and input, so much less code is needed.</td></tr>
+  <tr><th>Costs</th><td>Colours, wide characters, redraw speed and key translation all have to work through a young emulator.</td><td>Needs tmux installed. Key handling, focus and layout mostly belong to tmux, so Bubble Tea is only part of the experience.</td></tr>
+  <tr><th>Delivery</th><td>Direct PTY write</td><td><code>tmux paste-buffer</code>, then <code>send-keys</code>. OpenRig uses this method. <span class="tag t-consult">CONSULT</span></td></tr>
+</table></div>
+<p><strong>Decision:</strong> A, chosen by the user, and tested first in a time-boxed spike. If either harness is unusable, the choice goes back to the user, with B as the known alternative. The messaging design doesn't change either way, because the router only needs a way to write to a pane.</p>
+<h3>Mouse</h3>
+<p>Reported by the user, 2026-11-04: clicks didn't switch panes, because the first version never turned mouse reporting on. ratatoskr now owns the mouse, by these rules. <span class="tag t-test">TEST</span></p>
+<div class="scroll"><table>
+  <tr><th>Event</th><th>What happens</th></tr>
+  <tr><td>Left click in a pane that isn't focused, on its body or header</td><td>Focus moves there. The click isn't passed to the harness.</td></tr>
+  <tr><td>Click or drag in the focused pane</td><td>Passed to that harness in pane coordinates, only if it has turned on mouse tracking. Counts as possible drafting, like a key.</td></tr>
+  <tr><td>Wheel</td><td>Passed to the pane under the pointer if it has turned on mouse tracking. Focus doesn't move, and it doesn't count as drafting.</td></tr>
+  <tr><td>Separator or other chrome, quit warning, log view, terminal too small</td><td>Nothing.</td></tr>
+</table></div>
+<p>The cost: while ratatoskr holds the mouse, selecting text needs the terminal's bypass modifier, usually Shift, or Option in some macOS terminals.</p>
+<h3>Ctrl+C</h3>
+<p><strong>Decided by the user, 2026-11-04.</strong> In the user's first hand run, the whole UI froze on Ctrl+C. The user reports Ctrl+C working on the fixed build, but the freeze's cause was never established. The rule that prevents it is under "Shutting down" in section 11. Separately, the user expected Ctrl+C to stop rtk, but it goes to the focused harness so that it can interrupt a turn. This contract keeps that and adds a way out. <span class="tag t-test">TEST</span></p>
+<div class="scroll"><table>
+  <tr><th>Situation</th><th>Ctrl+C does</th></tr>
+  <tr><td>Focused pane is live, first press</td><td>Goes to the harness. The status line says a second press quits rtk.</td></tr>
+  <tr><td>Second press within about 1 second</td><td>Doesn't go to the harness. Quits rtk the same way as F10. The press that started this doesn't count as a draft for the warning.</td></tr>
+  <tr><td>Nothing can receive it: agent exited or never started, log view, terminal too small</td><td>Quits rtk the same way as F10.</td></tr>
+  <tr><td>Quit warning showing</td><td>Confirms the quit, as F10 does.</td></tr>
+</table></div>
+<p>The cost: one harness can't be exited with its own double Ctrl+C, and an accidental double press can end both agents. The time limit is a guess.</p>
+<p><strong>Known risk, from reading source only and not observed:</strong> frontend reports that <code>x/vt</code> v0.1.0 has no Kitty, CSI-u or modifyOtherKeys keyboard support, and no Shift+Enter encoding. The plan is for harnesses to see a legacy terminal, with Shift+Enter mapped to a documented newline input in one isolated function. This doesn't show that panes are unusable, but it puts "use each pane normally" (section 12) at risk.</p>
+
+<h2>5. Messaging options</h2>
+<p>Each direction has two separate problems: how the sender <strong>gets a message out</strong> and how it <strong>gets into</strong> the receiver. Getting in is the hard part, because neither harness has one documented, stable way to accept input from outside while its TUI is running.</p>
+
+<div class="tabs figure">
+  <input type="radio" name="opt" id="o-a" checked>
+  <input type="radio" name="opt" id="o-b">
+  <input type="radio" name="opt" id="o-c">
+  <input type="radio" name="opt" id="o-d">
+  <input type="radio" name="opt" id="o-e">
+  <div class="tab-row">
+    <label for="o-a">A. MCP + gated paste (chosen)</label>
+    <label for="o-b">B. CLI + gated paste</label>
+    <label for="o-c">C. Native per harness</label>
+    <label for="o-d">D. Mailbox + pull</label>
+    <label for="o-e">E. Private interfaces</label>
+  </div>
+
+  <div class="tab-panel" id="p-a">
+    <p class="flow-label">Same in both directions</p>
+    <div class="flow">
+      <span class="step claude">Sender calls MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step bridge">Router queues it and waits until the recipient is idle</span><span class="arrow">→</span>
+      <span class="step codex">Bracketed paste + Enter into recipient's PTY</span>
+    </div>
+    <div class="procon">
+      <div><h4>Gains</h4><ul>
+        <li>One code path. Both harnesses support MCP tools and the same hook names. <span class="tag t-docs">DOCS</span></li>
+        <li>The token is issued at launch, so the sender isn't something the model types in.</li>
+        <li>Each tool can be pre-approved, so sending needn't prompt. <span class="tag t-help">HELP</span> <span class="tag t-docs">DOCS</span></li>
+        <li>You see the message arrive in the pane.</li>
+      </ul></div>
+      <div><h4>Costs</h4><ul>
+        <li>Delivery is typed input, so it reads as a user turn. The message frame must say it came from a peer.</li>
+        <li>Pasting at the wrong moment could disturb a prompt, so the gate must be conservative.</li>
+        <li>Relies on hooks being accurate, including after interrupts. <span class="tag t-test">TEST</span></li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="p-b">
+    <p class="flow-label">Same in both directions</p>
+    <div class="flow">
+      <span class="step claude">Sender runs <code>ratatoskr send --to codex</code> in its shell</span><span class="arrow">→</span>
+      <span class="step bridge">Router queues it and waits until the recipient is idle</span><span class="arrow">→</span>
+      <span class="step codex">Bracketed paste + Enter into recipient's PTY</span>
+    </div>
+    <div class="procon">
+      <div><h4>Gains</h4><ul>
+        <li>The least code: no MCP dependency.</li>
+        <li>Easy to run by hand when debugging.</li>
+      </ul></div>
+      <div><h4>Costs</h4><ul>
+        <li>Codex's <code>workspace-write</code> sandbox may stop the command reaching the program. The docs show a network opt-in, but say nothing specific about localhost or Unix sockets. <span class="tag t-docs">DOCS</span> <span class="tag t-test">TEST</span></li>
+        <li>Quoting multi-line text through a shell is error-prone.</li>
+        <li>Identity comes from an environment variable that the agent can read or override.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="p-c">
+    <p class="flow-label">Claude → Codex</p>
+    <div class="flow">
+      <span class="step claude">MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step bridge">Router</span><span class="arrow">→</span>
+      <span class="step codex">App server <code>turn/start</code>, or <code>turn/steer</code> if busy; TUI attached with <code>codex --remote</code></span>
+    </div>
+    <p class="flow-label">Codex → Claude</p>
+    <div class="flow">
+      <span class="step codex">MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step bridge">Router</span><span class="arrow">→</span>
+      <span class="step claude">Channel notification <code>notifications/claude/channel</code></span>
+    </div>
+    <div class="procon">
+      <div><h4>Gains</h4><ul>
+        <li>No typing into terminals, so no risk of disturbing a prompt or a draft.</li>
+        <li>Codex's app server also reports events, which may replace its hooks. <span class="tag t-test">TEST</span></li>
+        <li>Queued channel events arrive together on the next turn. <span class="tag t-docs">DOCS</span></li>
+      </ul></div>
+      <div><h4>Costs</h4><ul>
+        <li>Channels are a research preview. Custom ones need <code>--dangerously-load-development-channels</code>, and Team or Enterprise accounts need an owner to enable them. <span class="tag t-docs">DOCS</span></li>
+        <li>The CLI marks the app server experimental. <span class="tag t-help">HELP</span></li>
+        <li>Two different paths to build and test. Whether a turn started by another client appears in the attached TUI is unverified. <span class="tag t-test">TEST</span></li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="p-d">
+    <p class="flow-label">Same in both directions</p>
+    <div class="flow">
+      <span class="step claude">Sender writes to a mailbox through a tool or file</span><span class="arrow">→</span>
+      <span class="step bridge">Message waits in the mailbox</span><span class="arrow">→</span>
+      <span class="step codex">Recipient's Stop hook returns <code>decision: block</code> with the message, or the agent checks its inbox</span>
+    </div>
+    <div class="procon">
+      <div><h4>Gains</h4><ul>
+        <li>No terminal typing at all.</li>
+        <li>Both harnesses can continue a turn from a Stop hook. <span class="tag t-docs">DOCS</span></li>
+        <li>Delivery lands at the end of a turn, which is a clean moment.</li>
+      </ul></div>
+      <div><h4>Costs</h4><ul>
+        <li><strong>It can't wake an idle agent.</strong> If both are idle, the conversation stops, which is the normal case for "ask and wait".</li>
+        <li>Asking agents to poll wastes model turns and relies on them doing it.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="p-e">
+    <p class="flow-label">Claude → Codex and Codex → Claude</p>
+    <div class="flow">
+      <span class="step bridge">Router</span><span class="arrow">→</span>
+      <span class="step claude">Claude's inbox socket at <code>messagingSocketPath</code></span>
+    </div>
+    <div class="flow">
+      <span class="step bridge">Router</span><span class="arrow">→</span>
+      <span class="step codex">Codex <code>thread/queue/add</code> JSON-RPC, or the <code>codex queue</code> CLI</span>
+    </div>
+    <div class="procon">
+      <div><h4>Gains</h4><ul>
+        <li>agent-net's code uses these paths, and its own Linux spikes report messages queuing behind a running turn. <span class="tag t-consult">CONSULT</span></li>
+        <li><code>codex queue</code> is a shipped command, so that half is less exposed. <span class="tag t-help">HELP</span></li>
+      </ul></div>
+      <div><h4>Costs</h4><ul>
+        <li>The Claude socket's support status was not established, and it is untested on macOS. <span class="tag t-consult">CONSULT</span> <span class="tag t-test">TEST</span></li>
+        <li>The docs I read list no <code>thread/queue</code> method. <span class="tag t-docs">DOCS</span></li>
+        <li>Could break on any harness update.</li>
+      </ul></div>
+    </div>
+  </div>
+</div>
+<p class="caption">Figure 3. Select an option to see its path. This is CSS only.</p>
+
+<div class="scroll"><table>
+  <tr><th>Option</th><th>Same code both ways</th><th>Wakes idle agent</th><th>Safe at a prompt</th><th>Relies on unstable interface</th><th>Effort</th></tr>
+  <tr><td><strong>A. MCP + gated paste</strong></td><td>Yes</td><td>Yes</td><td>If the gate is right</td><td>No</td><td>Medium</td></tr>
+  <tr><td>B. CLI + gated paste</td><td>Yes</td><td>Yes</td><td>If the gate is right</td><td>No</td><td>Low, if the sandbox allows it</td></tr>
+  <tr><td>C. Native per harness</td><td>No</td><td>Likely <span class="tag t-test">TEST</span></td><td>Unknown <span class="tag t-test">TEST</span></td><td>Yes: preview and experimental</td><td>High</td></tr>
+  <tr><td>D. Mailbox + pull</td><td>Yes</td><td><strong>No</strong></td><td>Yes</td><td>No</td><td>Low</td></tr>
+  <tr><td>E. Private interfaces</td><td>No</td><td>Reported <span class="tag t-consult">CONSULT</span></td><td>Unknown <span class="tag t-test">TEST</span></td><td>Yes</td><td>Medium</td></tr>
+</table></div>
+
+<p>Effort ratings are my judgment, not measurements.</p>
+<p><strong>Rejected: relaying each turn's final message automatically.</strong> It needs no tool, but it forwards text written for you rather than for the other agent. agent-net deliberately avoided this for Codex for that reason <span class="tag t-consult">CONSULT</span>, and it would loop easily.</p>
+<p><strong>Decision: A, chosen by the user.</strong> Only A and B wake an idle agent, use one code path and avoid unstable interfaces. A beats B because it doesn't depend on Codex's sandbox letting a shell command through, doesn't push message text through shell quoting, and doesn't take identity from a variable the agent can change. If MCP turns out to be awkward at launch, B is the natural fallback, since delivery stays the same. The pane-write step sits behind one small function, so a harness can move to a native path later if one becomes stable.</p>
+
+<h2>6. A message end to end (option A)</h2>
+<div class="figure">
+  <div class="scroll" style="margin:0">
+    <div class="seq">
+      <div class="lifelines" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="seq-head claude">Claude Code</div>
+      <div class="seq-head bridge">ratatoskr</div>
+      <div class="seq-head codex">Codex</div>
+
+      <div class="msg r ab"><b>1</b>MCP <code>send_message(to: codex, body)</code></div>
+      <div class="msg l ba"><b>2</b>commits m7, then returns <code>{id: m7, status: queued}</code></div>
+      <div class="self"><b>3</b> Codex is busy: hold m7</div>
+      <div class="msg l cb"><b>4</b>Stop hook: Codex is now idle</div>
+      <div class="self"><b>5</b> Gate passes: commit <code>delivering</code>, strip control characters</div>
+      <div class="msg r bc"><b>6</b>PTY: paste the frame, then Enter; commit <code>pasted</code></div>
+      <div class="msg l cb"><b>7</b>UserPromptSubmit hook: commit m7 <code>accepted</code></div>
+      <div class="msg l cb"><b>8</b>MCP <code>send_message(to: claude, reply_to: m7)</code></div>
+      <div class="self"><b>9</b> Same steps in reverse</div>
+      <div class="msg l ba"><b>10</b>PTY: paste the reply when Claude is idle</div>
+    </div>
+  </div>
+</div>
+<p class="caption">Figure 4. The sender never blocks waiting for delivery, so two agents can't deadlock waiting on each other.</p>
+
+<h2>7. The delivery gate</h2>
+<p>The state of each agent comes from hook events, not from reading its screen. OpenRig's screen reading has broken on a harness update <span class="tag t-consult">CONSULT</span>, so this design avoids it. Both harnesses document the event names used here <span class="tag t-docs">DOCS</span>.</p>
+<div class="figure">
+  <div class="states">
+    <div class="state hold">
+      <h4>starting</h4><p class="why">Hold</p>
+      <ul class="trans"><li><code>SessionStart</code> → idle</li><li>No hook event for a set time → unknown, with a banner</li></ul>
+    </div>
+    <div class="state go">
+      <h4>idle</h4><p class="why">Deliver, unless you may be mid-draft in this pane. F4 overrides that.</p>
+      <ul class="trans"><li><code>UserPromptSubmit</code> → busy</li></ul>
+    </div>
+    <div class="state hold">
+      <h4>busy</h4><p class="why">Hold</p>
+      <ul class="trans"><li><code>Stop</code> → idle</li><li><code>PermissionRequest</code> → needs you</li><li>No event for a set time → unknown</li></ul>
+    </div>
+    <div class="state stop">
+      <h4>needs you</h4><p class="why">Hold. Never paste into a prompt.</p>
+      <ul class="trans"><li><code>PostToolUse</code>, or <code>Stop</code> → busy or idle</li></ul>
+    </div>
+    <div class="state stop">
+      <h4>unknown</h4><p class="why">Hold. You press F4 to deliver.</p>
+      <ul class="trans"><li>Later event with the bound session ID → matching state</li></ul>
+    </div>
+    <div class="state stop">
+      <h4>exited</h4><p class="why">Fail queued messages visibly</p>
+      <ul class="trans"><li>PTY closed; no automatic restart</li></ul>
+    </div>
+  </div>
+</div>
+<p class="caption">Figure 5. Agent states. An uncertain state always holds, because a late message costs little and a keystroke sent into a prompt could cost a lot.</p>
+
+<h2>8. Interfaces</h2>
+<h3>Agent tool</h3>
+<pre><code>send_message(to: string, body: string, reply_to?: string)
+  → { id, status: "queued" }
+  → error { reason: "unknown_recipient" | "unknown_reply_to" | "recipient_offline" |
+                   "budget_exhausted" | "too_large" | "empty_body" | "storage_unavailable" }</code></pre>
+<p><code>to</code> is a display name such as <code>codex</code>, which ratatoskr resolves to an opaque agent ID. The router uses only that ID, and the name must match exactly one agent. Every message gets a unique ID when it is accepted, which is what allows retries to be deduplicated once messages cross machines. The short IDs like <code>m7</code> in this document are for illustration. A body that is empty after control characters are stripped and whitespace is trimmed returns <code>empty_body</code>.</p>
+<p>The sender is worked out from the bearer token and is never a parameter. The MCP server's instructions and the tool description tell each agent who its peer is, and that its normal replies are not sent to the peer. That avoids adding per-harness prompt flags.</p>
+
+<h3>What the recipient sees</h3>
+<pre><code>&lt;ratatoskr-message from="claude" id="m7" reply-to="m6"&gt;
+Please review internal/parser for error handling.
+&lt;/ratatoskr-message&gt;
+This came from a peer agent, not the human. Reply with send_message if a reply is needed.</code></pre>
+
+<h3>Delivery status</h3>
+<div class="scroll"><table>
+  <tr><th>Status</th><th>Meaning</th></tr>
+  <tr><td><code>queued</code> / <code>held</code></td><td>Durably recorded and waiting. <code>held</code> also gives the reason.</td></tr>
+  <tr><td><code>delivering</code></td><td>About to be written to the PTY. Recorded first, so a crash leaves evidence.</td></tr>
+  <tr><td><code>pasted</code></td><td>Written to the PTY, not yet known to be received.</td></tr>
+  <tr><td><code>accepted</code></td><td><code>UserPromptSubmit</code> fired after the paste. The harness took the input, though that doesn't prove the model acted on it.</td></tr>
+  <tr><td><code>unconfirmed</code></td><td>No confirmation within a time limit. Shown to you and <strong>not retried</strong>, to avoid sending it twice.</td></tr>
+  <tr><td><code>failed</code></td><td>Recipient exited or the write failed. A failed write is never reported as delivered, a flaw found in agent-net's Claude adapter. <span class="tag t-consult">CONSULT</span></td></tr>
+  <tr><td><code>interrupted</code></td><td>The run ended before the message finished. The reason shows whether it was ever written (section 9).</td></tr>
+</table></div>
+
+<h3>Launch sketch</h3>
+<pre><code>claude --mcp-config &lt;session-dir&gt;/mcp.json --settings &lt;session-dir&gt;/settings.json \
+       --allowedTools mcp__ratatoskr__send_message
+
+RATATOSKR_TOKEN=... codex \
+  -c 'mcp_servers.ratatoskr.url="http://127.0.0.1:&lt;port&gt;/mcp"' \
+  -c 'mcp_servers.ratatoskr.bearer_token_env_var="RATATOSKR_TOKEN"' \
+  -c 'mcp_servers.ratatoskr.tools.send_message.approval_mode="approve"' \
+  -c '&lt;hooks config, shape to be confirmed&gt;'</code></pre>
+<p>The flags and config keys are documented <span class="tag t-help">HELP</span> <span class="tag t-docs">DOCS</span>, but setting nested MCP and hook config with <code>-c</code> is unverified <span class="tag t-test">TEST</span>. Hooks call back through the <code>rtk hook</code> subcommand, so this is Go too. The hook command is identical across runs, with an absolute <code>rtk</code> path and no per-run values, because Codex skips new or changed hooks until you review them <span class="tag t-docs">DOCS</span>. Whether its trust record keys on the command string is unverified <span class="tag t-test">TEST</span>, and the bypass flag is not used. The command reads the server URL and token from a 0600 file in a fixed session directory, because it isn't verified that environment variables reach hooks. <strong>A hook event only counts if it comes from this run's harness session:</strong> ratatoskr compares the harness session ID in the hook's input with the ID bound to that agent. A missing or mismatching ID never applies its event. It is counted for the log and a banner, and an <code>idle</code> agent moves to <code>unknown</code>, because the agent's own ID may have changed and a stale <code>idle</code> could paste into a busy agent. A later event with the bound ID restores the matching state. ratatoskr never rebinds to a new ID, because an orphan could fire the event that triggered it. If <code>/clear</code>, <code>/compact</code>, resume or fork do change a harness's ID, which is not established <span class="tag t-test">TEST</span>, that agent needs F4 delivery for the rest of the run. Claude's ID is chosen at launch with <code>--session-id</code>; Codex's is bound from its first <code>SessionStart</code> with source <code>startup</code>, and if Codex doesn't report that, it stays <code>unknown</code> <span class="tag t-test">TEST</span>. This guards against a harness left over from a crash, which could read the new run's token and report a false "idle". The check can't rely on anything in the session directory. If a harness provides no usable session ID, its state stays <code>unknown</code> and you deliver with F4 <span class="tag t-test">TEST</span>. Backend also found that Codex may skip hooks until they pass its trust review <span class="tag t-test">TEST</span>. If so, that agent stays in <code>unknown</code> and you deliver with F4.</p>
+
+<h2>9. Persistent messages</h2>
+<p>Chosen by the user: messages and their delivery history live in SQLite and survive a restart. <strong>This records message transport, not work.</strong> It shows what ratatoskr accepted and did with each message. It doesn't show that a recipient read it or acted on it, and it has no task ownership, claims or handoffs. Agent sessions don't survive a restart either; only the record of their messages does.</p>
+
+<h3>What is stored</h3>
+<div class="scroll"><table>
+  <tr><th>Stored</th><th>Not stored</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>Each run of the program, and how it ended</li>
+        <li>Each agent launched in a run, with its harness, version and exit code</li>
+        <li>Each accepted message: sender, recipient, body, reply link, current state</li>
+        <li>Every state change, with time and reason</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Tokens and other credentials</li>
+        <li>Pane contents and scrollback</li>
+        <li>Live agent state, gate state and the relay budget</li>
+        <li>Permission prompts and your answers</li>
+        <li>Refused sends: the sender gets the error straight away and nothing was accepted</li>
+      </ul>
+    </td>
+  </tr>
+</table></div>
+<pre><code>runs            (id, started_at, ended_at, end_reason, app_version)
+agents          (id, run_id, display_name, harness, harness_version,
+                 started_at, exited_at, exit_code)
+messages        (seq INTEGER PRIMARY KEY, id UNIQUE, run_id, from_agent_id, to_agent_id,
+                 reply_to, body, state, created_at, updated_at)
+message_events  (id INTEGER PRIMARY KEY, message_id, at, from_state, to_state, reason)</code></pre>
+<p>This is a sketch for backend to refine. <code>messages.id</code> is an opaque, globally unique ID assigned when the message is accepted, and it will be the dedup key across machines. <code>seq</code> sets delivery order, first in, first out per recipient. Agent IDs are new each run, because a new run means new harness sessions. A <code>reply_to</code> must name a message in the same run.</p>
+
+<h3>Message lifecycle</h3>
+<div class="figure">
+  <p class="flow-label">Normal path</p>
+  <div class="flow">
+    <span class="step bridge"><code>queued</code> / <code>held</code></span><span class="arrow">→</span>
+    <span class="step bridge"><code>delivering</code><br><small>committed before the write</small></span><span class="arrow">→</span>
+    <span class="step codex"><code>pasted</code><br><small>written to the PTY</small></span><span class="arrow">→</span>
+    <span class="step codex"><code>accepted</code><br><small>harness took the input</small></span>
+  </div>
+  <p class="flow-label">Other endings</p>
+  <div class="flow">
+    <span class="step"><code>pasted</code> with no confirmation in time → <code>unconfirmed</code></span>
+    <span class="step"><code>delivering</code> with a write error → <code>failed</code></span>
+    <span class="step"><code>queued</code> / <code>held</code> when the recipient exits → <code>failed</code></span>
+    <span class="step"><code>delivering</code> / <code>pasted</code> when the recipient exits → <code>unconfirmed</code></span>
+    <span class="step">Any unfinished state at shutdown or restart → <code>interrupted</code></span>
+  </div>
+</div>
+<p class="caption">Figure 6. Message states. <code>accepted</code>, <code>failed</code>, <code>unconfirmed</code> and <code>interrupted</code> are final, with one exception: <code>unconfirmed</code> can become <code>accepted</code> if a late <code>UserPromptSubmit</code> contains this message's ID <span class="tag t-test">TEST</span>. None of these states means the model read or acted on the message.</p>
+<p>Only one message per recipient is in <code>delivering</code> or <code>pasted</code> at a time, so a confirmation can't be credited to the wrong message.</p>
+
+<h3>Commit order</h3>
+<div class="scroll"><table>
+  <tr><th>Moment</th><th>Transaction</th><th>Why</th></tr>
+  <tr><td><code>send_message</code> arrives</td><td>Insert the message and its first event, <strong>commit, then</strong> return <code>queued</code></td><td><code>queued</code> means durably recorded. If the commit fails, the sender gets an error and the message doesn't exist.</td></tr>
+  <tr><td>Gate passes</td><td>Commit <code>delivering</code>, <strong>then</strong> write to the PTY</td><td>A crash can't hide a write. If this commit fails, nothing is written.</td></tr>
+  <tr><td>Write returns</td><td>Commit <code>pasted</code> or <code>failed</code></td><td>Records only what the write call reported.</td></tr>
+  <tr><td>Hook or time limit</td><td>Commit <code>accepted</code> or <code>unconfirmed</code></td><td>The evidence decides the state.</td></tr>
+</table></div>
+<ul>
+  <li>Each transaction updates the message and appends its event together, and only if the message is still in the expected state.</li>
+  <li>No transaction stays open during a PTY write or while waiting on a hook.</li>
+  <li>One goroutine in the <code>store</code> package owns all writes. Uses WAL mode with <code>synchronous=FULL</code>; message volume is low, so the extra safety costs little.</li>
+</ul>
+
+<h3>After a restart</h3>
+<p>A lock file allows only one ratatoskr per machine, so recovery can't touch a live run's messages. The operating system releases the lock if the program crashes. Startup then does this in one transaction, before launching any harness:</p>
+<div class="scroll"><table>
+  <tr><th>State found in an old run</th><th>Becomes</th><th>What it means</th></tr>
+  <tr><td><code>queued</code>, <code>held</code></td><td><code>interrupted</code>, reason <code>never_written</code></td><td>Definitely not delivered.</td></tr>
+  <tr><td><code>delivering</code></td><td><code>interrupted</code>, reason <code>write_unknown</code></td><td><strong>Ambiguous:</strong> the crash came around the write, so it may or may not have arrived.</td></tr>
+  <tr><td><code>pasted</code></td><td><code>interrupted</code>, reason <code>pasted_unconfirmed</code></td><td>Written, but the harness never confirmed it.</td></tr>
+</table></div>
+<ul>
+  <li><strong>Nothing is ever resent automatically,</strong> because the agent it was meant for no longer exists and a resend could duplicate work. This version has no resend action; you can read the body in the history and pass it on yourself.</li>
+  <li><strong>Harnesses start as new sessions.</strong> This version doesn't resume old conversations or feed old messages into new ones. A new agent knows nothing about a previous run.</li>
+  <li>An unclosed run is marked <code>crashed</code>, and the message log shows how many of its messages were interrupted. A clean quit records the same transitions, after the existing warning.</li>
+</ul>
+
+<h3>Storage and retention</h3>
+<ul>
+  <li><strong>Location:</strong> <code>$XDG_STATE_HOME/ratatoskr/ratatoskr.db</code>, defaulting to <code>~/.local/state/ratatoskr/</code> on both macOS and Linux. Directory mode 0700, file mode 0600. It is never kept in the project or in the session directory, which is removed on exit.</li>
+  <li><strong>Per machine:</strong> one database covering all projects run on that machine. It isn't synced. Over SSH on your server, it lives on the server.</li>
+  <li><strong>Sensitive data:</strong> bodies are stored as plain text and may contain anything an agent wrote, including secrets. File permissions are the only protection, and backups of your home directory will include it.</li>
+  <li><strong>Retention:</strong> runs that ended more than 30 days ago are deleted at startup with their agents, messages and events. Bodies are capped at 64 KiB, with larger sends refused. To erase everything, delete the file while ratatoskr isn't running.</li>
+  <li><strong>Viewing:</strong> the F3 log reads from the database, showing the current run by default and older runs on request. Stored text is sanitised before it's displayed, so an old message can't send control sequences to your terminal.</li>
+</ul>
+
+<h3>Schema changes</h3>
+<p>The schema version is kept in <code>PRAGMA user_version</code> and migrations are embedded in the binary. An older database is backed up with <code>VACUUM INTO</code>, then upgraded in one transaction. A database newer than the binary is left untouched and the program refuses to start, with a clear message. There are no downgrades.</p>
+
+<h2>10. Invariants</h2>
+<ol>
+  <li><strong>Never write a message to a pane unless the gate passes,</strong> or you press deliver yourself. The only other PTY writes are your own keystrokes and the emulator's replies to terminal queries, which carry no message content.</li>
+  <li><strong>Never answer a permission prompt.</strong> You answer them in the pane.</li>
+  <li><strong>Strip control characters from message bodies before pasting,</strong> including ESC. Otherwise a body containing the paste-end sequence could inject keystrokes into the other agent's terminal.</li>
+  <li><strong>The sender comes from the token,</strong> never from model input.</li>
+  <li><strong>Don't edit your harness config.</strong> Everything is passed at launch, or kept in a private session directory at a fixed path, <code>&lt;state dir&gt;/session</code> (mode 0700). It is emptied at startup, only after the single-instance lock is held, and removed on exit.</li>
+  <li><strong>Bind to 127.0.0.1 only,</strong> on a random port, with a separate token per agent.</li>
+  <li><strong>Report delivery honestly.</strong> No status claims more than the evidence shows.</li>
+  <li><strong>Commit before you claim or write.</strong> <code>queued</code> is only returned after a commit, and no PTY write happens before <code>delivering</code> is committed.</li>
+  <li><strong>Never resend automatically after a restart.</strong> Ambiguous messages stay ambiguous, and are shown that way.</li>
+  <li><strong>Limit automatic back-and-forth.</strong> A relay budget (default 20) resets when you press Enter in a pane, including to answer a permission prompt. Once it runs out, sends are refused until you step in, so agents can't loop unattended.</li>
+</ol>
+<p><strong>This is not a security boundary.</strong> Both agents run as you and could read each other's files or tokens. Tokens guard against other local processes and mistakes, not a determined agent. A message also can't approve anything for the recipient, but it can still persuade the recipient's model, so its normal permission prompts remain the real check.</p>
+
+<h2>11. Failure behaviour</h2>
+<div class="scroll"><table>
+  <tr><th>What goes wrong</th><th>What happens</th></tr>
+  <tr><td>A harness isn't installed or fails to start</td><td>Its pane shows the error. The other agent keeps running, and sends to the failed one return <code>recipient_offline</code>.</td></tr>
+  <tr><td>A harness exits mid-session</td><td>Pane shows the exit code. Messages never written become <code>failed</code>; any being delivered become <code>unconfirmed</code>. It doesn't restart itself.</td></tr>
+  <tr><td>A hook doesn't fire, such as after an interrupt</td><td>State becomes <code>unknown</code> after a time limit, including when no hook has fired since launch, in which case a banner appears. Messages wait, and F4 delivers them. <span class="tag t-test">TEST</span></td></tr>
+  <tr><td>You're typing when a message is due</td><td>Typing in a pane marks it as possibly drafting, until you press Enter. ratatoskr can't see the harness's input box, so it can't tell if you cleared a draft with Esc, Ctrl+C or delete. The message waits until you submit, or press F4. The held reason warns you that F4 pastes after any text in the box and submits both. F4 then clears the drafting mark. F4 never delivers into <code>needs you</code> or <code>busy</code>.</td></tr>
+  <tr><td>Agents loop</td><td>The relay budget stops them and the TUI says so.</td></tr>
+  <tr><td>ratatoskr quits or crashes</td><td>Quit warns if messages are waiting, then shuts both children down. Unfinished messages become <code>interrupted</code>, on quit or at the next start after a crash, and their history is kept. Agent sessions end and aren't resumed. Cleaning up child processes after a crash is <span class="tag t-test">TEST</span>.</td></tr>
+  <tr><td>Shutting down</td><td>Shutdown has one bounded total time and says on the terminal that it's stopping the agents. Signals, including Ctrl+C after the terminal is restored, stay handled until it finishes. Panes close at the same time, so a slow harness can't use up the other's grace. A stop reaches the child ratatoskr started and that child's own process group, which ratatoskr created, and nothing else. No pane I/O, lock or child behaviour may block the UI loop, so the quit keys always work even with an unresponsive child. A pane that stops taking input says so and counts as unable to receive Ctrl+C. <span class="tag t-test">TEST</span></td></tr>
+  <tr><td>Database can't be opened at startup, or is newer than the binary</td><td>Exit with a clear error before launching any harness.</td></tr>
+  <tr><td>A harness survives a crash of ratatoskr</td><td>The old MCP address and token stop working, so it can't send. Its hook events fail the session ID check and can only push the agent toward holding, and a banner after a crash asks you to check for leftover harness processes. ratatoskr doesn't kill them. <span class="tag t-test">TEST</span></td></tr>
+  <tr><td>Another ratatoskr is already running on this machine</td><td>Refuse to start and say so.</td></tr>
+  <tr><td>A database write fails mid-run, such as a full disk</td><td>Sends return <code>storage_unavailable</code>, and delivery stops, because an unrecorded write isn't allowed. The panes keep working, and the TUI shows a banner.</td></tr>
+  <tr><td>A harness update changes behaviour</td><td>Planned: startup prints a warning for untested versions but continues. Not implemented yet, because no version has been tested, so it follows testing. Hooks missing would show up as <code>starting</code> or <code>unknown</code>, never as false delivery.</td></tr>
+</table></div>
+
+<h2>12. Build order and acceptance</h2>
+<div class="note"><p><strong>Suspended by the user, 2026-11-04.</strong> No spike or acceptance check below may run until the user says when and how (<a href="ground-rules.md">GR-3</a>). They stay here as the planned checks. Implementation continues on the settled design, so the risks they were meant to test, embedded panes above all, are still open.</p></div>
+<h3>Spikes, when testing is allowed, in this order, on macOS and Ubuntu</h3>
+<ol>
+  <li><strong>Panes.</strong> Run both harnesses in Bubble Tea with <code>x/vt</code> and do real work. Check colours, redraw speed, resizing, Unicode, and special keys including Shift+Enter, Esc and Ctrl+C. If it fails, the result goes back to the user, with tmux as the known alternative.</li>
+  <li><strong>Delivery.</strong> For each harness, try {idle, busy, at a permission prompt, mid-draft, just interrupted}, and record exactly what a paste does. The consult found no project had tested the prompt case.</li>
+  <li><strong>Launch config.</strong> Confirm MCP and hooks can be set at launch with no changes to your config, and that Codex's sandbox doesn't block its MCP connection.</li>
+</ol>
+<h3>Done means</h3>
+<ol>
+  <li>On macOS and on Ubuntu, including over SSH, one command opens one window with both harnesses logged in with your existing accounts. All the checks below pass on both.</li>
+  <li>You can use each pane normally, as if it were running on its own terminal, and switch focus by keyboard.</li>
+  <li>Ask Claude to ask Codex something: Codex receives it with no copying by you, and its reply reaches Claude.</li>
+  <li>The same works when started from the Codex side.</li>
+  <li>A message sent while the recipient is busy arrives after its turn, once, and in order.</li>
+  <li>A message sent while the recipient is at a permission prompt doesn't touch the prompt, and is delivered after you answer.</li>
+  <li>A body containing ESC sequences arrives as harmless text.</li>
+  <li>Two agents told to keep messaging each other stop at the budget.</li>
+  <li>After a restart, the log still shows the previous run's messages with their state history.</li>
+  <li>Killing ratatoskr with <code>kill -9</code> at each of these moments gives the matching <code>interrupted</code> reason on the next start, with nothing resent: while a message is held, just after <code>delivering</code> commits (using a test hook), and just after a paste.</li>
+  <li>A second ratatoskr on the same machine refuses to start and doesn't change the first one's messages.</li>
+  <li>A forced database write failure stops delivery, and no paste happens without a matching record.</li>
+  <li>The database is created with the stated permissions, contains no tokens, and runs older than the retention period are removed at startup.</li>
+  <li><code>~/.claude</code> and <code>~/.codex</code> settings are unchanged after a run. Session history written by the harnesses is expected.</li>
+</ol>
+
+<h2>13. Decisions</h2>
+<div class="dec"><h3>1. Messaging path</h3><p><strong>Decided by the user, 2026-11-04: option A</strong>, MCP to send and gated paste to deliver.</p></div>
+<div class="dec"><h3>2. Pane approach</h3><p><strong>Decided by the user, 2026-11-04, and reconfirmed after reviewing the tmux proposal: embedded in Bubble Tea.</strong> The spike still runs first. If it fails, that goes back to the user rather than switching to tmux automatically.</p></div>
+<div class="dec"><h3>3. Permission prompts</h3><p><strong>Decided by the user, 2026-11-04: prompt the user to approve.</strong> Each harness keeps its own prompts, the TUI shows a "needs you" badge, and the user answers in the pane. Only <code>send_message</code> is pre-approved.</p></div>
+<div class="dec"><h3>4. Platform</h3><p><strong>Decided by the user, 2026-11-04: macOS and Linux (Ubuntu server); Windows deferred.</strong> This version runs on either machine, with both agents on that machine. Cross-machine messaging follows under decision 5.</p></div>
+
+<div class="dec"><h3>5. When machines connect</h3><p><strong>Decided by the user, 2026-11-04: single machine first, then cross-machine messaging as the next step.</strong> The user's Mac and Ubuntu server can already reach each other over Tailscale, so a direct link is the likely starting point. That link gets its own design when the time comes.</p></div>
+<div class="dec"><h3>6. Message persistence</h3><p><strong>Decided by the user, 2026-11-04: persistent messages first,</strong> using SQLite for messages and delivery history (section 9). A work queue with ownership stays out of scope for now. The location, retention period and recovery rules in section 9 are the architect's proposal, and the user can change them.</p></div>
+
+<div class="dec"><h3>7. Command and implementation</h3><p><strong>Decided by the user, 2026-11-04: the command that launches the TUI is <code>rtk</code>, and implementation may begin,</strong> with a setup README. The product is still Ratatoskr. A failed spike that reopens one of these decisions goes back to the user.</p></div>
+<div class="dec"><h3>8. Testing and pushing</h3><p><strong>Decided by the user, 2026-11-04: the team doesn't test or push until the user instructs it, and the user decides when and how</strong> (<a href="ground-rules.md">GR-3</a>). This replaces the earlier spikes-first order. Everything in this design is untested until then.</p></div>
+<div class="dec"><h3>9. Ctrl+C</h3><p><strong>Decided by the user, 2026-11-04:</strong> the first press interrupts the focused agent; a second press within about a second asks to quit rtk, warning first if messages are waiting or a draft is unsent; if no agent can receive the interrupt, one press asks to quit. Details are in section 4.</p></div>
+
+<h2>14. Growing to several machines</h2>
+<p>The planned next step after this version (decision 5), and not built in it. Cross-machine messaging adds a layer and leaves the agent-facing parts alone: sending is still a local MCP call, and delivery is still a gated paste on the recipient's machine. agent-net separates its local and between-machine links in a similar way. <span class="tag t-consult">CONSULT</span></p>
+<div class="figure">
+  <div class="flow">
+    <span class="step claude">Mac: Claude calls <code>send_message</code></span><span class="arrow">→</span>
+    <span class="step bridge">Mac: ratatoskr</span><span class="arrow">⇒</span>
+    <span class="step">Encrypted, authenticated link</span><span class="arrow">⇒</span>
+    <span class="step bridge">Ubuntu: ratatoskr, delivery gate</span><span class="arrow">→</span>
+    <span class="step codex">Ubuntu: paste into Codex's PTY</span>
+  </div>
+</div>
+<p class="caption">Figure 7. Cross-machine path. Each machine runs its own ratatoskr, because only a local process can write to a local pane.</p>
+<h3>Build into the first version so the local contract can stay stable</h3>
+<p>These come from the consult, which notes that no analysed project demonstrates a clean upgrade from one machine to many. They reduce the risk rather than remove it.</p>
+<ul>
+  <li>Asynchronous sends and typed delivery statuses</li>
+  <li>Opaque agent addresses, with display names resolved to IDs</li>
+  <li>A unique ID on every message, so that retries can be deduplicated</li>
+  <li>A defined result for sending to an agent that is offline: <code>recipient_offline</code>. Whether messages should wait for an offline agent across machines is left to the link design.</li>
+  <li>A local database on each machine, which can later hold messages waiting to cross the link. The databases aren't synced, and the link design must add the states a message passes through in transit.</li>
+</ul>
+<h3>Known consequences</h3>
+<ul>
+  <li><strong>Prompts stay on the machine running the agent.</strong> Under decision 3, the user approves in that machine's window. Relaying prompts between machines would be a separate feature, and the link would then carry approvals.</li>
+  <li><strong>Embedded panes tie agents to the TUI process.</strong> If an SSH connection drops, the TUI and both agents may die with it <span class="tag t-test">TEST</span>. Stopgap: run ratatoskr inside <code>tmux</code> or <code>screen</code> on the server. Longer-term fix: split it into a background daemon and an attaching TUI.</li>
+  <li><strong>The link needs its own design.</strong> The choices run from agent-net's gateway, TLS and enrolment to a private network such as Tailscale, or an SSH tunnel. agent-net has no node revocation, and OpenRig's lighter model gives weaker guarantees. <span class="tag t-consult">CONSULT</span> The user's machines are already on Tailscale, which makes a direct link over the tailnet the likely choice. Being on the tailnet must not be enough on its own: incoming messages get typed into agent panes, so each ratatoskr still has to authenticate the other.</li>
+</ul>
+
+<h2>15. Sources</h2>
+<ul>
+  <li><strong>Consult:</strong> <code>/Users/mngeow/Projects/compare/ratatoskr-design-consult/consult.md</code> and its three reviews, by analysis-architect@codebase-explorer. Queue item <code>qitem-20261104061012-98eed8ecc71af3bb</code>. Inspection only.</li>
+  <li><strong>agent-net</strong> at <code>989e42bd</code> (Apache-2.0). Ideas used here: typed delivery outcomes, loop limits, identity bound outside the model. I read its Claude adapter's <code>Deliver</code> directly. No code is copied.</li>
+  <li><strong>OpenRig</strong> 0.7.7. Ideas used here: bracketed paste followed by a separate Enter; refusing to send into a prompt; honest outcome labels.</li>
+  <li><strong>Claude Code docs:</strong> <a href="https://code.claude.com/docs/en/channels">channels</a>, <a href="https://code.claude.com/docs/en/channels-reference">channels reference</a>, <a href="https://code.claude.com/docs/en/hooks">hooks</a>.</li>
+  <li><strong>Codex docs:</strong> <a href="https://learn.chatgpt.com/docs/hooks">hooks</a>, <a href="https://learn.chatgpt.com/docs/extend/mcp?surface=cli">MCP</a>, <a href="https://learn.chatgpt.com/docs/app-server">app server</a>, <a href="https://learn.chatgpt.com/docs/config-file/config-reference">config reference</a>, <a href="https://learn.chatgpt.com/docs/config-file/config-advanced">advanced config</a>.</li>
+  <li><strong>OpenRig's SQLite queue</strong> (<code>dist/db/migrations/024_queue_items.js</code>, <code>~/.openrig/openrig.sqlite</code>) prompted this decision. Ratatoskr's message store is a narrower thing: it has no equivalent of OpenRig's owned work rows.</li>
+  <li><strong>Local checks, 2026-11-04:</strong> <code>claude --help</code>, <code>codex --help</code> and subcommand help; Go module proxy versions.</li>
+</ul>
+
+</main>
+</body>
+</html>
