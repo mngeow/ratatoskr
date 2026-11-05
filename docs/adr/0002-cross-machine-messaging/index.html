@@ -252,8 +252,8 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <h1>How agents on different machines should message each other</h1>
   <p class="prose">The options for connecting Claude Code on a Mac to Codex on a server, what each one costs, and the choices that only the user can make.</p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Proposed, awaiting decision.</b> The user is leaning towards a central gateway (<a href="#gateway">section 1a</a>), with gateway and runtime proposed as separate components (<a href="#separation">section 1b</a>). One requirement for a gateway is decided: it stores full message bodies. The overall design isn't selected, built or authorized for implementation.</dd></div>
-    <div><dt>Written</dt><dd>2026-11-05, by the architect, at the user's request.</dd></div>
+    <div><dt>Status</dt><dd><b>Proposed, with its direction selected.</b> The user chose a central gateway view, a tailnet with pairing, and immediate failure when a host is unreachable (<a href="#summary">section 1</a>). The full design isn't accepted, built or authorized for implementation.</dd></div>
+    <div><dt>Written</dt><dd>2026-11-05, by the architect, at the user's request. Updated the same day as the user made decisions.</dd></div>
     <div><dt>Source inspected</dt><dd>Commit <code>79ee72a</code>. Line numbers refer to that commit.</dd></div>
     <div><dt>Tests</dt><dd><b>Nothing here has been run.</b> No link, tailnet or SSH connection was tried (<a href="../../design/ground-rules.md">GR-3</a>).</dd></div>
   </dl>
@@ -268,35 +268,43 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 </p>
 <p class="prose small muted">The interactive parts of this page have been reviewed as source only and have never been opened in a browser. All the content is plain HTML, so with JavaScript off every panel and step is simply shown in full.</p>
 
-<h2 id="summary">1. Summary</h2>
+<h2 id="summary">1. Where this stands</h2>
 <div class="note">
-  <p><b>First preliminary recommendation, kept as history: option A.</b> It was made before the requirement in <a href="#gateway">section 1a</a> and still applies if a central view isn't needed. <span class="tag t-arch">PROPOSAL</span> One <code>rtk</code> on each host, each in that host's own terminal, connected directly over the existing tailnet. Ratatoskr adds its own pairing on top, retries through a short disconnect, and doesn't deliver to an agent started later.</p>
-  <p>This assumes one owner, two hosts, and that separate windows are acceptable. <a href="#questions">The three open questions</a> can each change it.</p>
+  <p><b>The selected direction:</b> agents message through a central gateway on your tailnet, and a send fails straight away if the other host can't be reached. Each machine's runtime still decides when a message is safe to paste. This is still a proposal: its details aren't accepted, and nothing is authorized to build.</p>
 </div>
+<div class="table-wrap"><table>
+  <tr><th>The user's decision, 2026-11-05</th><th>What it selects</th><th>What it doesn't mean</th></tr>
+  <tr><td><span class="tag t-user">USER</span> "Central view of all messages required, yes."</td><td>Every Ratatoskr-routed message goes through the gateway in a connected deployment, including messages between two agents on one host. No hidden local bypass.</td><td>Visibility into reasoning, file access, other tools or channels outside Ratatoskr.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Tailnet and pairing is enough."</td><td>The network and trust approach for this phase. Pairing binds a runtime's identity. Being on the tailnet doesn't by itself authorize anything.</td><td>A public gateway, multi-user enrolment, a custom PKI or a separate identity service. It also doesn't change any tailnet policy or promise isolation between processes on a machine.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "If other host is unreachable, fail immediately."</td><td>No waiting for reconnect, no retry window and no store-and-forward delivery. No queued message is kept for a later session.</td><td>That an online agent never waits. A busy, drafting or approval-blocked agent on a reachable host still uses its local hold.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Full message bodies please, I will work on optimising space storage later."</td><td>The gateway stores full bodies with routing and delivery details, for each request that reaches it.</td><td>A retention period or deletion policy. Those are undecided, and the hosts' local 30-day limit doesn't carry over.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "for this ADR, I think it is worthwhile to propose the runtime and gateway be different."</td><td>Gateway and runtime are proposed as separately deployable components.</td><td>A rule that they're always on separate machines or in separate OS processes.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands"</td><td>Ratatoskr ships one Go binary, <code>rtk</code>, with separate gateway and runtime startup commands. The two can run on different machines. The intended forms are <code>rtk gateway</code> and <code>rtk runtime</code>.</td><td>That these commands exist. Today's <code>rtk</code> has neither. Their flags and configuration aren't designed, and this doesn't authorize building them.</td></tr>
+</table></div>
 <div class="two">
-  <div class="card does"><h3>What it would give you</h3>
+  <div class="card does"><h3>What this gives you</h3>
     <ul>
-      <li>Claude on the Mac and Codex on the server message each other with the same tool they use today.</li>
-      <li>No always-on service to run.</li>
-      <li>If the link fails, both agents keep working and only messaging stops.</li>
-      <li>Each machine still decides for itself when a message is safe to paste.</li>
+      <li>One place to read every message that reached the gateway, including ones that failed.</li>
+      <li>A clear answer at send time in the common cases, so a model isn't left assuming a message will arrive.</li>
+      <li>No queued message landing later in a session that has moved on.</li>
+      <li>Less retry and reconnect code than the earlier design.</li>
     </ul>
   </div>
-  <div class="card doesnt"><h3>What it would cost you</h3>
+  <div class="card doesnt"><h3>What it costs you</h3>
     <ul>
-      <li>Two windows, with no combined view. A prompt on the server is only seen by looking at the server's window.</li>
-      <li>We'd own reconnect, retry, duplicate and ordering code, which needs failure testing that GR-3 currently blocks.</li>
-      <li>Pairing and key replacement become new setup steps.</li>
-      <li>Both <code>rtk</code>s must be running. A message can't wait for a host whose <code>rtk</code> is down.</li>
-      <li>Other owners or many hosts would need rework.</li>
+      <li><b>If the gateway is unreachable, no connected agent can message another,</b> even on the same machine, and those attempts stay out of the central view.</li>
+      <li><b>Closing your laptop makes replies to it fail.</b> Their text stays readable at the gateway, but they aren't delivered when you return.</li>
+      <li>A brief network drop shows up as a failed or uncertain message, and someone has to send again.</li>
+      <li>The gateway is a new, sensitive service to run. A compromised one can read stored messages and inject prompts into connected agents.</li>
     </ul>
   </div>
 </div>
+<p class="prose"><b>Still open:</b> see <a href="#questions">section 5</a>.</p>
 
-<h2 id="gateway">1a. Direction under discussion: a central gateway</h2>
+<h2 id="gateway">1a. The selected direction: a central gateway</h2>
 <div class="note">
   <p><span class="tag t-user">USER</span> On 2026-11-05 the user said: "I am thinking that it would make more sense to have a central gateway, claude and codex sessions talk to each other through that gateway. That way, the gateway sees all communication between sessions/agents."</p>
-  <p>This is a leaning, not a decision. It adds a requirement the comparison below didn't have: <b>one place that sees all Ratatoskr messages.</b> <span class="tag t-arch">PROPOSAL</span> If that requirement stands, the architect recommends a small form of option B: one owner, one self-hosted gateway and no broker. <a href="#separation">Section 1b</a> covers how it's deployed and packaged.</p>
+  <p>The user then confirmed the central view is required. <span class="tag t-arch">PROPOSAL</span> The shape proposed here is the small form of option B: one owner, one self-hosted gateway and no broker. <a href="#separation">Section 1b</a> covers how it's deployed and packaged.</p>
 </div>
 <div class="note">
   <p><b>Decided requirement.</b> <span class="tag t-user">USER</span> 2026-11-05: "Full message bodies please, I will work on optimising space storage later."</p>
@@ -320,8 +328,8 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <div role="tabpanel" id="gp1" aria-labelledby="g1">
     <h3>Visibility and authority</h3>
     <div class="two">
-      <div class="card does"><h3>Sees</h3><ul><li>Messages sent through <code>ratatoskr_send</code>, stored with full bodies <span class="tag t-user">USER</span></li><li>Sender, recipient, route and time</li><li>Delivery status reported by each host</li></ul></div>
-      <div class="card doesnt"><h3>Doesn't see</h3><ul><li>Model reasoning</li><li>Local tool calls, their output, and files</li><li>Terminal contents and approval prompts</li><li>Agents talking some other way, such as a shared file, a shell command or SSH</li><li>Hook data, which can carry your prompt <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/server/server.go#L41"><code>internal/server/server.go:41</code> <code>hook payload</code></a></li></ul></div>
+      <div class="card does"><h3>Sees</h3><ul><li>Messages sent through <code>ratatoskr_send</code>, stored with full bodies <span class="tag t-user">USER</span></li><li>Sender, recipient, route and time</li><li>Delivery status reported by each host, including failures recorded at the gateway</li></ul></div>
+      <div class="card doesnt"><h3>Doesn't see</h3><ul><li>Model reasoning</li><li>Local tool calls, their output, and files</li><li>Terminal contents and approval prompts</li><li>Agents talking some other way, such as a shared file, a shell command or SSH</li><li>A send that never reached it. That stays in the sending host's local record.</li><li>Hook data, which can carry your prompt <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/server/server.go#L41"><code>internal/server/server.go:41</code> <code>hook payload</code></a></li></ul></div>
     </div>
     <div class="table-wrap"><table>
       <tr><th>Level</th><th>What it means</th><th>Proposed</th></tr>
@@ -335,25 +343,23 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <h3>Gateway and host responsibilities</h3>
     <div class="table-wrap"><table>
       <tr><th></th><th>Gateway</th><th>Runtime on each host</th></tr>
-      <tr><th>Owns</th><td>Agent directory, routing, order per recipient, durable ledger, central view, enrolment and revocation</td><td>MCP endpoints, hooks, busy/approval/draft gate, the paste, local delivery history, the local outbox</td></tr>
+      <tr><th>Owns</th><td>Agent directory, routing, order per recipient, durable ledger, central view, pairing and revocation</td><td>MCP endpoints, hooks, busy/approval/draft gate, the paste, local delivery history, a local record of each send</td></tr>
       <tr><th>Never does</th><td>Paste, read hooks, decide an agent is ready, answer prompts, infer that a model acted</td><td>Decide routing, or accept a message from anywhere but the gateway</td></tr>
-      <tr><th>Its records</th><td>The authority on acceptance, order and route. A host's delivery report is stored as that host's report.</td><td>The authority on what it wrote to the PTY. Recorded before the write, so a re-offer after a crash can't paste twice.</td></tr>
-      <tr><th>Credential</th><td>Holds the enrolled host list</td><td>One gateway credential, held in <code>rtk</code> and never given to the harnesses. MCP tokens stay local.</td></tr>
+      <tr><th>Its records</th><td>The authority on acceptance, order and route. A host's delivery report is stored as that host's report.</td><td>The authority on what it wrote to the PTY. Recorded before the write, so the same ID can't be pasted twice after a crash.</td></tr>
+      <tr><th>Credential</th><td>Holds the paired runtime list</td><td>One gateway credential, held in <code>rtk</code> and never given to the harnesses. MCP tokens stay local.</td></tr>
     </table></div>
-    <p class="prose"><b>The database files aren't synced.</b> Hosts and the gateway exchange individual messages and events. Tailscale is an optional network here. Enrolment is still the identity.</p>
+    <p class="prose"><b>The database files aren't synced.</b> Hosts and the gateway exchange individual messages and events. For this phase the network is the tailnet, and pairing is what identifies a runtime.</p>
   </div>
   <div role="tabpanel" id="gp3" aria-labelledby="g3">
     <h3>Each confirmation means something different</h3>
-    <div class="flow"><span class="f">Sender host saves it</span><span class="f-a"></span><span class="f"><b>Gateway stored</b><br>in the ledger</span><span class="f-a"></span><span class="f"><b>Host stored</b><br>at the recipient</span><span class="f-a"></span><span class="f">Recipient's gate waits</span><span class="f-a"></span><span class="f"><b>Pasted</b></span><span class="f-a"></span><span class="f good"><b>Accepted</b><br>by the harness</span><span class="f-a"></span><span class="f bad">Model acted?<br>Never proven</span></div>
-    <p class="prose">After a reconnect, the gateway re-offers anything the host hasn't confirmed, and the host ignores IDs it already has. It's <b>not exactly-once.</b> A lost host database, or a model deciding to send again, can still produce a duplicate.</p>
-    <p class="prose"><b>What changes for hold-while-away:</b> the gateway can keep Codex's reply while the laptop sleeps. If Claude's session has ended by then, the reply needs a rule (see open questions).</p>
+    <div class="flow"><span class="f">Sender records the attempt</span><span class="f-a"></span><span class="f"><b>Gateway stored</b><br>in the ledger</span><span class="f-a"></span><span class="f"><b>Host stored</b><br>at the recipient</span><span class="f-a"></span><span class="f">Recipient's gate may hold it</span><span class="f-a"></span><span class="f"><b>Pasted</b></span><span class="f-a"></span><span class="f good"><b>Accepted</b><br>by the harness</span><span class="f-a"></span><span class="f bad">Model acted?<br>Never proven</span></div>
+    <p class="prose">It's <b>not exactly-once.</b> Nothing is retried automatically, and message IDs only stop the same network attempt being applied twice. They can't catch a model that decides to send again, because that's a new message with a new ID. <a href="#failures">Section 7</a> walks through each failure.</p>
   </div>
   <div role="tabpanel" id="gp4" aria-labelledby="g4">
     <h3>The gateway is unreachable</h3>
-    <div class="flow"><span class="f good">Agents keep working</span><span class="f-a"></span><span class="f">Sends wait in the host's outbox</span><span class="f-a"></span><span class="f good">Back in time: they continue</span></div>
-    <div class="flow"><span class="f">Sends wait</span><span class="f-a"></span><span class="f bad">Retry window ends: reported as unknown</span></div>
-    <p class="prose">Same-host messages in a connected run stop as well. <span class="tag t-arch">PROPOSAL</span> A run is either connected, with no fallback, or local, working as <code>rtk</code> does today. A hidden fallback would make "sees all" untrue.</p>
-    <p class="prose">If the gateway's disk is lost, its ledger is gone, but each host still has its own history, and the hosts' duplicate checks still prevent repeat pastes.</p>
+    <div class="flow"><span class="f good">Agents keep working</span><span class="f-a"></span><span class="f bad">Sends fail at once: <code>gateway_unreachable</code></span><span class="f-a"></span><span class="f">Recorded on the sending host only</span></div>
+    <p class="prose">This includes two agents on the same machine in a connected deployment. Using a local shortcut instead would make the central view incomplete, so there isn't one.</p>
+    <p class="prose">Nothing is resent when the gateway returns. If the gateway's disk is lost, its ledger is gone, but each host still has its own history.</p>
     <p class="prose">If the gateway shares a machine with an agent, an outage there takes both down together. On its own machine, its outages are independent of either agent, so it adds a failure the agents wouldn't otherwise have. <a href="#sep-costs">Section 1b</a> compares these.</p>
   </div>
   <div role="tabpanel" id="gp5" aria-labelledby="g5">
@@ -361,37 +367,30 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <ul class="prose">
       <li><b>Bigger target.</b> A compromised gateway can read all stored messages and inject prompts into every connected agent. It still can't answer prompts or bypass a host's gate.</li>
       <li><b>Plaintext on the gateway.</b> Reading messages there is the purpose, so end-to-end encryption would defeat it. Any secret an agent sends is stored centrally, which needs file permissions and backup rules. With full bodies and no deletion policy yet, the ledger keeps growing, and any secret stays in it until a policy or a person removes it.</li>
-      <li><b>Single point of failure,</b> and a service to update and monitor.</li>
-      <li><b>Largest code change.</b> <code>send</code> checks recipient, budget and <code>reply_to</code> against local state, and that has to split between host and gateway. Some refusals become later status updates. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/router/send.go#L75"><code>internal/router/send.go:75</code> <code>send</code></a></li>
+      <li><b>A single point of failure</b> for all connected messaging, and a service to update and monitor.</li>
+      <li><b>Largest code change.</b> <code>send</code> checks recipient, budget and <code>reply_to</code> against local state, and that has to split between host and gateway. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/router/send.go#L75"><code>internal/router/send.go:75</code> <code>send</code></a></li>
       <li><b>Same-host messages gain a dependency</b> on something that works locally today.</li>
       <li><b>One view of messages, not one terminal.</b> Prompts stay in each host's window. Streaming terminals through the gateway would give it your keystrokes, and the architect would keep that out.</li>
-      <li><b>Single owner only.</b> Per-user permissions and who can read what are a separate design.</li>
     </ul>
+    <p class="prose"><b>With immediate failure, the gateway's main benefit is the central view.</b> A gateway could also have held messages while a host was away, but that was not selected.</p>
   </div>
   <div role="tabpanel" id="gp6" aria-labelledby="g6">
     <h3>Unresolved</h3>
-    <div class="table-wrap"><table>
-      <tr><th>Question</th><th>Architect's suggestion, not decided</th></tr>
-      <tr><td>Must every message go through the gateway?</td><td>Yes in a connected run, with no fallback. Local runs stay as they are today.</td></tr>
-      <tr><td>How long does the gateway keep messages, and when are they deleted?</td><td><b>Deferred by the user.</b> No limit is proposed as selected, and neither automatic deletion nor keeping everything forever is authorized. Today's 30-day limit applies only to each host's local database and doesn't carry over to the gateway. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/app/app.go#L30"><code>internal/app/app.go:30</code> <code>retention</code></a></td></tr>
-      <tr><td>What happens to held messages if the recipient's session has ended?</td><td>They expire and the gateway reports <code>recipient_gone</code>. A new session would receive them without the conversation behind them.</td></tr>
-      <tr><td>Where does it run?</td><td>Any always-on machine. It needn't host a runtime. <a href="#deploy">Section 1b</a> lists the options. Whether the user's machines are always on hasn't been checked.</td></tr>
-      <tr><td>One window or one per host?</td><td>Still open from section 5. A gateway doesn't change this answer.</td></tr>
-    </table></div>
+    <p class="prose">The full list is in <a href="#questions">section 5</a>.</p>
   </div>
 </div>
 
 <h2 id="separation">1b. Proposed: gateway and runtime as separate components</h2>
 <div class="note">
   <p><span class="tag t-user">USER</span> 2026-11-05, after discussing Codex on a third Ubuntu server: "Ok in the case, for this ADR, I think it is worthwhile to propose the runtime and gateway be different."</p>
-  <p><b>What this sets:</b> the proposal treats them as distinct components that can be deployed independently, and the gateway needn't share a machine with any harness or runtime. <b>What it doesn't set:</b> authority to build, or a rule that they must always be separate binaries, repos, processes or machines.</p>
+  <p><b>What this sets:</b> the proposal treats them as distinct components that can be deployed independently, and the gateway needn't share a machine with any harness or runtime. <b>What it doesn't set:</b> authority to build, or a rule that they must always be separate processes or machines. The user later chose one binary with separate startup commands.</p>
 </div>
 
 <h3 id="roles">Who does what</h3>
 <div class="table-wrap"><table>
   <tr><th></th><th>Gateway</th><th>Runtime</th></tr>
-  <tr><th>Owns</th><td>Host enrolment and authentication, session directory, routing, the central ledger of full messages, delivery reports</td><td>Harness lifecycle, PTYs, MCP endpoint, hooks, busy/draft/permission gate, local inbox, outbox and duplicate check, the actual delivery</td></tr>
-  <tr><th>Credentials</th><td>Knows enrolled runtimes. Never holds harness logins or MCP tokens.</td><td>Holds its gateway credential, which is separate from each agent's local MCP token. Agents never get the gateway credential.</td></tr>
+  <tr><th>Owns</th><td>Runtime pairing and authentication, session directory, routing, the central ledger of full messages, delivery reports</td><td>Harness lifecycle, PTYs, MCP endpoint, hooks, busy/draft/permission gate, local inbox, send record and duplicate check, the actual delivery</td></tr>
+  <tr><th>Credentials</th><td>Knows paired runtimes. Never holds harness logins or MCP tokens.</td><td>Holds its gateway credential, which is separate from each agent's local MCP token. Agents never get the gateway credential.</td></tr>
   <tr><th>Can't</th><td>Write to a PTY, read hooks, decide an agent is ready, or approve a prompt</td><td>Claim to be another host, or route around the gateway in a connected run</td></tr>
   <tr><th>Stays local</th><td colspan="2">Hook payloads, MCP tokens, approval prompts and terminal contents never reach the gateway.</td></tr>
 </table></div>
@@ -399,17 +398,17 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 <h3 id="three">Scenario: Claude on a Mac, gateway on Ubuntu A, Codex on Ubuntu B</h3>
 <p class="prose"><b>None of this exists.</b> Each dashed box is one machine. Everything inside a box is local, and only the arrows between boxes cross the network. Step through to see which parts are involved.</p>
 <div class="topo five" id="tri-map">
-  <div class="host"><p class="host-l">Mac</p><div class="node claude" data-k="claude">Claude<small>local MCP token, local hooks</small></div><div class="node" data-k="rtm">Runtime<small>PTY, gate, inbox, outbox</small></div></div>
+  <div class="host"><p class="host-l">Mac</p><div class="node claude" data-k="claude">Claude<small>local MCP token, local hooks</small></div><div class="node" data-k="rtm">Runtime<small>PTY, gate, inbox, send record</small></div></div>
   <div class="mid"><div class="wire" data-k="m-up">to gateway</div><div class="wire rev" data-k="m-down">from gateway</div><p class="mid-l">Mac dials out</p></div>
   <div class="host hub"><p class="host-l">Ubuntu A</p><div class="node" data-k="gw">Gateway<small>directory, routing, ledger</small><small>no harness, no PTY</small></div></div>
   <div class="mid"><div class="wire" data-k="b-down">to Ubuntu B</div><div class="wire rev" data-k="b-up">to gateway</div><p class="mid-l">Ubuntu B dials out</p></div>
-  <div class="host"><p class="host-l">Ubuntu B</p><div class="node" data-k="rtb">Runtime<small>PTY, gate, inbox, outbox</small></div><div class="node codex" data-k="codex">Codex<small>local MCP token, local hooks</small></div></div>
+  <div class="host"><p class="host-l">Ubuntu B</p><div class="node" data-k="rtb">Runtime<small>PTY, gate, inbox, send record</small></div><div class="node codex" data-k="codex">Codex<small>local MCP token, local hooks</small></div></div>
 </div>
 <div data-stepper data-map="tri-map">
   <div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
   <ol class="steps">
-    <li data-lit="rtm,gw,rtb"><button class="step-h">Enrol each runtime, once</button><div class="step-d">
-      <p>You create a one-time code on the gateway and use it on each machine. The gateway records <code>mac</code> and <code>ubuntu-b</code> as hosts, and each runtime keeps its credential outside the repo. Ubuntu A needs no harness, and neither harness needs a login there.</p>
+    <li data-lit="rtm,gw,rtb"><button class="step-h">Pair each runtime, once</button><div class="step-d">
+      <p>All three machines are on your tailnet. You start <code>rtk gateway</code> on Ubuntu A and <code>rtk runtime</code> on the other two, using the same binary. These are intended command forms and don't exist yet. You create a one-time code on the gateway and use it on each machine. The gateway records <code>mac</code> and <code>ubuntu-b</code>, and each runtime keeps its credential outside the repo. Ubuntu A needs no harness, and neither harness needs a login there.</p>
     </div></li>
     <li data-lit="claude,rtm,rtb,codex"><button class="step-h">Each runtime starts its own agent</button><div class="step-d">
       <p>The runtime launches the harness in a PTY it owns, with a local MCP token and hooks.</p>
@@ -417,42 +416,42 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     </div></li>
     <li data-lit="rtm,m-up,gw,b-up,rtb"><button class="step-h">Runtimes dial the gateway and register sessions</button><div class="step-d">
       <p class="st">Directory: <b>claude@mac</b> · <b>codex@ubuntu-b</b></p>
-      <p>Each runtime opens a long-lived connection <b>outward</b>. The gateway never dials a runtime, and runtimes need no listening port. The gateway takes the host name from the credential, so <code>ubuntu-b</code> can't register as <code>mac</code>. It gives each session its own ID, so a later restart counts as a new session under the same name.</p>
+      <p>Each runtime opens a long-lived connection <b>outward</b> across the tailnet. The gateway never dials a runtime, and runtimes need no listening port. The gateway takes the host name from the pairing, so <code>ubuntu-b</code> can't register as <code>mac</code>. It gives each session its own ID, so a later restart counts as a new session under the same name.</p>
     </div></li>
     <li data-lit="claude,rtm"><button class="step-h">Claude calls the tool: this part is all local</button><div class="step-d">
-      <p class="st">Mac: <b>outbound</b> · Gateway: <b>no row</b> · Ubuntu B: <b>no row</b></p>
-      <p>Claude calls <code>ratatoskr_send</code> with <code>to: codex@ubuntu-b</code>. It's authenticated by Claude's local token, and that token never leaves the Mac. The runtime saves the message before sending it on.</p>
+      <p class="st">Mac: <b>sending</b> · Gateway: <b>no row</b> · Ubuntu B: <b>no row</b></p>
+      <p>Claude calls <code>ratatoskr_send</code> with <code>to: codex@ubuntu-b</code>. It's authenticated by Claude's local token, and that token never leaves the Mac. The runtime records the attempt, then forwards it. The tool call waits for a short, bounded time for the result. That's a change from today, when it returns as soon as the message is accepted locally.</p>
     </div></li>
-    <li data-lit="rtm,m-up,gw,m-down"><button class="step-h">The gateway stores it in the ledger</button><div class="step-d">
-      <p class="st">Mac: <b>gateway_stored</b> · Gateway: <b>full message stored</b> · Ubuntu B: <b>no row</b></p>
-      <p>The Mac sends over its runtime connection, and the gateway stores the full body with its routing details, then confirms. A retry with the same ID is confirmed again and isn't stored twice.</p>
+    <li data-lit="rtm,m-up,gw"><button class="step-h">The gateway stores it and checks the destination</button><div class="step-d">
+      <p class="st">Mac: <b>sending</b> · Gateway: <b>gateway_stored</b> · Ubuntu B: <b>no row</b></p>
+      <p>The gateway stores the full body with its routing details, then looks up the session. If the host isn't connected, or the session has ended, the send fails here, and the failure stays in the ledger. <a href="#failures">Section 7</a> shows those cases.</p>
     </div></li>
-    <li data-lit="gw,b-down,rtb,b-up"><button class="step-h">The gateway offers it to Ubuntu B</button><div class="step-d">
-      <p class="st">Mac: <b>gateway_stored</b> · Gateway: <b>host_stored</b> · Ubuntu B: <b>queued</b></p>
-      <p>It uses the connection Ubuntu B already opened. The gateway can only offer the message. It has no way to write to Codex's terminal. Ubuntu B saves it, ignoring any ID it already has, then confirms.</p>
+    <li data-lit="gw,b-down,rtb,b-up,m-down,rtm,claude"><button class="step-h">Ubuntu B saves it, and Claude gets its answer</button><div class="step-d">
+      <p class="st">Mac: <b>host_stored</b> · Gateway: <b>host_stored</b> · Ubuntu B: <b>queued</b></p>
+      <p>The gateway offers it once, over the connection Ubuntu B already opened. It has no way to write to Codex's terminal. Ubuntu B saves the message, ignoring any ID it already has, and confirms. Only now does the tool call return success, meaning "the recipient's host has it", not "delivered".</p>
     </div></li>
     <li data-lit="rtb,codex,b-up,gw,m-down,rtm"><button class="step-h">Ubuntu B's gate delivers, and reports back</button><div class="step-d">
       <p class="st">Ubuntu B: <b>held, pasted, accepted</b> · Gateway and Mac: <b>accepted (reported)</b></p>
-      <p>Codex's own hooks decide when it's safe. The gateway and the Mac record each state as Ubuntu B's report. Hook payloads stay on Ubuntu B. <code>accepted</code> still doesn't mean the model acted.</p>
+      <p>Codex's own hooks decide when it's safe. <b>Holding here isn't an offline queue.</b> The host is reachable, and the agent is busy, waiting on approval or has your draft in progress. The gateway and the Mac record each state as Ubuntu B's report. Hook payloads stay on Ubuntu B. <code>accepted</code> still doesn't mean the model acted.</p>
     </div></li>
     <li data-lit="codex,rtb"><button class="step-h">Codex asks for approval: this stays on Ubuntu B</button><div class="step-d">
       <p class="st">Ubuntu B agent: <b>needs_you</b></p>
       <p>You answer in Ubuntu B's window. The gateway could show a status, but nothing it sends can answer the prompt. Whether it shows that status is still open, and so is one window versus one per host.</p>
     </div></li>
     <li data-lit="codex,rtb,b-up,gw,m-down,rtm,claude"><button class="step-h">Codex replies, the same way in reverse</button><div class="step-d">
-      <p class="st">Ubuntu B: <b>gateway_stored</b> · Gateway: <b>stored</b> · Mac: <b>held, pasted, accepted</b></p>
+      <p class="st">Ubuntu B: <b>host_stored</b> · Gateway: <b>host_stored</b> · Mac: <b>held, pasted, accepted</b></p>
       <p>Codex sends to <code>claude@mac</code> with a <code>reply_to</code>. Ubuntu B and the Mac never connect directly. They don't even need to reach each other.</p>
     </div></li>
-    <li data-lit="m-down,gw,rtm"><button class="step-h">If the Mac sleeps during that reply</button><div class="step-d">
-      <p class="st">Gateway: <b>stored, waiting</b> · Mac session: <b>disconnected</b></p>
-      <p>The gateway keeps the reply. When the Mac wakes, its runtime dials again, resumes the same session, and gets anything it hasn't confirmed. Duplicates are ignored.</p>
-      <p><b>The hard case:</b> a disconnected session looks the same as a dead one until the runtime returns. If it comes back as a new run, the old session has ended, and what happens to the held reply is still undecided. <span class="tag t-unv">UNVERIFIED</span> Sleep behaviour hasn't been tested.</p>
+    <li data-lit="codex,rtb,b-up,gw"><button class="step-h">If the Mac is asleep when Codex replies</button><div class="step-d">
+      <p class="st">Ubuntu B: <b>destination_unreachable</b> · Gateway: <b>destination_unreachable</b>, body kept · Mac: <b>no row</b></p>
+      <p>The gateway records the reply and tells Codex straight away that it failed. <b>It isn't delivered when the Mac wakes.</b> The Mac's runtime reconnects for future messages. You can read the reply at the gateway, or Codex can send it again.</p>
+      <p><b>Unavoidable ambiguity:</b> just after the Mac sleeps, its connection can still look alive. The offer then gets no confirmation, and the result is <code>delivery_uncertain</code>, not a clean failure. <span class="tag t-unv">UNVERIFIED</span> Sleep behaviour hasn't been tested.</p>
     </div></li>
   </ol>
 </div>
 
-<h3 id="deploy">Deployment and packaging options</h3>
-<p class="prose">These are proposals, and they're separate choices: <b>where components run</b> doesn't dictate <b>how they're packaged</b>.</p>
+<h3 id="deploy">Deployment options and packaging</h3>
+<p class="prose">These are separate choices. <b>Where components run</b> is still proposed. <b>How they're packaged</b> is decided: one binary.</p>
 <div data-tabs>
   <div role="tablist" aria-label="Deployment and packaging">
     <button role="tab" id="d1" aria-controls="dp1">Three machines</button>
@@ -473,28 +472,34 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <p class="prose">Two choices. <b>Local mode:</b> no gateway, working as <code>rtk</code> does today. <b>Connected mode with a gateway on the same machine:</b> gives the central view, with the same contract as the other deployments. Connected versus local mode remains an open choice.</p>
   </div>
   <div role="tabpanel" id="dp4" aria-labelledby="d4">
-    <h3>How to package it</h3>
+    <h3>One binary, with separate startup commands <span class="tag t-user">SELECTED</span></h3>
+    <p class="prose"><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands". Install the same <code>rtk</code> on each machine, and the command decides its role:</p>
+    <pre>rtk gateway    # intended form: directory, routing, ledger
+rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
+    <p class="prose"><b>Neither command exists today.</b> <span class="tag t-code">CODE</span> Today's <code>rtk</code> only starts the two-agent TUI, or prints its version or help. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a> <a class="src" href="../../../cmd/rtk/main.go#L43"><code>cmd/rtk/main.go:43</code> <code>app.Run</code></a></p>
+    <p class="prose"><b>Drawbacks:</b> a gateway-only machine carries TUI and harness code it never runs. One binary reduces version mixes but doesn't remove them, because machines can still be upgraded at different times, so the version check stays necessary.</p>
+    <p class="prose"><b>The comparison, kept as history:</b></p>
     <div class="table-wrap"><table>
       <tr><th>Packaging</th><th>Benefit</th><th>Drawback</th></tr>
-      <tr><td><b>One binary, with a subcommand such as <code>rtk gateway</code></b><br><span class="tag t-arch">SUGGESTED FIRST</span></td><td>One thing to build and install, and fewer version mixes</td><td>A gateway-only machine carries TUI and harness code it never runs</td></tr>
+      <tr><td><b>One binary, with a subcommand such as <code>rtk gateway</code></b><br><span class="tag t-user">SELECTED</span></td><td>One thing to build and install, and fewer version mixes</td><td>A gateway-only machine carries TUI and harness code it never runs</td></tr>
       <tr><td><b>Two binaries from one Go module</b></td><td>Smaller gateway install, and a clearer boundary</td><td>Two release artifacts; more chance of mismatched versions</td></tr>
       <tr><td><b>Separate repositories</b></td><td>Fully independent release schedules</td><td>Not worth it for one owner: the protocol would change across repos</td></tr>
     </table></div>
-    <p class="prose">Whichever is chosen, <span class="tag t-arch">PROPOSAL</span> gateway code shouldn't import the pane, TUI or harness packages. That boundary is what makes a later split possible.</p>
+    <p class="prose"><span class="tag t-arch">PROPOSAL</span> Gateway code shouldn't import the pane, TUI or harness packages. That keeps the two components independent inside one binary, and it makes a later split possible.</p>
   </div>
 </div>
 
 <h3 id="sep-costs">What separation costs and gains</h3>
 <div class="table-wrap"><table>
   <tr><th>Concern</th><th>Cost</th><th>Gain</th></tr>
-  <tr><th>Availability</th><td>A live exchange needs the sender, the gateway and the recipient. A dedicated gateway adds an outage unrelated to either agent.</td><td>Sender and recipient needn't be online together. Restarting the gateway doesn't stop agents, which just reconnect.</td></tr>
+  <tr><th>Availability</th><td>Every send needs the sender, the gateway and the recipient's host all up at that moment, because nothing is held for later. A dedicated gateway adds an outage unrelated to either agent.</td><td>Restarting the gateway doesn't stop agents, which just reconnect. Sends during the restart fail.</td></tr>
   <tr><th>Privacy</th><td>Another machine holds every body in plaintext, with its own admins and backups. A message can exist on three machines.</td><td>The ledger can sit apart from agents that run tools. The gateway holds no harness logins.</td></tr>
   <tr><th>Storage</th><td>The gateway's disk grows with full bodies. Retention is undecided, so the gateway can outlive the hosts' 30-day local history.</td><td>Storage planning affects only one machine. Storage optimization is deferred, as decided.</td></tr>
   <tr><th>Upgrades and versions</th><td>Gateway and runtimes will sometimes run different versions, so they need a version check and a defined overlap. Upgrading a runtime ends its agents today, because they live in its process.</td><td>A gateway can be upgraded on its own.</td></tr>
   <tr><th>Protocol maintenance</th><td>The runtime-to-gateway link becomes a contract to version, document and test against older versions. It's a permanent cost.</td><td>A clear contract, which later permits other runtimes or deployments.</td></tr>
-  <tr><th>Setup</th><td>Enrolment, hostnames and network access on every machine. Tailscale is one option, but it isn't required by this design.</td><td>Runtimes only dial out, so they need no inbound ports. Only the gateway listens.</td></tr>
+  <tr><th>Setup</th><td>Pairing, hostnames and tailnet access on every machine.</td><td>Runtimes only dial out, so they need no inbound ports. Only the gateway listens, and only on the tailnet.</td></tr>
 </table></div>
-<p class="prose"><b>Decided:</b> the gateway stores full bodies, and storage optimization is deferred. <b>Still open:</b> gateway retention and deletion, where the gateway runs, connected versus local mode, what happens when a session has ended, packaging, and one window versus one per host. A gateway gives one view of messages, not one terminal.</p>
+<p class="prose">One window versus one per host is still separate. A gateway gives one view of messages, not one terminal.</p>
 
 <h2 id="context">2. What is already true</h2>
 <div class="table-wrap"><table>
@@ -504,7 +509,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <tr><td>Each host has one database, and they aren't synced. Prompts stay on the machine running the agent.</td><td>Every option must keep message history per host and leave approvals local, unless the user decides otherwise.</td><td>Design section 9, decision 3 and section 14</td></tr>
   <tr><td>The server listens only on loopback, and also receives hook events on that same port.</td><td>It can't be exposed as it is. A remote peer could forge an agent's readiness.</td><td><span class="tag t-code">CODE</span> <a class="src" href="../../../internal/server/server.go#L46"><code>internal/server/server.go:46</code> <code>loopbackAddr</code></a> <a class="src" href="../../../internal/server/server.go#L193"><code>:193</code> <code>routes</code></a></td></tr>
   <tr><td>A paste writes to a local PTY.</td><td>Only a process on the same host can type into an agent. Each host needs its own Ratatoskr process.</td><td><span class="tag t-code">CODE</span> <a class="src" href="../../../internal/pane/pane.go#L402"><code>internal/pane/pane.go:402</code> <code>Paste</code></a></td></tr>
-  <tr><td>After a crash or quit, unfinished messages become interrupted and nothing is resent.</td><td>A pasted message mustn't be retried automatically. Link retries have to stop before the paste.</td><td><span class="tag t-code">CODE</span> <a class="src" href="../../../internal/store/recover.go#L25"><code>internal/store/recover.go:25</code> <code>never resends</code></a></td></tr>
+  <tr><td>After a crash or quit, unfinished messages become interrupted and nothing is resent.</td><td>A pasted message mustn't be sent again automatically.</td><td><span class="tag t-code">CODE</span> <a class="src" href="../../../internal/store/recover.go#L25"><code>internal/store/recover.go:25</code> <code>never resends</code></a></td></tr>
 </table></div>
 
 <h2 id="separate">3. Message delivery and terminal hosting are separate problems</h2>
@@ -547,6 +552,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 </div>
 
 <h2 id="options">4. The options</h2>
+<p class="prose"><b>History.</b> This comparison came before the user's decisions, so where it mentions retries or holding messages, those aren't the selected behaviour. B's routing role is the direction selected. The first preliminary recommendation was A, and it would still be the smallest choice if a central view weren't needed.</p>
 <p class="prose">SSH and Tailscale are transports, not delivery designs. A could run through an SSH tunnel, and B could run over a tailnet. The real difference is <b>who routes messages</b>.</p>
 <div data-tabs>
   <div role="tablist" aria-label="Architecture options">
@@ -555,7 +561,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <button role="tab" id="oc" aria-controls="opc">C. SSH companion</button>
   </div>
   <div role="tabpanel" id="opa" aria-labelledby="oa">
-    <h3>A. Each host runs rtk, and the two talk directly <span class="tag t-arch">RECOMMENDED IF NO CENTRAL VIEW IS NEEDED</span></h3>
+    <h3>A. Each host runs rtk, and the two talk directly <span class="tag t-arch">NOT SELECTED: NO CENTRAL VIEW</span></h3>
     <div class="topo">
       <div class="host"><p class="host-l">Mac</p><div class="node claude">Claude</div><div class="node">rtk<small>gate, outbox, database</small></div></div>
       <div class="mid"><div class="wire">message</div><div class="wire rev">confirm + status</div><p class="mid-l">tailnet, either side can start</p></div>
@@ -572,7 +578,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     </ul>
   </div>
   <div role="tabpanel" id="opb" aria-labelledby="ob">
-    <h3>B. Each host connects to a central router <span class="tag t-user">USER LEANING</span></h3>
+    <h3>B. Each host connects to a central router <span class="tag t-user">SELECTED DIRECTION</span></h3>
     <p class="prose">Section 1a describes this option in more detail, as a gateway.</p>
     <div class="topo three">
       <div class="host"><p class="host-l">Mac</p><div class="node claude">Claude</div><div class="node">rtk<small>gate stays here</small></div></div>
@@ -592,7 +598,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <p class="prose"><b>A broker such as NATS</b> is a form of B. <span class="tag t-doc">DOCS</span> JetStream describes at-least-once delivery and a two-minute default duplicate window, with a retry after that window stored as a second copy. It could replace our transport retries. It can't replace the recipient's gate or its report of what happened, and it's one more service. I wouldn't add it for two hosts.</p>
   </div>
   <div role="tabpanel" id="opc" aria-labelledby="oc">
-    <h3>C. The local rtk starts a remote companion over SSH</h3>
+    <h3>C. The local rtk starts a remote companion over SSH <span class="tag t-arch">NOT SELECTED</span></h3>
     <div class="topo">
       <div class="host"><p class="host-l">Mac: main rtk</p><div class="node claude">Claude</div><div class="node">rtk<small>starts and supervises</small></div></div>
       <div class="mid"><div class="wire">one SSH connection</div><p class="mid-l">only the Mac can start it</p></div>
@@ -633,32 +639,46 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <tr><th>Code changed</th><td>Medium</td><td>Largest</td><td>Medium for messages; large with streaming</td></tr>
 </table></div>
 
-<h2 id="questions">5. Unresolved: the questions that select the design</h2>
-<p class="prose"><b>None of these has been answered.</b> Choose answers below to see where each combination leads. This only shows the reasoning, and it records nothing.</p>
+<h2 id="questions">5. Decisions and what's still open</h2>
+<p class="prose">Packaging is also decided: <a href="#deploy">one binary</a>. The first three questions below are <b>answered</b>, and the chooser starts on those answers. Change them only to see what a different choice would have meant. It records nothing.</p>
 <div class="card" id="chooser">
   <div class="gate-form js-only">
-    <label>Central view of all messages <select id="q4"><option value="">Not answered</option><option value="yes">Needed</option><option value="no">Not needed</option></select></label>
-    <label>Windows <select id="q1"><option value="">Not answered</option><option value="sep">A terminal per host</option><option value="one">One rtk window on the Mac</option></select></label>
-    <label>Owners <select id="q2"><option value="">Not answered</option><option value="mine">Only my devices</option><option value="others">Other people's agents too</option></select></label>
-    <label>When the host is unreachable <select id="q3"><option value="">Not answered</option><option value="fail">Fail immediately</option><option value="short">Retry briefly, then report</option><option value="hold">Hold for hours</option></select></label>
+    <label>Central view of all messages <select id="q4"><option value="yes" selected>Needed (selected)</option><option value="no">Not needed</option></select></label>
+    <label>Network and trust <select id="q2"><option value="mine" selected>Tailnet and pairing (selected)</option><option value="others">Other people's agents too</option></select></label>
+    <label>When the other host is unreachable <select id="q3"><option value="fail" selected>Fail immediately (selected)</option><option value="short">Retry briefly, then report</option><option value="hold">Hold for hours</option></select></label>
+    <label>Windows <select id="q1"><option value="" selected>Not answered</option><option value="sep">A terminal per host</option><option value="one">One rtk window on the Mac</option></select></label>
   </div>
-  <output class="gate-out js-only" id="q-out" for="q4 q1 q2 q3"><b>Not answered.</b> The recommendation stays preliminary.</output>
+  <output class="gate-out js-only" id="q-out" for="q4 q2 q3 q1"><b>A central gateway on the tailnet, with pairing.</b> Sends fail immediately. Windows are still open.</output>
   <div class="table-wrap"><table>
-    <tr><th>Question</th><th>If you answer</th><th>It points to</th></tr>
-    <tr><td rowspan="2"><b>Central view of all messages?</b> Added 2026-11-05.</td><td>Needed</td><td>A gateway, section 1a. The user is leaning this way.</td></tr>
-    <tr><td>Not needed</td><td>The other answers decide. A remains the smallest.</td></tr>
-    <tr><td rowspan="2"><b>1. One window or one per host?</b></td><td>A terminal per host is fine</td><td>A, with native terminals. Smallest, and the link carries only messages.</td></tr>
-    <tr><td>Both agents in one <code>rtk</code> window</td><td>C-style companion plus PTY streaming. A much larger and riskier build, because the link carries keystrokes.</td></tr>
-    <tr><td rowspan="2"><b>2. Whose machines?</b></td><td>Only my devices</td><td>A tailnet and pairing are enough.</td></tr>
-    <tr><td>Other people's agents too</td><td>B, or at least per-person identity and revocation. A shared tailnet alone wouldn't cover it.</td></tr>
-    <tr><td rowspan="3"><b>3. What if the other host is unreachable?</b></td><td>Fail immediately</td><td>Simplest: no retries. A brief network drop shows up as a failed message.</td></tr>
-    <tr><td>Retry briefly, then report</td><td>A with a short-lived outbox. Suggested, and the window's length is still to be chosen.</td></tr>
-    <tr><td>Hold for hours</td><td>Needs stable agent identity or an accepted loss of context, because the agent that receives it may be a new session. Strengthens the case for B, because in A nothing moves while the sender is off.</td></tr>
+    <tr><th>Question</th><th>Answer</th><th>What follows</th></tr>
+    <tr><td><b>Central view of all messages?</b></td><td><span class="tag t-user">SELECTED</span> Needed</td><td>A central gateway, including for same-host messages in a connected deployment.</td></tr>
+    <tr><td><b>Whose machines, and what's the trust model?</b></td><td><span class="tag t-user">SELECTED</span> Tailnet and pairing</td><td>No public gateway, multi-user enrolment, custom PKI or identity service in this phase.</td></tr>
+    <tr><td><b>What if the other host is unreachable?</b></td><td><span class="tag t-user">SELECTED</span> Fail immediately</td><td>No retry window or later delivery. <a href="#failures">Section 7</a> defines the results.</td></tr>
+    <tr><td rowspan="2"><b>One window or one per host?</b></td><td>A terminal per host</td><td><b>Open.</b> Smallest, and the link carries only messages.</td></tr>
+    <tr><td>Both agents in one <code>rtk</code> window</td><td><b>Open.</b> Needs PTY streaming, a much larger and riskier build, because the link carries keystrokes.</td></tr>
   </table></div>
 </div>
-<p class="prose small">Also open: how long the retry window is; whether prompts on the server should show a notice on the Mac; whether to add a daemon split; and what the tailnet's policy currently allows.</p>
+<h3 id="open">Still open</h3>
+<div class="table-wrap"><table>
+  <tr><th>Question</th><th>Architect's suggestion, not decided</th></tr>
+  <tr><td>Selecting the full design</td><td>This record stays Proposed until the user accepts it.</td></tr>
+  <tr><td>One window or one per host</td><td>One per host first.</td></tr>
+  <tr><td>What plain <code>rtk</code> does once <code>rtk runtime</code> exists, and how connected and local modes are chosen</td><td>Plain <code>rtk</code> stays the local two-agent mode, outside the central view. <code>rtk runtime</code> is always connected. Nothing is ever mixed within a run.</td></tr>
+  <tr><td>How long the gateway keeps messages, and when they're deleted</td><td><b>Deferred by the user.</b> Neither automatic deletion nor keeping everything forever is authorized. Today's 30-day limit applies only to each host's local database. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/app/app.go#L30"><code>internal/app/app.go:30</code> <code>retention</code></a></td></tr>
+  <tr><td>Where the gateway runs</td><td>Any always-on machine on the tailnet. It needn't host a runtime. Whether the user's machines are always on hasn't been checked.</td></tr>
+  <tr><td>Flags and configuration for <code>rtk gateway</code> and <code>rtk runtime</code></td><td>Not designed yet. This includes how a runtime names its gateway and chooses which agents to start.</td></tr>
+  <tr><td>Whether attempts that never reached the gateway are uploaded later, as records only</td><td>Not at first. See "Gateway unreachable" in <a href="#failures">section 7</a>.</td></tr>
+  <tr><td>Whether the gateway shows that an agent needs approval</td><td>A status only, if wanted. It can't answer the prompt.</td></tr>
+  <tr><td>How long a send waits for its result, and how quickly a dead connection is noticed</td><td>Short and fixed. The values need real measurements, which GR-3 currently blocks.</td></tr>
+  <tr><td>How a sending model learns of failures after its tool call returned</td><td>Show them in the central view and the TUI first.</td></tr>
+  <tr><td>Whether the loop budget moves to the gateway</td><td>Possibly later. See <a href="#changes">section 9</a>.</td></tr>
+</table></div>
+<p class="prose small"><span class="tag t-unv">UNVERIFIED</span> The team still hasn't read the tailnet's policy or confirmed that the machines can reach each other. Selecting "tailnet and pairing" doesn't change that policy.</p>
 
-<h2 id="roundtrip">6. Data flow: Claude on the Mac, to Codex on the server, and back</h2>
+<h2 id="roundtrip">6. History: option A walkthrough, not selected</h2>
+<p class="prose">This shows the earlier peer-to-peer design with retries. It's kept for comparison and <b>doesn't describe the selected direction.</b> The current walkthrough is in <a href="#three">section 1b</a>.</p>
+<details>
+<summary>Show the option A walkthrough</summary>
 <p class="prose">This walks through option A as proposed. <b>None of this exists.</b> The existing parts are the local MCP call, the gate and the paste, described in <a href="../0001-mcp-agent-messaging/index.html">ADR-0001</a>. The state names <code>outbound</code>, <code>peer_stored</code> and <code>link_unknown</code> are new proposals.</p>
 <div class="topo" id="rt-map">
   <div class="host"><p class="host-l">Mac: your terminal</p><div class="node claude" data-k="claude">Claude</div><div class="node" data-k="mac">rtk on the Mac<small>router, outbox, gate, database</small></div></div>
@@ -710,51 +730,75 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   </ol>
 </div>
 
-<h2 id="failures">7. Scenarios: offline, reconnect and ambiguous delivery</h2>
-<p class="prose"><b>What it promises:</b> the sender retries until the recipient confirms it saved the message, and the recipient ignores repeats of an ID it has. So a paste is attempted at most once per ID, as long as the recipient's database survives. <b>That isn't exactly-once.</b> A message can still be lost, or end <code>unconfirmed</code> or <code>interrupted</code>. All of this assumes the "retry briefly" answer to question 3.</p>
+</details>
+
+<h2 id="failures">7. Scenarios: what happens when something can't be reached</h2>
+<p class="prose"><b>The rule:</b> nothing is retried automatically, and nothing is held for a host that's away. <b>Certain failures say so, and uncertain ones say that instead,</b> because after a timeout nobody can honestly say a message didn't arrive. All of this is proposed and untested. The status names are proposals.</p>
+<div class="table-wrap"><table>
+  <tr><th>Status</th><th>What it means</th><th>Could it still be delivered?</th><th>In the central view?</th></tr>
+  <tr><td><code>gateway_unreachable</code></td><td>The runtime had no connection to the gateway, so it sent nothing</td><td>No</td><td>No, sending host only</td></tr>
+  <tr><td><code>gateway_uncertain</code></td><td>The runtime sent it, and the gateway didn't answer in time</td><td><b>Yes</b></td><td>Possibly</td></tr>
+  <tr><td><code>destination_unreachable</code></td><td>The gateway has it, and the destination host had no live connection. It was never offered</td><td>No</td><td>Yes, as a failure with its full body</td></tr>
+  <tr><td><code>session_gone</code></td><td>The destination host is connected, but that session has ended. It isn't given to a new session</td><td>No</td><td>Yes, as a failure with its full body</td></tr>
+  <tr><td><code>delivery_uncertain</code></td><td>The gateway offered it, and the host didn't confirm in time</td><td><b>Yes</b></td><td>Yes. A late report can correct it</td></tr>
+  <tr><td><code>host_stored</code>, then <code>held</code></td><td>The host has it, and its gate is waiting for a safe moment. <b>Not a failure</b></td><td>Yes, that's the normal path</td><td>Yes</td></tr>
+</table></div>
+<p class="prose small">After that, today's states still apply: <code>pasted</code>, <code>accepted</code>, <code>unconfirmed</code>, <code>failed</code> and <code>interrupted</code>.</p>
 <div data-tabs>
   <div role="tablist" aria-label="Failure scenarios">
-    <button role="tab" id="f1" aria-controls="fp1">Link down</button>
-    <button role="tab" id="f2" aria-controls="fp2">Confirmation lost</button>
-    <button role="tab" id="f3" aria-controls="fp3">Cut off after paste</button>
-    <button role="tab" id="f4" aria-controls="fp4">Server rtk crashes</button>
-    <button role="tab" id="f5" aria-controls="fp5">Laptop closed</button>
-    <button role="tab" id="f6" aria-controls="fp6">SSH drops</button>
+    <button role="tab" id="f1" aria-controls="fp1">Gateway unreachable</button>
+    <button role="tab" id="f2" aria-controls="fp2">Gateway silent</button>
+    <button role="tab" id="f3" aria-controls="fp3">Host away</button>
+    <button role="tab" id="f4" aria-controls="fp4">Session gone</button>
+    <button role="tab" id="f5" aria-controls="fp5">Agent busy</button>
+    <button role="tab" id="f6" aria-controls="fp6">No confirmation</button>
+    <button role="tab" id="f7" aria-controls="fp7">Link lost while held</button>
+    <button role="tab" id="f8" aria-controls="fp8">Crash during paste</button>
   </div>
   <div role="tabpanel" id="fp1" aria-labelledby="f1">
-    <h3>The link is down when Claude sends</h3>
-    <div class="flow"><span class="f">Saved: <code>outbound</code></span><span class="f-a"></span><span class="f">Retries</span><span class="f-a"></span><span class="f good">Back in time: delivered late</span></div>
-    <div class="flow"><span class="f">Retries</span><span class="f-a"></span><span class="f bad">Window ends: <code>link_unknown</code></span></div>
-    <p class="prose">Claude already has an ID, so it doesn't learn of the failure from that call. <b>Drawback:</b> you'd see the state in the TUI, but today nothing tells the sending model about a later failure. That needs a decision.</p>
-    <p class="prose">The state is <code>link_unknown</code>, not <code>failed</code>, because the sender can't always tell that the message didn't arrive.</p>
+    <h3>The gateway is unreachable when Claude sends</h3>
+    <div class="flow"><span class="f">No gateway connection</span><span class="f-a"></span><span class="f bad">Tool returns <code>gateway_unreachable</code></span><span class="f-a"></span><span class="f">Local record only</span></div>
+    <p class="prose">This also applies between two agents on one machine.</p>
+    <p class="prose"><b>Where two decisions meet:</b> a message that never reached the gateway can't be in its view. So the central view covers every message that reached the gateway, not every attempt. These attempts are local records, and they're never delivered. Uploading them later as records only is an open choice.</p>
   </div>
   <div role="tabpanel" id="fp2" aria-labelledby="f2">
-    <h3>The server saves it, but the confirmation is lost</h3>
-    <div class="flow"><span class="f">Server saves ID 7</span><span class="f-a"></span><span class="f bad">Confirmation lost</span><span class="f-a"></span><span class="f">Mac resends ID 7</span><span class="f-a"></span><span class="f good">Server: already have it. Confirms. No second paste</span></div>
-    <p class="prose">This is the case the ID exists for. <b>Limit:</b> if the server's database is deleted between the two sends, the repeat looks new and could be pasted twice.</p>
+    <h3>The gateway doesn't answer in time</h3>
+    <div class="flow"><span class="f">Sent to the gateway</span><span class="f-a"></span><span class="f bad">No answer</span><span class="f-a"></span><span class="f">Tool returns <code>gateway_uncertain</code></span></div>
+    <p class="prose">The gateway may have stored it and may still deliver it, so the result can't say "failed". The runtime doesn't resend it. When it reconnects it can ask about that ID and correct its record.</p>
   </div>
   <div role="tabpanel" id="fp3" aria-labelledby="f3">
-    <h3>The server pastes, then the network drops</h3>
-    <div class="flow"><span class="f">Server: <code>pasted</code></span><span class="f-a"></span><span class="f bad">Status can't reach the Mac</span><span class="f-a"></span><span class="f">Mac still shows <code>peer_stored</code></span><span class="f-a"></span><span class="f good">Reconnect: latest state resent</span></div>
-    <p class="prose"><b>The duplicate IDs can't catch:</b> if Claude assumes the message failed and calls the tool again, that's a new message with a new ID. Codex receives both. Only the wording in the message or the model's own judgment helps here.</p>
+    <h3>The destination host is away</h3>
+    <div class="flow"><span class="f">Gateway stores the body</span><span class="f-a"></span><span class="f">No live connection for that host</span><span class="f-a"></span><span class="f bad"><code>destination_unreachable</code>, returned to the sender</span></div>
+    <p class="prose">The stored copy is a <b>failure record, not a queued delivery.</b> When the host returns, nothing is delivered. This covers a closed laptop, a stopped <code>rtk</code>, and a dropped SSH connection if <code>rtk</code> wasn't in tmux. With tmux, <code>rtk</code> keeps running and messages still flow, though a prompt can sit unwatched.</p>
   </div>
   <div role="tabpanel" id="fp4" aria-labelledby="f4">
-    <h3>The server's rtk crashes during a paste</h3>
-    <div class="flow"><span class="f">Server: <code>delivering</code></span><span class="f-a"></span><span class="f bad">Crash</span><span class="f-a"></span><span class="f">Restart: <code>interrupted</code></span><span class="f-a"></span><span class="f">Status reaches the Mac</span></div>
-    <p class="prose">It isn't re-pasted, because nobody knows whether Codex got it. This matches today's rule.</p>
-    <p class="prose"><b>The important part:</b> Codex died with <code>rtk</code>, and agent IDs are new each run. The new Codex session has none of the earlier conversation. The Mac sees a new run and refuses to send older queued messages to it. <span class="tag t-arch">PROPOSAL</span></p>
+    <h3>The session has ended</h3>
+    <div class="flow"><span class="f">Host connected, in a new run</span><span class="f-a"></span><span class="f">Name matches, session ID doesn't</span><span class="f-a"></span><span class="f bad"><code>session_gone</code></span></div>
+    <p class="prose">A sender that addressed the old session gets this result, because a new session has none of the earlier conversation. <span class="tag t-arch">PROPOSAL</span> A new message to <code>codex@ubuntu-b</code> reaches the current session, as a deliberate new send. A <code>reply_to</code> doesn't carry over to the new session.</p>
   </div>
   <div role="tabpanel" id="fp5" aria-labelledby="f5">
-    <h3>You close the laptop while Codex is replying</h3>
-    <div class="flow"><span class="f">Server: reply <code>outbound</code></span><span class="f-a"></span><span class="f">Retries</span><span class="f-a"></span><span class="f good">Mac wakes in time: delivered</span></div>
-    <div class="flow"><span class="f">Retries</span><span class="f-a"></span><span class="f bad">Window ends: <code>link_unknown</code>, reply stays only in the server's history</span></div>
-    <p class="prose">This is the most likely case for you, and the strongest reason to care about question 3. A window of minutes won't cover an overnight lid close. A window of hours has its own cost: a stale reply landing in Claude's session after the conversation moved on. <span class="tag t-unv">UNVERIFIED</span> Whether the tailnet and <code>rtk</code> recover cleanly after sleep hasn't been tested.</p>
+    <h3>The host is fine, but the agent can't take it yet</h3>
+    <div class="flow"><span class="f good">Tool returns success: <code>host_stored</code></span><span class="f-a"></span><span class="f"><code>held</code>: busy, approval or draft</span><span class="f-a"></span><span class="f good"><code>pasted</code> when safe</span></div>
+    <p class="prose">This isn't "unreachable", so immediate failure doesn't apply. It can take a long time if a prompt is waiting for you. The message belongs to that session, and it ends <code>interrupted</code> if the session ends first.</p>
   </div>
   <div role="tabpanel" id="fp6" aria-labelledby="f6">
-    <h3>Your SSH connection to the server drops</h3>
-    <div class="flow"><span class="f good">With tmux: <code>rtk</code> and Codex keep running; messages still flow</span></div>
-    <div class="flow"><span class="f bad">Without tmux: <code>rtk</code> and Codex may end, like the crash case</span></div>
-    <p class="prose">The message link doesn't depend on your SSH session, which is a real advantage of A over C. <b>Drawback:</b> while you're detached, Codex can sit at a prompt nobody is watching. The README's warning about SSH drops still applies, and it's <span class="tag t-unv">UNVERIFIED</span>.</p>
+    <h3>The offer gets no confirmation: the ambiguity that can't be removed</h3>
+    <div class="flow"><span class="f">Gateway offers the message</span><span class="f-a"></span><span class="f bad">No confirmation in time</span><span class="f-a"></span><span class="f">Tool returns <code>delivery_uncertain</code></span></div>
+    <div class="flow"><span class="f">Host did save it</span><span class="f-a"></span><span class="f">Gate pastes it</span><span class="f-a"></span><span class="f good">Late report corrects the ledger</span></div>
+    <p class="prose">The gateway can't tell a host that never received it from one whose confirmation was lost. So it says it doesn't know, and it doesn't offer again.</p>
+    <p class="prose"><b>The duplicate IDs can't catch:</b> if Claude sends again after seeing <code>delivery_uncertain</code>, that's a new message with a new ID, and Codex can receive both. The wording of the result can warn the model, but it can't prevent this.</p>
+  </div>
+  <div role="tabpanel" id="fp7" aria-labelledby="f7">
+    <h3>The host loses the gateway while holding a message</h3>
+    <div class="flow"><span class="f"><code>held</code> on the host</span><span class="f-a"></span><span class="f bad">Gateway connection lost</span><span class="f-a"></span><span class="f"><code>pasted</code> when safe</span><span class="f-a"></span><span class="f good">Status sent on reconnect</span></div>
+    <p class="prose"><span class="tag t-arch">PROPOSAL</span> The host already has the message, so its gate carries on. Status reports are resent after a reconnect, but messages never are. So the gateway has the body straight away, and it learns the delivery state late.</p>
+  </div>
+  <div role="tabpanel" id="fp8" aria-labelledby="f8">
+    <h3>The recipient's runtime crashes during a paste</h3>
+    <div class="flow"><span class="f">Saved as <code>delivering</code> before the write</span><span class="f-a"></span><span class="f bad">Crash</span><span class="f-a"></span><span class="f">Restart: <code>interrupted</code></span><span class="f-a"></span><span class="f">Report reaches the gateway</span></div>
+    <p class="prose">It isn't re-pasted, because nobody knows whether Codex got it. <b>Immediate failure doesn't remove this record.</b> The inbox, its duplicate check and the record made before writing are what prevent a double paste, and today's code already has the unique ID and this state.
+    <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/store/migrations/0001_init.sql#L22"><code>internal/store/migrations/0001_init.sql:22</code> <code>UNIQUE</code></a> <a class="src" href="../../../internal/store/recover.go#L25"><code>internal/store/recover.go:25</code> <code>never resends</code></a></p>
+    <p class="prose">Codex died with the runtime, so messages for that session now return <code>session_gone</code>.</p>
   </div>
 </div>
 
@@ -780,16 +824,16 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <button role="tab" id="t6" aria-controls="tp6">Secrets and privacy</button>
   </div>
   <div role="tabpanel" id="tp1" aria-labelledby="t1">
-    <h3>Another device on the tailnet connects</h3>
-    <p class="prose"><b>What stops it:</b> the connection is refused without a paired key. Tailnet policy should also limit that port to your hosts. <span class="tag t-unv">UNVERIFIED</span> Your tailnet's current policy hasn't been read, so it could allow any of your devices.</p>
+    <h3>Another device on the tailnet connects to the gateway</h3>
+    <p class="prose"><b>What stops it:</b> the gateway refuses anything without a paired credential. Tailnet policy could also limit that port to your machines, but this design doesn't change your policy. <span class="tag t-unv">UNVERIFIED</span> Your tailnet's current policy hasn't been read, so it could allow any of your devices.</p>
   </div>
   <div role="tabpanel" id="tp2" aria-labelledby="t2">
     <h3>Another process on a paired host connects</h3>
-    <p class="prose"><b>What stops it:</b> the key. Tailscale sees only the node, so this is why tailnet identity isn't enough. <b>What doesn't:</b> a process running as you can read your key file. That's outside this design, and such a process could already reach much of what's in your home directory.</p>
+    <p class="prose"><b>What stops it:</b> the pairing credential. Tailscale sees only the node, which is why tailnet access isn't enough. <b>What doesn't:</b> a process running as you can read the credential file. This design doesn't promise isolation between processes on a machine.</p>
   </div>
   <div role="tabpanel" id="tp3" aria-labelledby="t3">
-    <h3>A pairing key is stolen</h3>
-    <p class="prose"><b>What it allows:</b> sending messages that get pasted into the other host's agents, which is prompt injection. It doesn't allow answering prompts, forging hooks or reading panes, because the link has no route for those. <b>Needed:</b> an unpair command that removes the peer on the receiving side. Earlier research found that agent-net has no node revocation, so this mustn't be left out.</p>
+    <h3>A pairing credential is stolen</h3>
+    <p class="prose"><b>What it allows:</b> sending messages that get pasted into the other host's agents, which is prompt injection. It doesn't allow answering prompts, forging hooks or reading panes, because the link has no route for those. The thief also needs tailnet access. <b>Needed:</b> a way to remove a runtime at the gateway, and pairing again to replace its credential. Earlier research found that agent-net has no node revocation, so this mustn't be left out.</p>
   </div>
   <div role="tabpanel" id="tp4" aria-labelledby="t4">
     <h3>A valid peer sends a hostile message</h3>
@@ -803,39 +847,42 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <h3>Secrets and privacy</h3>
     <ul class="prose">
       <li><span class="tag t-arch">PROPOSAL</span> Keys stay in the per-machine state directory, never in the repo. MCP tokens never cross the link.</li>
-      <li>Message bodies are stored in both hosts' databases, so anything an agent sends is now on two machines, under each one's retention.</li>
+      <li>Message bodies are stored at the gateway and on the hosts involved, so anything an agent sends can be on three machines. The hosts have a 30-day limit today, and the gateway's retention is undecided.</li>
       <li>Agents can paste secrets into messages. Nothing scans for that today.</li>
-      <li>Trusting the tailnet includes trusting its coordination service. Pinned keys inside it reduce how much depends on that. <span class="tag t-arch">PROPOSAL</span></li>
+      <li>Choosing the tailnet includes trusting its coordination service for this phase. Pairing is a second check, but it isn't a full defence if that trust fails.</li>
     </ul>
   </div>
 </div>
 
 <h2 id="changes">9. What would change in the current code</h2>
-<p class="prose small muted">For option A. The same core applies to B and C.</p>
+<p class="prose small muted">For the selected direction. All of it is proposed, and none of it is authorized to build.</p>
 <div class="table-wrap"><table>
   <tr><th>Area</th><th>Today</th><th>Proposed change</th></tr>
-  <tr><td>Which agents start</td><td>Always Claude and Codex. <a class="src" href="../../../internal/app/app.go#L42"><code>internal/app/app.go:42</code> <code>"claude"</code></a></td><td>Choose per host, for example Claude only on the Mac.</td></tr>
-  <tr><td>Addressing</td><td>Local display names, unique per router. <a class="src" href="../../../internal/router/send.go#L89"><code>internal/router/send.go:89</code> <code>byName</code></a></td><td><code>codex@server</code>. Two hosts can each have a <code>codex</code>.</td></tr>
-  <tr><td>Peer list</td><td>Fixed in the tool instructions at launch. <a class="src" href="../../../internal/server/mcp.go#L95"><code>internal/server/mcp.go:95</code> <code>instructions</code></a></td><td>Remote agents can appear and leave, so agents need a way to find out.</td></tr>
-  <tr><td>Message states</td><td>Local only.</td><td>Add <code>outbound</code>, <code>peer_stored</code> and <code>link_unknown</code>. Mirror the peer's reported state.</td></tr>
-  <tr><td>Loop budget</td><td>Default 20 per router, reset only by input on that host. <a class="src" href="../../../internal/router/router.go#L71"><code>internal/router/router.go:71</code> <code>defaultBudgetLimit</code></a> <a class="src" href="../../../internal/router/deliver.go#L45"><code>internal/router/deliver.go:45</code> <code>r.used = 0</code></a></td><td>Typing on the Mac wouldn't reset the server's budget. Keep it per host: letting a peer reset it would defeat the guard. <b>Drawback:</b> you may have to type in the server's window to continue a long exchange.</td></tr>
-  <tr><td>Network</td><td>Loopback only.</td><td>A new, separate listener with its own routes.</td></tr>
-  <tr><td>Pairing</td><td>None.</td><td>Exchange pinned keys once, and add an unpair command. <span class="tag t-arch">PROPOSAL</span> Mutual TLS using Go's standard library means no reusable secret is ever sent, and it stays valid if the transport changes. A tailnet-only bearer token is simpler, but it's a secret that can be replayed.</td></tr>
-  <tr><td>TUI</td><td>Two local panes.</td><td>Remote agents' status and link health, and how to show a single-agent layout.</td></tr>
-  <tr><td>Reused unchanged</td><td colspan="2">The MCP tool contract, the gate, the paste, hook handling and the "never re-paste" rule.</td></tr>
+  <tr><td>Which agents start</td><td>Always Claude and Codex. <a class="src" href="../../../internal/app/app.go#L42"><code>internal/app/app.go:42</code> <code>"claude"</code></a></td><td>Choose per runtime, for example Claude only on the Mac.</td></tr>
+  <tr><td>Addressing</td><td>Local display names, unique per router. <a class="src" href="../../../internal/router/send.go#L89"><code>internal/router/send.go:89</code> <code>byName</code></a></td><td><code>codex@ubuntu-b</code>, resolved by the gateway to a session ID.</td></tr>
+  <tr><td>Peer list</td><td>Fixed in the tool instructions at launch. <a class="src" href="../../../internal/server/mcp.go#L95"><code>internal/server/mcp.go:95</code> <code>instructions</code></a></td><td>Remote agents come and go, so agents need a way to find out.</td></tr>
+  <tr><td>Send result</td><td>Returns once accepted locally.</td><td>Waits briefly for the gateway and the destination host, and returns one of the results in section 7.</td></tr>
+  <tr><td><code>reply_to</code></td><td>Must exist in this run's rows. <a class="src" href="../../../internal/router/send.go#L110"><code>internal/router/send.go:110</code> <code>MessageExists</code></a></td><td>The recipient's own copy makes this pass within a session.</td></tr>
+  <tr><td>Message states</td><td>Local only.</td><td>Add the section 7 states. Mirror other hosts' reports, labelled as reports.</td></tr>
+  <tr><td>Loop budget</td><td>Default 20 per router, reset only by input on that host. <a class="src" href="../../../internal/router/router.go#L71"><code>internal/router/router.go:71</code> <code>defaultBudgetLimit</code></a> <a class="src" href="../../../internal/router/deliver.go#L45"><code>internal/router/deliver.go:45</code> <code>r.used = 0</code></a></td><td>Stays per host at first. A shared budget at the gateway is possible later, and how it resets needs care.</td></tr>
+  <tr><td>Commands</td><td>Plain <code>rtk</code>, <code>--version</code> and <code>--help</code>. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a></td><td>Add <code>rtk gateway</code> and <code>rtk runtime</code> to the same binary (selected form, details undesigned).</td></tr>
+  <tr><td>Network</td><td>Runtime listens on loopback only.</td><td>That stays for MCP and hooks. Runtimes also dial the gateway, which listens on the tailnet only.</td></tr>
+  <tr><td>Pairing</td><td>None.</td><td><span class="tag t-arch">PROPOSAL</span> A one-time code gives each runtime a random credential. The gateway stores only a hash, as the MCP server does for its tokens, and tailnet encryption carries it. It can be removed at the gateway. No certificates or PKI. <b>Drawback:</b> it's a reusable secret if stolen, so a thief with tailnet access can use it until you remove it. This replaces the earlier mutual-TLS idea, which fitted a transport-independent design.</td></tr>
+  <tr><td>Central view</td><td>None.</td><td>A way to read the ledger. Its form isn't designed yet.</td></tr>
+  <tr><td>Reused unchanged</td><td colspan="2">The MCP tool name, the gate, the paste, hook handling and the "never re-paste" rule.</td></tr>
 </table></div>
 
 <h2 id="phases">10. Possible build order</h2>
-<p class="prose"><b>This is not authorization to build.</b> It applies if the user selects A, and each phase would need its own go-ahead. Testing and pushing remain under GR-3.</p>
+<p class="prose"><b>This is not authorization to build.</b> It applies if the user accepts this record, and each phase would need its own go-ahead. Testing and pushing remain under GR-3.</p>
 <div data-stepper>
   <div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
   <ol class="steps">
-    <li><button class="step-h">Decide</button><div class="step-d"><p>The user answers section 5 and reads the tailnet's policy. This record then gets updated, or replaced if the choice changes its shape. <b>Done when:</b> an option is selected.</p></div></li>
-    <li><button class="step-h">One host, new shape</button><div class="step-d"><p>Choosing which agents start, and qualified addresses, with no networking yet. <b>Done when:</b> a single-host run behaves as it does today, with the new names.</p></div></li>
-    <li><button class="step-h">One-way message</button><div class="step-d"><p>Listener, pairing, outbox and duplicate handling. <b>Done when:</b> a message reaches the other host's gate, and a repeated ID doesn't paste twice.</p></div></li>
-    <li><button class="step-h">Round trip</button><div class="step-d"><p>Status reports, replies across hosts, and the TUI's view of link health. <b>Done when:</b> the flow in section 6 runs by hand.</p></div></li>
-    <li><button class="step-h">Failures</button><div class="step-d"><p>Reconnect, the retry window, restarts and sleep. <b>Done when:</b> each scenario in section 7 has been forced and observed, not just reasoned about. This phase depends on the user lifting GR-3 for it.</p></div></li>
-    <li><button class="step-h">Later, only if wanted</button><div class="step-d"><p>A daemon split, PTY streaming or a router. Each is a separate decision and doesn't follow automatically from the earlier phases.</p></div></li>
+    <li><button class="step-h">Settle what's open</button><div class="step-d"><p>Whichever items in section 5 block the next phase, and then the user's acceptance of this record. <b>Done when:</b> the record says Accepted.</p></div></li>
+    <li><button class="step-h">Split the code, on one machine</button><div class="step-d"><p>Separate routing from delivery, and choose which agents start. <b>Done when:</b> local mode behaves as it does today.</p></div></li>
+    <li><button class="step-h">Gateway and pairing</button><div class="step-d"><p>The gateway, ledger, pairing and session directory. <b>Done when:</b> two agents on one machine message through a gateway, and each message appears in the ledger.</p></div></li>
+    <li><button class="step-h">Across machines</button><div class="step-d"><p>Runtimes on separate machines. <b>Done when:</b> the round trip in section 1b runs by hand.</p></div></li>
+    <li><button class="step-h">Failure results</button><div class="step-d"><p>Each result in section 7, and the timeouts behind them. <b>Done when:</b> each scenario has been forced and observed, not just reasoned about. This depends on the user lifting GR-3 for it.</p></div></li>
+    <li><button class="step-h">Later, only if wanted</button><div class="step-d"><p>A central-view UI beyond the basics, retention, a daemon split or PTY streaming. Each is a separate decision.</p></div></li>
   </ol>
 </div>
 
@@ -918,21 +965,20 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     var q4 = document.getElementById('q4');
     var out = document.getElementById('q-out');
     function offlineNote(v) {
-      if (v === 'fail') return ' No outbox retries: a brief network drop shows up as a failed message.';
-      if (v === 'short') return ' A short-lived outbox, with the window length still to choose.';
-      if (v === 'hold') return ' Holding for hours needs stable agent identity or an accepted loss of context.';
-      return ' Offline behaviour is still unanswered.';
+      if (v === 'fail') return ' Sends fail immediately.';
+      if (v === 'short') return ' Not selected: retrying would need a short-lived outbox and a chosen window length.';
+      if (v === 'hold') return ' Not selected: holding for hours needs stable agent identity or an accepted loss of context.';
+      return '';
+    }
+    function windowsNote(w) {
+      if (w === 'sep') return ' A terminal per host, if you choose it: the smallest build.';
+      if (w === 'one') return ' One window, if you choose it, needs PTY streaming, a much larger and riskier build.';
+      return ' Windows are still open.';
     }
     function verdict(w, o, f, c) {
-      if (!w && !o && !f && !c) return ['Not answered.', ' The recommendation stays preliminary.'];
-      if (c === 'yes' && w === 'one') return ['Points to a gateway, plus a separate terminal-streaming decision.', ' The gateway gives one view of messages, not one terminal.' + offlineNote(f)];
-      if (c === 'yes') return ['Points to a gateway (section 1a).', (o === 'others' ? ' Other owners need per-person permissions, a separate design.' : ' Single owner first.') + offlineNote(f)];
-      if (o === 'others' && w === 'one') return ['Not covered here.', ' One window plus other owners would need this record reopened.' + offlineNote(f)];
-      if (o === 'others') return ['Points to B,', ' or at least per-person identity and revocation.' + offlineNote(f)];
-      if (w === 'one') return ['Points to a C-style companion plus PTY streaming.', ' Much larger, and the link carries keystrokes.' + offlineNote(f)];
-      if (w === 'sep' && o === 'mine' && f === 'hold') return ['Points to A with long-lived storage, or B.', ' In A nothing moves while the sender is off. B can hold messages, at the cost of a service.' + offlineNote(f)];
-      if (w === 'sep' && o === 'mine') return ['Points to A.', (f ? '' : ' Still to choose how it behaves offline.') + (f ? offlineNote(f) : '')];
-      return ['Partly answered.', ' A stays the preliminary recommendation until the rest are answered.' + offlineNote(f)];
+      if (c === 'no') return ['Not selected: without a central view, direct peers (option A) would be the smallest choice.', offlineNote(f) + windowsNote(w)];
+      if (o === 'others') return ['Not selected: other owners would need per-person identity and permissions.', offlineNote(f) + windowsNote(w)];
+      return ['A central gateway on the tailnet, with pairing.', offlineNote(f) + windowsNote(w)];
     }
     function update() {
       var v = verdict(q1.value, q2.value, q3.value, q4.value);

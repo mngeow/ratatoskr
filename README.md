@@ -152,7 +152,7 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
-| [0002](docs/adr/0002-cross-machine-messaging/index.html) | How agents on different machines should message each other: options and drawbacks, leaning towards a central gateway with separately deployable runtimes, overall design not selected | Proposed |
+| [0002](docs/adr/0002-cross-machine-messaging/index.html) | How agents on different machines should message each other: direction selected: one `rtk` binary with gateway and runtime commands, a central gateway on the tailnet with pairing, full message storage, and immediate failure when a host is unreachable; details open, not built | Proposed |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 
