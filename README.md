@@ -145,6 +145,25 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 - **If an SSH connection drops,** `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap.
 - **Not a security boundary.** Both agents run as you and could read each other's files or tokens. A message can't approve anything for the recipient, but it can still persuade its model, so its permission prompts remain the real check.
 
+## Architecture decisions
+
+Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Records (ADRs). Each one says what was chosen, why, what was rejected and what it costs.
+
+| ADR | Decision | Status |
+| --- | --- | --- |
+| [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
+| [0002](docs/adr/0002-cross-machine-messaging/index.html) | How agents on different machines should message each other: options and drawbacks, leaning towards a central gateway with separately deployable runtimes, overall design not selected | Proposed |
+
+GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
+
+Every record follows the same rules:
+
+- **One folder, one file.** Each decision has a numbered folder, such as `docs/adr/0001-mcp-agent-messaging/`, holding a single `index.html` with its CSS and JavaScript embedded. It uses no separate assets, build step or CDN.
+- **Interactive diagrams.** Diagrams are drawn in HTML and CSS, and the reader can select and step through them. JavaScript only handles the interaction, so the content still reads with it off.
+- **Scenarios and data flows.** Concepts are explained by walking through what actually happens, including when things go wrong.
+- **Clear sourcing.** A record separates what the user decided from the architect's reasoning, and what was seen running from what was only read in the code. It gives its status, date and the commit it inspected.
+- **Numbers stay fixed.** To change a decision, add a new record that replaces the old one. Don't rewrite history.
+
 ## The name
 
 In Norse mythology, [Ratatoskr](https://en.wikipedia.org/wiki/Ratatoskr) is the squirrel that runs up and down the world tree Yggdrasil, carrying messages between the eagle perched at its top and the dragon Níðhöggr beneath its roots. The name is usually glossed as "drill-tooth".

@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0001 MCP Messaging</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+
+/* System map */
+.map { margin: 16px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.map-grid { display: grid; grid-template-columns: minmax(120px, .9fr) minmax(130px, .85fr) minmax(400px, 2.6fr) minmax(130px, .85fr) minmax(120px, .9fr); gap: 0; align-items: stretch; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.rtk-box { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); }
+.rtk-label { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0 0 6px; }
+.inner-row { display: grid; grid-template-columns: 1fr 58px 1.25fr 76px 1fr; align-items: center; }
+.side { display: grid; grid-template-rows: auto auto 1fr auto; padding: 14px 0; row-gap: 6px; }
+
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+.wire.lit .cap::before { content: "\25C6 "; }
+.spacer { min-height: 8px; }
+
+.vwire { position: relative; padding: 2px 0 2px 16px; min-height: 30px; font-size: .74rem; line-height: 1.2; margin-left: 50%; display: flex; align-items: center; }
+.vwire::before { content: ""; position: absolute; left: 3px; top: 0; bottom: 7px; border-left: 2px solid var(--wire); }
+.vwire::after { content: ""; position: absolute; left: -1px; bottom: 0; border-top: 8px solid var(--wire); border-left: 5px solid transparent; border-right: 5px solid transparent; }
+.vwire.lit { color: var(--accent); font-weight: 700; }
+.vwire.lit::before { border-left-width: 4px; border-left-color: var(--accent); left: 2px; }
+.vwire.lit::after { border-top-color: var(--accent); }
+.vwire.lit .cap::before { content: "\25C6 "; }
+
+.map-key { font-size: .84rem; margin: 12px 0 0; color: var(--muted); }
+.map-key b { color: var(--ink); font-weight: 600; }
+
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+
+/* Lifecycle strip */
+.life { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 14px 0 0; }
+.life-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.chip { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: .84rem; background: var(--surface-2); }
+.arr { display: inline-block; width: 20px; border-top: 2px solid var(--wire); position: relative; margin: 0 4px 0 2px; vertical-align: middle; }
+.arr::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.chip.on { background: var(--accent-soft); border: 2px solid var(--accent); font-weight: 700; }
+.chip.on::before { content: "\25C6 "; }
+.chip.bad { border-style: dashed; }
+.life p { margin: 8px 0 0; font-size: .84rem; color: var(--muted); }
+
+/* Gate explorer */
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+html:not(.js) #gate-tool { display: none; }
+
+/* Ladder and flows */
+.ladder { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 0; }
+.ladder li { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 12px; padding: 8px 12px; border: 1px solid var(--line); border-bottom: 0; background: var(--surface); margin: 0; }
+.ladder li:last-child { border-bottom: 1px solid var(--line); }
+.ladder li.dark { background: var(--surface-2); border-style: dashed; }
+.ladder b { font-weight: 700; }
+
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+
+.det-panel { background: var(--surface); }
+
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .map-grid { display: block; }
+  .side { display: block; padding: 6px 0; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  .inner-row { display: block; }
+  .spacer { display: none; }
+  .ladder li { grid-template-columns: 1fr; gap: 2px; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+@media print {
+  [role="tablist"], .ctl, #gate-tool { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0001</p>
+  <h1>Agents send through an MCP tool, and receive through a gated paste</h1>
+  <p class="prose">How Claude Code and Codex message each other in <code>rtk</code>, why it works this way, and what it doesn't guarantee.</p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Accepted.</b> Built in the first version. Seen working only in the user's hand runs on macOS.</dd></div>
+    <div><dt>Decided</dt><dd>Messaging path: the user, 2026-11-04. This record written 2026-11-05.</dd></div>
+    <div><dt>Source inspected</dt><dd>Commit <code>79ee72a</code>, with a clean working tree. Line numbers refer to that commit.</dd></div>
+    <div><dt>Tests</dt><dd><b>No automated test has ever run.</b> Team testing is off (<a href="../../design/ground-rules.md">GR-3</a>).</dd></div>
+  </dl>
+</header>
+
+<p class="prose small"><b>How to read the labels.</b>
+  <span class="tag t-user">USER</span> the user decided or reported it.
+  <span class="tag t-run">RUN</span> recorded in <code>rtk</code>'s database or a harness's records from a user's hand run.
+  <span class="tag t-code">CODE</span> read in the source, not seen running.
+  <span class="tag t-doc">DOCS</span> read in a harness's docs or <code>--help</code> on 2026-11-04 at Claude Code 2.1.311 and Codex 0.166.0, and not rechecked.
+  <span class="tag t-arch">ARCHITECT</span> the architect's reasoning.
+  <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+</p>
+<p class="prose small muted">The interactive parts of this page have been reviewed as source only. They have never been opened in a browser, because of the same no-testing rule. All the content is plain HTML, so with JavaScript off every panel and step is simply shown in full.</p>
+
+<h2 id="decision">1. The decision</h2>
+<p class="prose">An agent sends a message by calling one MCP tool, <code>ratatoskr_send</code>, on a local server inside <code>rtk</code>. <code>rtk</code> records the message in SQLite, waits until hooks report that the recipient is idle, and then types the message into the recipient's terminal as a bracketed paste followed by Enter. Replies use the same path in the other direction.</p>
+<p class="prose"><b>MCP solves the outbound half only.</b> Everything that gets a message into a model that isn't doing anything is Ratatoskr's own code, and it's different for each harness.</p>
+<div class="two">
+  <div class="card does">
+    <h3>What MCP does here</h3>
+    <ul>
+      <li>Gives both models one callable tool with one contract: <code>to</code>, <code>body</code>, optional <code>reply_to</code>.</li>
+      <li>Lets each harness connect at launch, using its own config shape.</li>
+      <li>Returns a result to the model that made the call.</li>
+      <li>Carries a per-agent bearer token, so the sender is never an argument the model chooses.</li>
+    </ul>
+  </div>
+  <div class="card doesnt">
+    <h3>What MCP doesn't do here</h3>
+    <ul>
+      <li><b>Start a turn in an idle model.</b> Our server only answers calls. It runs <code>Stateless</code> with <code>JSONResponse</code>, so it holds no open channel to a harness at all.</li>
+      <li>Say when a harness is safe to interrupt. Hooks do that.</li>
+      <li>Draw anything in a terminal, or write to one.</li>
+      <li>Guarantee a model processes a message, or replies.</li>
+    </ul>
+  </div>
+</div>
+<p class="prose small muted" style="margin-top:10px">This describes this implementation and the two harnesses as read. It isn't a general claim about what MCP can do.</p>
+
+<h2 id="context">2. Context</h2>
+<div class="prose">
+<p>The user wants Claude Code and Codex running side by side in one Bubble Tea window, able to talk to each other without a person relaying. Both are full interactive TUIs that stay visible and usable, each in its own pane, so a headless mode doesn't meet the goal.</p>
+<p>Each direction has two separate problems: how a message gets <em>out</em> of the sender, and how it gets <em>into</em> the receiver. Getting out is easy, because both harnesses can call tools. Getting in is the hard part: as read in their docs on 2026-11-04, neither harness has one documented, stable way to accept input from outside while its TUI is running. <span class="tag t-doc">DOCS</span></p>
+<p>Three constraints shaped the choice. A message must never look like an answer to a permission prompt. It mustn't land on top of something the user is typing. And it must wake an agent that's idle, because "ask and wait" leaves both agents idle most of the time.</p>
+</div>
+
+<h3 id="who">Who decided what</h3>
+<div class="table-wrap"><table>
+  <tr><th>Fact</th><th>Decided by</th><th>Basis</th></tr>
+  <tr><td>Messaging path: option A, MCP to send and gated paste to deliver</td><td><span class="tag t-user">USER</span> 2026-11-04</td><td>Design decision 1. The user chose the option. The reasons below are the architect's analysis from design section 5; the user hasn't given reasons of their own.</td></tr>
+  <tr><td>Panes embedded in Bubble Tea, not tmux</td><td><span class="tag t-user">USER</span> 2026-11-04, reconfirmed</td><td>Design decision 2</td></tr>
+  <tr><td>Permission prompts stay with the user, and only the send tool is pre-approved</td><td><span class="tag t-user">USER</span> 2026-11-04</td><td>Design decision 3</td></tr>
+  <tr><td>Persistent messages in SQLite; a work queue with ownership stays out of scope</td><td><span class="tag t-user">USER</span> 2026-11-04</td><td>Design decision 6. Its location, retention and recovery rules are the architect's proposal, which the user can change.</td></tr>
+  <tr><td>Tool renamed from <code>send_message</code> to <code>ratatoskr_send</code></td><td><span class="tag t-arch">ARCHITECT</span> 2026-11-04</td><td>Design decision 10, after a user run failed. See <a href="#collision">section 5</a>.</td></tr>
+  <tr><td>Codex launches with an automatic startup prompt</td><td><span class="tag t-user">USER</span> 2026-11-05: "Add the automatic prompt please."</td><td>Design decision 11. It costs one Codex turn per launch.</td></tr>
+  <tr><td>"It works" on macOS</td><td><span class="tag t-user">USER</span> 2026-11-05: "Ok this is good, I tested it and it works."</td><td>The user's report of one run. The history for that run agrees. It isn't a passed acceptance check.</td></tr>
+  <tr><td>Stateless JSON transport, hashed token map, gate order, failure-to-hold rules</td><td><span class="tag t-arch">ARCHITECT</span> and engineers</td><td>Design and implementation choices, with no user decision behind them</td></tr>
+</table></div>
+
+<h2 id="how">3. How it works</h2>
+<p class="prose">One Go binary owns both terminals. Select any part of the diagram for what it does and where its code is, or walk a real message through it.</p>
+
+<figure class="map" id="map" style="margin-left:0;margin-right:0">
+  <div class="map-grid">
+    <button type="button" class="node harness claude" data-node="claude" aria-pressed="false">Claude Code<small>Interactive TUI in a PTY. Started with <code>--mcp-config</code> and <code>--settings</code>.</small></button>
+
+    <div class="side">
+      <div class="wire" data-wire="mcp-l"><span class="cap">Claude to server: MCP call</span></div>
+      <button type="button" class="wire dashed" data-node="hooks" data-wire="hook-l"><span class="cap">Claude's hook to server: <code>rtk hook</code></span></button>
+      <div class="spacer"></div>
+      <div class="wire rev" data-wire="paste-l"><span class="cap">Pane writer to Claude: paste + Enter</span></div>
+    </div>
+
+    <div class="rtk-box">
+      <p class="rtk-label">The rtk process: one Go binary</p>
+      <button type="button" class="node" data-node="server" aria-pressed="false">HTTP server on 127.0.0.1<small><code>/mcp</code> for the tool, <code>/hook</code> for state. Identifies the agent by its token.</small></button>
+      <div class="vwire" data-wire="v-server"><span class="cap">Server to router: <code>Send</code>, <code>HookEvent</code></span></div>
+      <div class="inner-row">
+        <button type="button" class="node" data-node="ui" aria-pressed="false">TUI<small>Draws panes, F3 log, F4</small></button>
+        <div class="wire" data-wire="ui-router"><span class="cap">draft, F4</span></div>
+        <button type="button" class="node" data-node="router" aria-pressed="false">Router actor<small>Queues, agent state, the gate</small></button>
+        <div class="wire" data-wire="router-store"><span class="cap">commit first</span></div>
+        <button type="button" class="node" data-node="store" aria-pressed="false">SQLite store<small>Messages and every state change</small></button>
+      </div>
+      <div class="vwire" data-wire="v-pane"><span class="cap">Router to pane writer: frame, only after the commit</span></div>
+      <button type="button" class="node" data-node="pane" aria-pressed="false">Pane writer<small>One bracketed paste, a 50 ms wait, then Enter</small></button>
+    </div>
+
+    <div class="side">
+      <div class="wire rev" data-wire="mcp-r"><span class="cap">Codex to server: MCP call</span></div>
+      <button type="button" class="wire rev dashed" data-node="hooks" data-wire="hook-r"><span class="cap">Codex's hook to server: <code>rtk hook</code></span></button>
+      <div class="spacer"></div>
+      <div class="wire" data-wire="paste-r"><span class="cap">Pane writer to Codex: paste + Enter</span></div>
+    </div>
+
+    <button type="button" class="node harness codex" data-node="codex" aria-pressed="false">Codex<small>Interactive TUI in a PTY. Started with <code>-c</code> options and a startup prompt.</small></button>
+  </div>
+  <figcaption class="map-key"><b>Figure 1.</b> Solid arrows carry messages. Dashed arrows carry hook reports, which change agent state but carry no message. The dashed box is one process. Nothing crosses the machine: every arrow is local.</figcaption>
+</figure>
+
+<div role="tablist" aria-label="Explore the system map" data-tabs>
+  <button type="button" role="tab" id="t-comp" aria-controls="p-comp" aria-selected="true">Components</button>
+  <button type="button" role="tab" id="t-fwd" aria-controls="p-fwd" aria-selected="false" tabindex="-1">Walk: Claude to Codex</button>
+  <button type="button" role="tab" id="t-rep" aria-controls="p-rep" aria-selected="false" tabindex="-1">Walk: the reply, Codex to Claude</button>
+</div>
+
+<div role="tabpanel" id="p-comp" aria-labelledby="t-comp" tabindex="0">
+  <p class="small muted js-only">Select a box or the dashed hook arrow in the diagram.</p>
+
+  <section class="det-panel" data-detail="claude">
+    <h3>Claude Code (one harness adapter)</h3>
+    <p>Launched with its own new session ID, an MCP config file and a settings file holding the hooks. The bearer token sits in the MCP config file (mode 0600) because the docs don't state whether <code>${VAR}</code> expands there. Its environment carries no token.</p>
+    <p>Because <code>rtk</code> picks the session ID, the router binds this agent at registration. Claude's SessionStart means it's ready, so it moves the agent to idle.</p>
+    <p><a class="src" href="../../../internal/agent/claude.go#L65"><code>internal/agent/claude.go:65</code> <code>claudeSpec</code></a><a class="src" href="../../../internal/agent/claude.go#L104"><code>:104</code> <code>claudeMCPFor</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="codex">
+    <h3>Codex (the other harness adapter)</h3>
+    <p>Launched with nested <code>-c</code> config options for the MCP server, the tool's approval mode and each hook, then a startup prompt as the trailing argument. It reads the bearer token from <code>RATATOSKR_TOKEN</code> in its environment, because it has no per-server header option. The prompt is visible in the process list, so it never carries a secret.</p>
+    <p>No session-ID flag was found in its help output, so the router binds from the first SessionStart with source <code>startup</code>. On Codex that event marks a turn beginning, so it binds but doesn't mean idle. Codex first becomes idle on Stop.</p>
+    <p><a class="src" href="../../../internal/agent/codex.go#L36"><code>internal/agent/codex.go:36</code> <code>codexSpec</code></a><a class="src" href="../../../internal/agent/codex.go#L82"><code>:82</code> <code>codexStartupPrompt</code></a><a class="src" href="../../../internal/agent/env.go#L63"><code>internal/agent/env.go:63</code> <code>buildEnv</code></a><a class="src" href="../../../internal/router/gate.go#L37"><code>internal/router/gate.go:37</code> <code>sessionStartLifts</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="server">
+    <h3>HTTP server: the MCP tool and the hook endpoint</h3>
+    <p>Listens on <code>127.0.0.1</code> on a port the OS picks, and refuses to start on anything that isn't loopback. Every request passes three checks in order: <code>Host</code> must equal the exact address, which stops DNS rebinding; any <code>Origin</code> header is refused; and the bearer token must match. Without a valid token, even an unknown path gets 401.</p>
+    <p>Each agent gets 32 random bytes as a token, stored only as a SHA-256 key, and its own MCP server instance. The transport is the Go SDK's Streamable HTTP handler, set to <code>Stateless</code> and <code>JSONResponse</code>, so each request stands alone. The sender comes from the request's token and is never a tool argument. If the context's agent isn't this server's agent, the tool refuses.</p>
+    <p>The tool answers <code>{id, status: "queued"}</code>. <code>status</code> is always <code>queued</code>: the message is committed, not delivered.</p>
+    <p><a class="src" href="../../../internal/server/server.go#L193"><code>internal/server/server.go:193</code> <code>routes</code></a><a class="src" href="../../../internal/server/server.go#L138"><code>:138</code> <code>AddAgent</code></a><a class="src" href="../../../internal/server/mcp.go#L76"><code>internal/server/mcp.go:76</code> <code>sendMessageTool</code></a><a class="src" href="../../../internal/server/mcp.go#L128"><code>:128</code> <code>mcpHandler</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="hooks">
+    <h3>Hooks: how rtk knows an agent's state</h3>
+    <p>Both harnesses are given the same five events: SessionStart, UserPromptSubmit, Stop, PermissionRequest and PostToolUse. Each runs <code>rtk hook --agent NAME --event EVENT --session-dir DIR</code>. That command reads the harness's JSON from stdin, reads the token from a 0600 file (not its command line), and posts to <code>/hook</code> with a 2-second limit.</p>
+    <p><b>Hooks only observe.</b> The command always exits 0, writes nothing to stdout and swallows panics, and the server always answers 204. So it can't approve, block or answer anything in a harness. The command is the same on every run, because Codex asks again for a hook whose definition changed.</p>
+    <p>The router uses three payload fields: <code>session_id</code>, <code>prompt</code> and <code>source</code>. Before binding, only a SessionStart with source <code>startup</code> counts. After binding, an event from another session is ignored, shown in a banner, and can only move an idle agent to <code>unknown</code>: a stray session can push an agent toward holding, never toward delivery.</p>
+    <p><a class="src" href="../../../internal/agent/hooks.go#L36"><code>internal/agent/hooks.go:36</code> <code>HookCommand</code></a><a class="src" href="../../../internal/server/runhook.go#L51"><code>internal/server/runhook.go:51</code> <code>RunHook</code></a><a class="src" href="../../../internal/server/hook.go#L27"><code>internal/server/hook.go:27</code> <code>serveHook</code></a><a class="src" href="../../../internal/router/hooks.go#L75"><code>internal/router/hooks.go:75</code> <code>acceptHook</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="router">
+    <h3>Router actor: queues, state and the gate</h3>
+    <p>One goroutine owns all queues and agent state, so events apply strictly in order. <code>Send</code> checks a message in a fixed order: storage up, sender known, recipient known and not itself, recipient not exited, body not empty after sanitising, body under 64 KiB, <code>reply_to</code> exists in this run, relay budget not used up. A refusal returns its reason to the model as a word such as <code>unknown_recipient</code>.</p>
+    <p>The relay budget is 20 messages, and it resets when the user submits in a pane, which stops two agents talking forever unattended. Only the head of a recipient's queue is considered, so a held head holds everything behind it. One message per recipient can be in flight at a time.</p>
+    <p>All these limits are guesses marked in the code as untested.</p>
+    <p><a class="src" href="../../../internal/router/send.go#L75"><code>internal/router/send.go:75</code> <code>send</code></a><a class="src" href="../../../internal/router/deliver.go#L89"><code>internal/router/deliver.go:89</code> <code>pump</code></a><a class="src" href="../../../internal/router/gate.go#L61"><code>internal/router/gate.go:61</code> <code>gate</code></a><a class="src" href="../../../internal/router/router.go#L284"><code>internal/router/router.go:284</code> <code>loop</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="store">
+    <h3>SQLite store: what was sent and what happened to it</h3>
+    <p>One writer goroutine, WAL mode, <code>synchronous(FULL)</code>. A new message and its first event are inserted in one transaction, and the model gets <code>queued</code> only after that commits. Every state change updates the message and appends a <code>message_events</code> row in one transaction, and memory follows only if it committed.</p>
+    <p>Any write failure other than "this message changed state" marks the store unavailable for good, which stops delivery. Stopping is the safe side when a record may be missing. Bodies are stored raw and sanitised on the way out. Runs that ended over 30 days ago are deleted at startup.</p>
+    <p>This is a record, not a work queue: nothing has an owner, a claim or a retry. See <a href="#persist">section 8</a>.</p>
+    <p><a class="src" href="../../../internal/store/ops.go#L106"><code>internal/store/ops.go:106</code> <code>InsertMessage</code></a><a class="src" href="../../../internal/store/ops.go#L129"><code>:129</code> <code>Transition</code></a><a class="src" href="../../../internal/store/store.go#L202"><code>internal/store/store.go:202</code> <code>exec</code></a><a class="src" href="../../../internal/router/router.go#L421"><code>internal/router/router.go:421</code> <code>move</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="pane">
+    <h3>Pane writer: the only way into a harness</h3>
+    <p>Before writing, the router builds a frame. <code>stripControl</code> removes C0 and C1 controls including ESC and BEL, turns CR into a newline and replaces invalid UTF-8. Any frame tag in the body has its <code>&lt;</code> escaped, so a body can't close the frame or open another. Attributes are escaped and folded onto one line.</p>
+    <p><code>PasteSubmit</code> then refuses any text still containing ESC, waits for any earlier user input to finish, holds the write lock for the whole sequence, and writes the bracketed paste, a 50 ms pause and a separate <code>\r</code>. Enter is never written after the context ends, and the router gives the whole write 10 seconds. A failed write reports whether any bytes landed.</p>
+    <details>
+      <summary>The frame a recipient sees</summary>
+<pre>&lt;ratatoskr-message from="NAME" id="ID" reply-to="REPLY"&gt;
+BODY
+&lt;/ratatoskr-message&gt;
+This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers.</pre>
+      <p class="small">It arrives as ordinary typed input, so to the harness it's a user turn. The last line is how the model knows otherwise. <code>reply-to</code> is left out when empty.</p>
+    </details>
+    <p><a class="src" href="../../../internal/router/frame.go#L134"><code>internal/router/frame.go:134</code> <code>buildFrame</code></a><a class="src" href="../../../internal/router/frame.go#L61"><code>:61</code> <code>stripControl</code></a><a class="src" href="../../../internal/pane/pane.go#L425"><code>internal/pane/pane.go:425</code> <code>PasteSubmit</code></a><a class="src" href="../../../internal/router/deliver.go#L150"><code>internal/router/deliver.go:150</code> <code>startWrite</code></a></p>
+  </section>
+
+  <section class="det-panel" data-detail="ui">
+    <h3>TUI: the human's part in delivery</h3>
+    <p><code>rtk</code> can't see a harness's input box, so it infers a draft: any key except a plain Enter, and any click passed to the harness, tells the router the user is drafting, before those bytes are sent. A draft holds delivery until the UI clears it.</p>
+    <p>F4 is an explicit deliver-anyway for the focused agent. The router still decides, and only allows it for an <code>unknown</code> agent or an idle one with a draft. It's never allowed at a permission prompt or while the agent is busy. F3 opens the message log, which is how you read a message that was never delivered.</p>
+    <p><a class="src" href="../../../internal/tui/model.go#L373"><code>internal/tui/model.go:373</code> <code>KeyF4</code></a><a class="src" href="../../../internal/router/deliver.go#L19"><code>internal/router/deliver.go:19</code> <code>UserDraft</code></a><a class="src" href="../../../internal/router/deliver.go#L57"><code>:57</code> <code>DeliverHeld</code></a><a class="src" href="../../../internal/router/gate.go#L101"><code>internal/router/gate.go:101</code> <code>overrideOK</code></a></p>
+  </section>
+</div>
+
+<div role="tabpanel" id="p-fwd" aria-labelledby="t-fwd" tabindex="0">
+  <div data-stepper data-target="map">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-on="claude mcp-l">
+        <button type="button" class="step-h">Claude's model calls the tool</button>
+        <div class="step-d">
+          <p>It calls <code>mcp__ratatoskr__ratatoskr_send</code> with <code>to: "codex"</code> and a body. There's no sender argument. <code>--allowedTools</code> pre-approves this one tool, so sending raises no prompt.</p>
+          <p><a class="src" href="../../../internal/agent/claude.go#L26"><code>internal/agent/claude.go:26</code> <code>claudeToolName</code></a><a class="src" href="../../../internal/server/mcp.go#L29"><code>internal/server/mcp.go:29</code> <code>sendArgs</code></a></p>
+        </div>
+      </li>
+      <li data-on="server mcp-l">
+        <button type="button" class="step-h">The server identifies the sender</button>
+        <div class="step-d">
+          <p>The HTTP request reaches <code>/mcp</code> on loopback. The Host, Origin and token checks pass, the token resolves to Claude's agent ID, and that goes into the request context. The stateless handler picks Claude's MCP server instance.</p>
+          <p><a class="src" href="../../../internal/server/server.go#L230"><code>internal/server/server.go:230</code> <code>authenticate</code></a><a class="src" href="../../../internal/server/mcp.go#L137"><code>internal/server/mcp.go:137</code> <code>serverForRequest</code></a></p>
+        </div>
+      </li>
+      <li data-on="server router v-server">
+        <button type="button" class="step-h">The router validates it</button>
+        <div class="step-d">
+          <p>The work goes to the actor. It checks the recipient, body, size, <code>reply_to</code> and budget in a fixed order, and a refusal goes back to the model as a short reason. Recipients are addressed by display name.</p>
+          <p><a class="src" href="../../../internal/router/send.go#L43"><code>internal/router/send.go:43</code> <code>Send</code></a></p>
+        </div>
+      </li>
+      <li data-on="router store router-store">
+        <button type="button" class="step-h">The message is committed as queued</button>
+        <div class="step-d">
+          <p>One transaction inserts the <code>messages</code> row and its first <code>message_events</code> row, durably. If it fails, the model gets <code>storage_unavailable</code> and delivery stops.</p>
+          <p><a class="src" href="../../../internal/store/ops.go#L106"><code>internal/store/ops.go:106</code> <code>InsertMessage</code></a></p>
+        </div>
+      </li>
+      <li data-on="claude server mcp-l">
+        <button type="button" class="step-h">Claude gets {id, status: "queued"}</button>
+        <div class="step-d">
+          <p>The result goes back before any delivery work, so the sender never waits on the recipient. <b>This result doesn't mean Codex got anything,</b> and Claude isn't told what happens later. It usually ends its turn here.</p>
+          <p><a class="src" href="../../../internal/server/mcp.go#L89"><code>internal/server/mcp.go:89</code> <code>statusQueued</code></a></p>
+        </div>
+      </li>
+      <li data-on="router store router-store">
+        <button type="button" class="step-h">The gate passes, and delivering is committed</button>
+        <div class="step-d">
+          <p>Exactly one case passes: Codex is idle, has a pane, has nothing in flight and no draft. The router commits <code>delivering</code> <b>before any byte is written</b>. If that commit fails, nothing is written. The <a href="#gate-tool">gate explorer</a> shows every other case.</p>
+          <p><a class="src" href="../../../internal/router/deliver.go#L89"><code>internal/router/deliver.go:89</code> <code>pump</code></a></p>
+        </div>
+      </li>
+      <li data-on="router pane v-pane paste-r codex">
+        <button type="button" class="step-h">The frame is pasted into Codex's terminal</button>
+        <div class="step-d">
+          <p>A goroutine builds the sanitised frame and writes the bracketed paste, then after 50 ms a separate Enter, and reports back to the actor. The router commits <code>pasted</code> and starts a 20-second confirmation timer. The actor itself never touches a pane.</p>
+          <p><a class="src" href="../../../internal/pane/pane.go#L425"><code>internal/pane/pane.go:425</code> <code>PasteSubmit</code></a><a class="src" href="../../../internal/router/deliver.go#L180"><code>internal/router/deliver.go:180</code> <code>onWriteResult</code></a></p>
+        </div>
+      </li>
+      <li data-on="codex hook-r server v-server router">
+        <button type="button" class="step-h">Codex's hook confirms the submit</button>
+        <div class="step-d">
+          <p>Codex fires UserPromptSubmit. <code>rtk hook</code> posts it to <code>/hook</code>, and the agent becomes <code>busy</code>. If the prompt is empty or contains the message ID, the message moves to <code>accepted</code> with reason <code>prompt_submitted</code>.</p>
+          <p><b>Accepted means the harness took the input as a prompt.</b> It doesn't mean the model has read it or will act on it.</p>
+          <p><a class="src" href="../../../internal/router/hooks.go#L109"><code>internal/router/hooks.go:109</code> <code>promptSubmitted</code></a><a class="src" href="../../../internal/router/gate.go#L122"><code>internal/router/gate.go:122</code> <code>nextState</code></a></p>
+        </div>
+      </li>
+      <li data-on="codex">
+        <button type="button" class="step-h">Codex's model takes its turn</button>
+        <div class="step-d">
+          <p>Nothing in the system observes whether the model understood, or what it decided. The only later signs are a tool call of its own and what you can see in its pane. When the turn ends, Stop moves Codex back to idle and the router considers the next queued message.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-rep" aria-labelledby="t-rep" tabindex="0">
+  <div data-stepper data-target="map">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-on="codex mcp-r">
+        <button type="button" class="step-h">Codex's model calls the same tool</button>
+        <div class="step-d">
+          <p>It reads the frame's last line and calls <code>ratatoskr_send</code> with <code>to: "claude"</code> and <code>reply_to</code> set to the ID it received. Codex's per-tool setting <code>approval_mode = "approve"</code> pre-approves only this tool.</p>
+          <p><a class="src" href="../../../internal/agent/codex.go#L22"><code>internal/agent/codex.go:22</code> <code>codexApprovalModeKey</code></a></p>
+        </div>
+      </li>
+      <li data-on="server mcp-r">
+        <button type="button" class="step-h">The same server, but a different identity</button>
+        <div class="step-d">
+          <p>It's the same endpoint and the same code. The bearer token comes from Codex's environment and resolves to Codex's agent ID, so Codex can't send as Claude by passing an argument. Each agent gets its own MCP server instance.</p>
+          <p><a class="src" href="../../../internal/server/mcp.go#L54"><code>internal/server/mcp.go:54</code> <code>newAgentServer</code></a></p>
+        </div>
+      </li>
+      <li data-on="router store v-server router-store">
+        <button type="button" class="step-h">The reply_to is checked, and the reply committed</button>
+        <div class="step-d">
+          <p>The router confirms the <code>reply_to</code> ID names a message in this run, or refuses with <code>unknown_reply_to</code>. The rest matches the forward path, and it counts against the same relay budget. Codex receives <code>queued</code>.</p>
+          <p><a class="src" href="../../../internal/store/ops.go#L152"><code>internal/store/ops.go:152</code> <code>MessageExists</code></a></p>
+        </div>
+      </li>
+      <li data-on="router pane v-pane paste-l claude">
+        <button type="button" class="step-h">The gate checks Claude, then the paste happens</button>
+        <div class="step-d">
+          <p>The gate now looks at Claude. If Claude is still finishing the turn that sent the message, the reply is held as <code>busy</code> until Claude's Stop. Otherwise it's <code>delivering</code>, then <code>pasted</code>, using the same <code>PasteSubmit</code>.</p>
+        </div>
+      </li>
+      <li data-on="claude hook-l server v-server router">
+        <button type="button" class="step-h">Claude's hook confirms, and the exchange is complete</button>
+        <div class="step-d">
+          <p>UserPromptSubmit moves the reply to <code>accepted</code> and Claude to <code>busy</code>. Both directions ran the same router code. The harness-specific parts were how each was launched and what its hooks mean.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</div>
+
+<details>
+  <summary>The two harnesses side by side</summary>
+  <div class="table-wrap"><table>
+    <tr><th></th><th>Claude Code</th><th>Codex</th></tr>
+    <tr><td>MCP config</td><td><code>--mcp-config FILE</code>, type <code>http</code>, URL and header</td><td><code>-c mcp_servers.ratatoskr.url=...</code></td></tr>
+    <tr><td>Where the token is</td><td>That file, mode 0600</td><td>Env var <code>RATATOSKR_TOKEN</code>, named by <code>bearer_token_env_var</code></td></tr>
+    <tr><td>Hooks config</td><td><code>--settings FILE</code></td><td>One <code>-c hooks.EVENT=...</code> per event</td></tr>
+    <tr><td>Hook trust</td><td>Unverified that settings hooks don't prompt <span class="tag t-unv">UNVERIFIED</span></td><td>Codex may ask you to review and trust them. <code>rtk</code> doesn't use the bypass flag. Until trusted, it sees no state and holds.</td></tr>
+    <tr><td>Tool pre-approval</td><td><code>--allowedTools mcp__ratatoskr__ratatoskr_send</code></td><td><code>...tools.ratatoskr_send.approval_mode="approve"</code></td></tr>
+    <tr><td>Session binding</td><td>At registration, from <code>--session-id</code></td><td>First SessionStart with source <code>startup</code></td></tr>
+    <tr><td>What SessionStart means</td><td>Launched and ready: moves to idle</td><td>A turn is starting: binds only</td></tr>
+    <tr><td>Startup prompt</td><td>None</td><td>Trailing argument, costs one turn each launch</td></tr>
+  </table></div>
+  <p class="small">Both are launched with a filtered environment and the same five hook events. <code>rtk</code> writes per-run files only in its own session directory, <code>~/.local/state/ratatoskr/session</code> by default, emptied at start and removed on exit.</p>
+</details>
+
+<h2 id="scenarios">4. Scenarios</h2>
+<p class="prose">Choose a scenario and step through it. The strip highlights the message's state, and each step gives the recipient's state and what the router decides. Each scenario says whether it was seen in a real run.</p>
+
+<div class="life" id="life">
+  <div class="life-row">
+    <span class="chip" data-state="queued">queued</span><span class="arr"></span><span class="chip" data-state="held">held</span><span class="arr"></span><span class="chip" data-state="delivering">delivering</span><span class="arr"></span><span class="chip" data-state="pasted">pasted</span><span class="arr"></span><span class="chip" data-state="accepted">accepted</span>
+    <span style="width:18px"></span>
+    <span class="chip bad" data-state="unconfirmed">unconfirmed</span>&nbsp;<span class="chip bad" data-state="failed">failed</span>&nbsp;<span class="chip bad" data-state="interrupted">interrupted</span>
+  </div>
+  <p><b>Figure 2.</b> Message states, with the dashed ones as the bad endings. <code>queued</code> can skip <code>held</code>. <code>queued</code> and <code>held</code> can go to <code>failed</code> or <code>interrupted</code>. <code>delivering</code> can go to <code>failed</code>, <code>unconfirmed</code> or <code>interrupted</code>. <code>pasted</code> can go to <code>unconfirmed</code> or <code>interrupted</code>. The only edge out of an ending is <code>unconfirmed</code> to <code>accepted</code>. <a class="src" href="../../../internal/store/ops.go#L59"><code>internal/store/ops.go:59</code> <code>legal</code></a></p>
+</div>
+
+<div role="tablist" aria-label="Scenarios" data-tabs>
+  <button type="button" role="tab" id="t-s1" aria-controls="p-s1" aria-selected="true">1 Say hi</button>
+  <button type="button" role="tab" id="t-s2" aria-controls="p-s2" aria-selected="false" tabindex="-1">2 Codex launch</button>
+  <button type="button" role="tab" id="t-s3a" aria-controls="p-s3a" aria-selected="false" tabindex="-1">3a Busy</button>
+  <button type="button" role="tab" id="t-s3b" aria-controls="p-s3b" aria-selected="false" tabindex="-1">3b Approval</button>
+  <button type="button" role="tab" id="t-s3c" aria-controls="p-s3c" aria-selected="false" tabindex="-1">3c Draft</button>
+  <button type="button" role="tab" id="t-s3d" aria-controls="p-s3d" aria-selected="false" tabindex="-1">3d Unknown and F4</button>
+  <button type="button" role="tab" id="t-s4" aria-controls="p-s4" aria-selected="false" tabindex="-1">4 Ambiguous write</button>
+  <button type="button" role="tab" id="t-s5" aria-controls="p-s5" aria-selected="false" tabindex="-1">5 Quit or crash</button>
+</div>
+
+<div role="tabpanel" id="p-s1" aria-labelledby="t-s1" tabindex="0">
+  <h3 style="margin-top:0">Claude asks Codex to say hi, and Codex replies</h3>
+  <p class="small"><span class="tag t-run">RUN</span> <code>01a1a932</code>, 2026-11-05, macOS. The times are read from <code>message_events</code>, each measured from that message's commit. Message bodies aren't reproduced here.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="queued"><button type="button" class="step-h">Claude calls the tool: committed at +0 ms</button>
+        <div class="step-d"><p class="st">Codex: <b>idle</b> &middot; Message: <b>queued</b> &middot; Decision: <b>accept</b></p><p>The startup turn had already finished, so there was nothing to wait for.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">The gate passes: +3 ms</button>
+        <div class="step-d"><p class="st">Codex: <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver</b></p><p>No <code>held</code> row exists for this message.</p></div></li>
+      <li data-msg="pasted"><button type="button" class="step-h">Paste and Enter written: +54 ms</button>
+        <div class="step-d"><p class="st">Codex: <b>idle</b> &middot; Message: <b>pasted</b> &middot; Decision: <b>wait for submit</b></p><p>Nearly all of that time is the 50 ms pause between paste and Enter.</p></div></li>
+      <li data-msg="accepted"><button type="button" class="step-h">Codex's hook confirms: +87 ms</button>
+        <div class="step-d"><p class="st">Codex: <b>busy</b> &middot; Message: <b>accepted</b>, <code>prompt_submitted</code> &middot; Decision: <b>done</b></p><p>The router's work on this message is finished here. It doesn't know what the model will do.</p></div></li>
+      <li data-msg="accepted"><button type="button" class="step-h">Codex's reply: committed, then accepted at +73 ms</button>
+        <div class="step-d"><p class="st">Claude: <b>idle</b> &middot; Reply: <b>accepted</b> &middot; Decision: <b>deliver</b></p><p>The reply's own timings are +1, +52 and +73 ms, with <code>reply_to</code> set. It's the proof that this particular model acted, which the first message's <code>accepted</code> couldn't give.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s2" aria-labelledby="t-s2" tabindex="0">
+  <h3 style="margin-top:0">Codex's launch: bootstrap prompt, hook gating and a queued first message</h3>
+  <p class="small"><span class="tag t-unv">PARTLY UNVERIFIED</span> In the one recorded run with the prompt, no message arrived during startup, so <b>a hold released by the startup turn's Stop hasn't been seen on this build.</b> The hook order is unchecked. Runs before the prompt held on <code>starting</code> for 9.7 s to 92 s, ending when someone typed into Codex or its turn otherwise began.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg=""><button type="button" class="step-h">rtk launches Codex with a prompt</button>
+        <div class="step-d"><p class="st">Codex: <b>starting</b>, unbound &middot; Message: <b>none yet</b></p><p>The trailing argument tells Codex who it is, names the tool, and says to reply with one short line and wait. The reason it exists: <span class="tag t-run">RUN</span> Codex 0.166.0 sends its first hook when a turn begins, not at launch, so with no turn the router could never see it ready.</p><p><a class="src" href="../../../internal/agent/codex.go#L82"><code>internal/agent/codex.go:82</code> <code>codexStartupPrompt</code></a></p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">Claude sends before Codex is ready</button>
+        <div class="step-d"><p class="st">Codex: <b>starting</b> &middot; Message: <b>held</b>, reason <code>starting</code> &middot; Decision: <b>hold</b></p><p>Pasting into a starting harness is refused on purpose: Enter could answer a trust or hook-review dialog. Claude still gets <code>queued</code> straight away.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">Codex may ask you to review hooks</button>
+        <div class="step-d"><p class="st">Codex: <b>starting</b> &middot; Message: <b>held</b> &middot; Decision: <b>hold</b></p><p><code>rtk</code> answers no dialog, and doesn't use Codex's trust-bypass flag. Whether the automatic turn waits behind this dialog is <span class="tag t-unv">UNVERIFIED</span>. MCP connects at thread start, after hook review.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">SessionStart binds but doesn't release</button>
+        <div class="step-d"><p class="st">Codex: still <b>starting</b>, now bound &middot; Message: <b>held</b> &middot; Decision: <b>hold</b></p><p>On Codex this event means a turn is beginning. Delivering here is what once pasted a message into a turn that had just started (run <code>01a1a918</code>).</p><p><a class="src" href="../../../internal/router/hooks.go#L38"><code>internal/router/hooks.go:38</code> <code>hook</code></a></p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">The prompt turn runs</button>
+        <div class="step-d"><p class="st">Codex: <b>busy</b> &middot; Message: <b>held</b> &middot; Decision: <b>hold</b></p><p>UserPromptSubmit moves it to <code>busy</code>. The hold's reason changes to <code>busy</code> in memory and in the UI. Only the first reason is committed, because re-recording it on every event would mean a database write each time.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">Stop releases the message</button>
+        <div class="step-d"><p class="st">Codex: <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver</b></p><p>Delivery then continues as usual. Messages stay in order, and it costs one Codex turn per launch even if nobody sends anything.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">If no Stop arrives within 60 seconds</button>
+        <div class="step-d"><p class="st">Codex: <b>unknown</b> &middot; Message: <b>held</b> &middot; Decision: <b>hold, F4 allowed</b></p><p>The agent goes to <code>unknown</code>. A "no hook events" banner appears only if no hook ever arrived. See <a href="#t-s3d">3d</a>.</p><p><a class="src" href="../../../internal/router/deliver.go#L233"><code>internal/router/deliver.go:233</code> <code>tick</code></a></p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s3a" aria-labelledby="t-s3a" tabindex="0">
+  <h3 style="margin-top:0">The recipient is busy</h3>
+  <p class="small"><span class="tag t-run">RUN</span> Seen once in run <code>01a1a744</code>: a second message stayed <code>queued</code> behind the one in flight, was held as <code>busy</code> at +31.6 s and delivered at +35.5 s.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="queued"><button type="button" class="step-h">A message arrives behind one still in flight</button>
+        <div class="step-d"><p class="st">Recipient: <b>busy</b> &middot; Message: <b>queued</b> &middot; Decision: <b>wait for the slot</b></p><p><code>pump</code> returns early while something is in flight, so this message records no hold yet. The gate's <code>previous_message</code> reason can't be reached through <code>pump</code> for that reason. The UI shows plain <code>queued</code> here.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">The slot frees and the gate holds it</button>
+        <div class="step-d"><p class="st">Recipient: <b>busy</b> &middot; Message: <b>held</b>, reason <code>busy</code> &middot; Decision: <b>hold</b></p><p>UserPromptSubmit and PostToolUse both mean busy. F4 is refused here: pasting into a running turn is what the gate exists to prevent.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">Stop: delivered in order</button>
+        <div class="step-d"><p class="st">Recipient: <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver</b></p><p>The head of the queue goes first, and one message goes in at a time.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">If hooks go quiet for 5 minutes</button>
+        <div class="step-d"><p class="st">Recipient: <b>unknown</b> &middot; Message: <b>held</b> &middot; Decision: <b>hold, F4 allowed</b></p><p>A long tool run with no hooks could trigger this too. It only ever moves toward holding.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s3b" aria-labelledby="t-s3b" tabindex="0">
+  <h3 style="margin-top:0">The recipient is at a permission prompt</h3>
+  <p class="small"><span class="tag t-code">CODE</span> Not observed. What a paste would do at a real prompt has never been tried, which is why nothing is allowed to find out.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="held"><button type="button" class="step-h">PermissionRequest fires, and messages hold</button>
+        <div class="step-d"><p class="st">Recipient: <b>needs_you</b> &middot; Message: <b>held</b>, reason <code>needs_you</code> &middot; Decision: <b>hold</b></p><p>The TUI shows a badge. The hook only reports it: <code>rtk hook</code> writes nothing to stdout, so it can't answer the prompt.</p></div></li>
+      <li data-msg="held"><button type="button" class="step-h">F4 is refused</button>
+        <div class="step-d"><p class="st">Recipient: <b>needs_you</b> &middot; Message: <b>held</b> &middot; Decision: <b>F4 refused</b></p><p>A pasted message could look like the answer, and answering is the human's job. <code>overrideOK</code> has no branch for this state. There's no timeout either, so it holds for as long as the prompt stays up.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">You answer in the pane, then delivery resumes</button>
+        <div class="step-d"><p class="st">Recipient: <b>busy</b>, then <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver on Stop</b></p><p>PostToolUse moves it to <code>busy</code> and Stop to <code>idle</code>. Which hooks fire after you <em>deny</em> a prompt is <span class="tag t-unv">UNVERIFIED</span>.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s3c" aria-labelledby="t-s3c" tabindex="0">
+  <h3 style="margin-top:0">You're typing in the recipient's pane</h3>
+  <p class="small"><span class="tag t-code">CODE</span> Not observed. <code>rtk</code> can't see the input box, so this is an inference from your keys, and messages can wait when nothing is really typed.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="held"><button type="button" class="step-h">A key marks a draft</button>
+        <div class="step-d"><p class="st">Recipient: <b>idle</b>, draft &middot; Message: <b>held</b>, reason <code>drafting</code> &middot; Decision: <b>hold</b></p><p>The UI tells the router before the key's bytes are sent, so a paste can't slip between them. The router has no draft timeout.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">Enter submits your text, then the message follows</button>
+        <div class="step-d"><p class="st">Recipient: <b>busy</b>, then <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver after your turn</b></p><p>Your submit also resets the relay budget. The message waits through your turn and goes in after its Stop.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">Or you press F4</button>
+        <div class="step-d"><p class="st">Recipient: <b>idle</b>, draft cleared &middot; Message: <b>delivering</b> &middot; Decision: <b>your choice</b></p><p>F4 pastes after whatever is in the box and submits both together. That's your explicit choice, and the merged text can't be separated afterwards.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s3d" aria-labelledby="t-s3d" tabindex="0">
+  <h3 style="margin-top:0">rtk can't tell what the recipient is doing</h3>
+  <p class="small"><span class="tag t-code">CODE</span> Not observed as a hold reason in the stored runs. <code>/clear</code> or <code>/compact</code> changing a session ID is <span class="tag t-unv">UNVERIFIED</span>.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="held"><button type="button" class="step-h">The router loses track of it</button>
+        <div class="step-d"><p class="st">Recipient: <b>unknown</b> &middot; Message: <b>held</b>, reason <code>unknown</code> &middot; Decision: <b>hold</b></p><p>There are three ways in: no ready signal within 60 seconds of launch, busy with no hook for 5 minutes, or a hook from a session other than the bound one.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">A trusted hook can restore it</button>
+        <div class="step-d"><p class="st">Recipient: <b>idle</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>deliver</b></p><p>A Stop from the bound session moves it back to idle. A wrong-session event never can, so after a session ID change only F4 helps for the rest of the run.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">Or you press F4</button>
+        <div class="step-d"><p class="st">Recipient: <b>unknown</b> &middot; Message: <b>delivering</b> &middot; Decision: <b>your choice</b></p><p>The router lets you override <code>unknown</code> because the alternative is being stuck, and you can see the pane while it can't. You take on the risk that the pane isn't actually ready.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s4" aria-labelledby="t-s4" tabindex="0">
+  <h3 style="margin-top:0">An ambiguous or partial write, and why nothing retries</h3>
+  <p class="small"><span class="tag t-code">CODE</span> Never observed: every one of the 10 stored messages reached <code>accepted</code>. The acceptance check that forces a storage failure has no runner yet.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg="delivering"><button type="button" class="step-h">The record comes before the bytes</button>
+        <div class="step-d"><p class="st">Message: <b>delivering</b> &middot; Decision: <b>commit, then write</b></p><p>If this commit fails, nothing is written, the store is marked unavailable, a banner shows, and every later send gets <code>storage_unavailable</code>.</p></div></li>
+      <li data-msg="failed"><button type="button" class="step-h">The write fails partway</button>
+        <div class="step-d"><p class="st">Message: <b>failed</b>, <code>write_failed:partial_write</code> &middot; Decision: <b>stop, don't retry</b></p><p>The pane reports whether any bytes landed, giving <code>partial_write</code>, <code>no_bytes_written</code> or <code>unknown_if_written</code>. A full paste followed by a failed Enter also counts as partial. Enter is never written once the time limit has passed.</p><p><a class="src" href="../../../internal/router/deliver.go#L216"><code>internal/router/deliver.go:216</code> <code>writeFailureDetail</code></a></p></div></li>
+      <li data-msg="failed"><button type="button" class="step-h">Why not retry?</button>
+        <div class="step-d"><p class="st">Decision: <b>at most one attempt</b></p><p>The harness may already hold some or all of the text, and it can't be taken back. A retry could submit it twice, or submit a fragment. So the router never resends, and the sender isn't told either: it already has its <code>queued</code>. You find the message in the log and decide. The next message is free to go.</p><p><span class="tag t-unv">UNVERIFIED</span> risk: a partial paste drops its end marker, which could leave the harness in paste mode.</p></div></li>
+      <li data-msg="unconfirmed"><button type="button" class="step-h">The paste landed, but no submit was seen</button>
+        <div class="step-d"><p class="st">Message: <b>unconfirmed</b>, <code>no_confirmation</code> &middot; Decision: <b>free the slot, remember it</b></p><p>After 20 seconds with no submit hook, the message may or may not have been taken. The latest 16 such messages per agent are kept in memory. The next message still has to pass the gate.</p></div></li>
+      <li data-msg="accepted"><button type="button" class="step-h">A late submit can still credit it</button>
+        <div class="step-d"><p class="st">Message: <b>accepted</b>, <code>prompt_submitted_late</code> &middot; Decision: <b>credit by ID only</b></p><p>A late submit counts only if its prompt contains that message's ID. A submit with other text credits nothing, so a confirmation can't land on the wrong message.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<div role="tabpanel" id="p-s5" aria-labelledby="t-s5" tabindex="0">
+  <h3 style="margin-top:0">Quit or crash: an honest record, with no resume and no resend</h3>
+  <p class="small"><span class="tag t-code">CODE</span> Never observed: no stored run has an <code>interrupted</code> message or a <code>crashed</code> ending. The kill-point check for this has no runner yet. Stored run endings are 4 <code>clean</code> and 1 <code>signal</code>.</p>
+  <div data-stepper data-target="life">
+    <div class="ctl"><button type="button" class="btn" data-prev>&larr; Previous</button><button type="button" class="btn" data-next>Next &rarr;</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-msg=""><button type="button" class="step-h">Quit: the order matters</button>
+        <div class="step-d"><p class="st">Decision: <b>router, then record, then panes</b></p><p>Stopping the router first means the pane exits that quitting causes can't change any message's state. A warning appears first if messages are waiting or a draft is open.</p><p><a class="src" href="../../../internal/app/app.go#L179"><code>internal/app/app.go:179</code> <code>shutdown</code></a></p></div></li>
+      <li data-msg="interrupted"><button type="button" class="step-h">Everything unfinished becomes interrupted</button>
+        <div class="step-d"><p class="st">Message: <b>interrupted</b> &middot; Run: <b>clean</b>, <b>signal</b> or <b>error</b></p><p>One transaction records what's known about each message:</p>
+          <ul><li><code>queued</code> or <code>held</code>: <code>never_written</code></li><li><code>delivering</code>: <code>write_unknown</code></li><li><code>pasted</code>: <code>pasted_unconfirmed</code></li></ul>
+          <p><code>interrupted</code> is final. <a class="src" href="../../../internal/store/recover.go#L72"><code>internal/store/recover.go:72</code> <code>finishRun</code></a></p></div></li>
+      <li data-msg="interrupted"><button type="button" class="step-h">Panes stop, and the sessions end</button>
+        <div class="step-d"><p class="st">Agents: <b>exited</b></p><p>Each harness gets SIGTERM, 2 seconds, then SIGKILL, in its own process group. The session directory holding the tokens is removed.</p></div></li>
+      <li data-msg="delivering"><button type="button" class="step-h">A crash skips all of that</button>
+        <div class="step-d"><p class="st">Message: <b>as last committed</b> &middot; Run: <b>unclosed</b></p><p>Rows stay as they were. Because <code>delivering</code> and <code>pasted</code> were committed before and after the write, the record still says how far each message got. Harnesses may survive the crash, but the server is gone, so they can't send.</p></div></li>
+      <li data-msg="interrupted"><button type="button" class="step-h">The next start recovers the record, before launching anything</button>
+        <div class="step-d"><p class="st">Message: <b>interrupted</b> &middot; Run: <b>crashed</b> &middot; Decision: <b>warn, never resend</b></p><p>The per-machine lock proves no live run exists, so any unclosed run gets the same mapping. A banner says how many were interrupted and that harness processes may still be running. <code>rtk</code> doesn't kill them, because it can't be sure they're its own.</p><p><a class="src" href="../../../internal/store/recover.go#L38"><code>internal/store/recover.go:38</code> <code>Recover</code></a><a class="src" href="../../../internal/app/app.go#L344"><code>internal/app/app.go:344</code> <code>crashBanner</code></a></p></div></li>
+      <li data-msg="interrupted"><button type="button" class="step-h">The new run starts fresh</button>
+        <div class="step-d"><p class="st">Decision: <b>no resume, no resend</b></p><p>A new run has a new ID, new tokens and a new port. Claude gets a new <code>--session-id</code>, and Codex launches with no resume option. Neither new agent knows about the old message, so resending into it could be wrong or meaningless. Open the log with F3, read the full body and pass it on yourself if it still matters.</p></div></li>
+    </ol>
+  </div>
+</div>
+
+<h3 id="gate">The gate, as a table and a tool</h3>
+<div class="table-wrap"><table>
+  <tr><th>Checked in this order</th><th>Result</th><th>F4 can override?</th></tr>
+  <tr><td>No pane to write to</td><td>Hold: <code>no_pane</code></td><td>No</td></tr>
+  <tr><td>A message already in flight</td><td>Hold: <code>previous_message</code> (<code>pump</code> returns before asking, so it stays <code>queued</code>)</td><td>No</td></tr>
+  <tr><td><code>idle</code>, no draft</td><td><b>Deliver</b></td><td>Not needed</td></tr>
+  <tr><td><code>idle</code>, draft</td><td>Hold: <code>drafting</code></td><td>Yes</td></tr>
+  <tr><td><code>starting</code></td><td>Hold: <code>starting</code></td><td>No</td></tr>
+  <tr><td><code>busy</code></td><td>Hold: <code>busy</code></td><td>No</td></tr>
+  <tr><td><code>needs_you</code></td><td>Hold: <code>needs_you</code></td><td>No</td></tr>
+  <tr><td><code>unknown</code></td><td>Hold: <code>unknown</code></td><td>Yes</td></tr>
+  <tr><td><code>exited</code></td><td>Hold: <code>exited</code> (a new send is refused as <code>recipient_offline</code>)</td><td>No</td></tr>
+</table></div>
+
+<div class="card" id="gate-tool">
+  <h3>Try the gate</h3>
+  <p class="small muted">A small JavaScript copy of <a class="src" href="../../../internal/router/gate.go#L61"><code>internal/router/gate.go:61</code> <code>gate</code></a> and <a class="src" href="../../../internal/router/gate.go#L101"><code>:101</code> <code>overrideOK</code></a>, written to explain them. It isn't the running code.</p>
+  <form class="gate-form" onsubmit="return false">
+    <label>Recipient state
+      <select id="g-state">
+        <option value="idle">idle</option>
+        <option value="starting">starting</option>
+        <option value="busy">busy</option>
+        <option value="needs_you">needs_you</option>
+        <option value="unknown">unknown</option>
+        <option value="exited">exited</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="g-draft"> User has a draft</label>
+    <label><input type="checkbox" id="g-flight"> Message in flight</label>
+    <label><input type="checkbox" id="g-pane" checked> Has a pane</label>
+  </form>
+  <output class="gate-out" id="g-out" for="g-state g-draft g-flight g-pane" aria-live="polite"></output>
+</div>
+
+<h2 id="collision">5. Why the tool isn't called send_message</h2>
+<div class="prose">
+<p>The tool was first named <code>send_message</code>. Codex 0.166.0 has a built-in tool with that name, in its <code>collaboration</code> namespace. MCP didn't reject anything and no error appeared: the model simply had two plausible tools and picked the wrong one. <span class="tag t-run">RUN</span></p>
+</div>
+<div class="two">
+  <div class="card">
+    <h3>Before: run <code>01a1a744</code></h3>
+    <div class="flow">
+      <span class="f">Frame says "send_message"</span><span class="f-a"></span>
+      <span class="f bad">Codex uses its built-in tool</span><span class="f-a"></span>
+      <span class="f bad">It messages itself and says it replied</span><span class="f-a"></span>
+      <span class="f bad">Claude gets nothing</span>
+    </div>
+    <p class="small">Both messages to Codex were <code>accepted</code>. The router saw no fault, and from its side there wasn't one.</p>
+  </div>
+  <div class="card">
+    <h3>After: runs <code>01a1a918</code>, <code>01a1a91c</code>, <code>01a1a932</code></h3>
+    <div class="flow">
+      <span class="f">Frame says "ratatoskr_send from the ratatoskr MCP server"</span><span class="f-a"></span>
+      <span class="f good">Codex calls <code>mcp__ratatoskr__ratatoskr_send</code></span><span class="f-a"></span>
+      <span class="f good">Claude gets the reply</span>
+    </div>
+    <p class="small">Seen on macOS only. The doubled name in the tool's full ID is intended.</p>
+  </div>
+</div>
+<p class="prose" style="margin-top:12px">The name is one of four places that steer the model: the tool description, the server's MCP instructions, the frame's last line and Codex's startup prompt. Each one says built-in messaging tools don't reach peers. <b>That's guidance, not enforcement.</b> Nothing stops a model choosing another tool, and a future harness could ship another colliding name. <a class="src" href="../../../internal/server/mcp.go#L18"><code>internal/server/mcp.go:18</code> <code>toolName</code></a><a class="src" href="../../../internal/server/mcp.go#L95"><code>:95</code> <code>instructions</code></a><a class="src" href="../../../internal/router/frame.go#L26"><code>internal/router/frame.go:26</code> <code>frameEnding</code></a></p>
+
+<h2 id="perm">6. What this changes about permissions and trust</h2>
+<div class="prose">
+<p><b>One narrow change, and everything else is left as you configured it.</b> The change is the user's decision: this one tool is pre-approved at launch, because a prompt on every send would stop the agents talking. In Claude that's <code>--allowedTools</code> naming only this tool. In Codex it's the per-tool <code>approval_mode</code>.</p>
+<ul>
+  <li><b>No sandbox or approval flags are added or loosened,</b> and no <code>--dangerously-*</code> option is used. <span class="tag t-code">CODE</span></li>
+  <li><b>Codex's hook review stays with you.</b> <code>rtk</code> doesn't use the bypass flag, and it holds messages until the hooks run.</li>
+  <li><b>Nothing answers a prompt for you.</b> Hooks can't, the gate holds at <code>needs_you</code>, and F4 refuses there.</li>
+  <li><b>Config goes in at launch.</b> <code>rtk</code> is built not to write to <code>~/.claude</code> or <code>~/.codex</code>. That's by construction: the acceptance check that would confirm it hasn't run. <span class="tag t-unv">UNVERIFIED</span></li>
+  <li><b>This isn't a security boundary.</b> Both agents run as you and could read each other's files and tokens. A message can't approve anything, but it can still persuade a model, so each harness's own prompts remain the real check.</li>
+</ul>
+</div>
+
+<h2 id="alts">7. Alternatives</h2>
+<p class="prose">Delivery needs the same care in most of these, so the real differences are how a message gets out and how the receiver is woken. <span class="tag t-doc">DOCS</span> claims date from 2026-11-04. Effort ratings are the architect's judgment, not measurements. None of these was built or run for comparison.</p>
+
+<div role="tablist" aria-label="Alternatives" data-tabs>
+  <button type="button" role="tab" id="t-a" aria-controls="p-a" aria-selected="true">A MCP + gated paste</button>
+  <button type="button" role="tab" id="t-b" aria-controls="p-b" aria-selected="false" tabindex="-1">B Shell CLI</button>
+  <button type="button" role="tab" id="t-c" aria-controls="p-c" aria-selected="false" tabindex="-1">C Harness-native</button>
+  <button type="button" role="tab" id="t-d" aria-controls="p-d" aria-selected="false" tabindex="-1">D Polling or inbox</button>
+  <button type="button" role="tab" id="t-e" aria-controls="p-e" aria-selected="false" tabindex="-1">E Private interfaces</button>
+</div>
+
+<div role="tabpanel" id="p-a" aria-labelledby="t-a" tabindex="0">
+  <h3 style="margin-top:0">A. MCP, then gated paste (chosen)</h3>
+  <div class="flow"><span class="f good">Tool call over MCP</span><span class="f-a"></span><span class="f">Commit and queue</span><span class="f-a"></span><span class="f">Wait for idle, from hooks</span><span class="f-a"></span><span class="f">Paste + Enter into the PTY</span></div>
+  <p><b>Why it won.</b> It's one code path both ways. Identity comes from a token issued at launch. Each tool can be pre-approved on its own. It wakes an idle agent. And you can watch each message arrive.</p>
+  <p><b>What it costs.</b> Delivery is typed input, so it reads as a user turn. A bad gate could disturb a prompt. It depends on hooks being accurate. And it needs an MCP dependency.</p>
+</div>
+
+<div role="tabpanel" id="p-b" aria-labelledby="t-b" tabindex="0">
+  <h3 style="margin-top:0">B. Shell CLI plus terminal delivery, like <code>rig send</code></h3>
+  <div class="flow"><span class="f bad">Model runs a shell command</span><span class="f-a"></span><span class="f">Commit and queue</span><span class="f-a"></span><span class="f">Wait for idle</span><span class="f-a"></span><span class="f">Paste + Enter</span></div>
+  <p><b>What it offers.</b> The least code, no MCP dependency, and you can run it by hand when debugging. It's a proven shape in general: the OpenRig team that built this product talks through a command that types into terminals. That shows the shape works for that team, not how it would compare here.</p>
+  <p><b>Why not.</b> Codex's workspace-write sandbox might stop the command reaching <code>rtk</code>; the docs say nothing specific about localhost or Unix sockets <span class="tag t-doc">DOCS</span>. Multi-line text is fragile through shell quoting. Identity would come from a variable the agent can read or override. And pre-approving a shell command is a wider grant than pre-approving one named tool <span class="tag t-arch">ARCHITECT</span>.</p>
+  <p><b>Still the fallback.</b> If MCP had proved awkward at launch, B would need only a new way out, since delivery stays the same. It wasn't needed: both harnesses' MCP connections worked in the user's runs.</p>
+</div>
+
+<div role="tabpanel" id="p-c" aria-labelledby="t-c" tabindex="0">
+  <h3 style="margin-top:0">C. Each harness's native API or queue</h3>
+  <div class="flow"><span class="f">Tool call over MCP</span><span class="f-a"></span><span class="f">Router</span><span class="f-a"></span><span class="f bad">To Codex: app server <code>turn/start</code>. To Claude: channel notification</span></div>
+  <p><b>What it offers.</b> No typing into terminals, so no risk to a prompt or a draft. Codex's app server also reports events, which might replace its hooks <span class="tag t-unv">UNVERIFIED</span>.</p>
+  <p><b>Why not.</b> As read: Claude's channels were a research preview, custom ones needed <code>--dangerously-load-development-channels</code>, and the Codex CLI marked its app server experimental <span class="tag t-doc">DOCS</span>. It means two delivery paths to build and test. And whether a turn started by another client shows up in the attached TUI wasn't known <span class="tag t-unv">UNVERIFIED</span>.</p>
+  <p><b>Worth revisiting.</b> If these interfaces stabilise, they could replace the paste for that harness while the MCP half stays put.</p>
+</div>
+
+<div role="tabpanel" id="p-d" aria-labelledby="t-d" tabindex="0">
+  <h3 style="margin-top:0">D. Polling or inbox tools</h3>
+  <div class="flow"><span class="f">Tool or file write</span><span class="f-a"></span><span class="f">Mailbox</span><span class="f-a"></span><span class="f bad">Waits until the recipient checks, or its Stop hook injects it</span></div>
+  <p><b>What it offers.</b> No terminal typing, and an MCP inbox tool would be easy to add. Both harnesses can continue a turn from a Stop hook, which is a clean moment <span class="tag t-doc">DOCS</span>.</p>
+  <p><b>Why not.</b> <b>It can't wake an idle agent.</b> A model that isn't running can't poll. If both are idle, which is the normal state for "ask and wait", the conversation just stops. Asking models to poll spends turns and relies on them remembering.</p>
+</div>
+
+<div role="tabpanel" id="p-e" aria-labelledby="t-e" tabindex="0">
+  <h3 style="margin-top:0">E. Private interfaces</h3>
+  <div class="flow"><span class="f">Router</span><span class="f-a"></span><span class="f bad">Claude's inbox socket, Codex's <code>thread/queue/add</code> or <code>codex queue</code></span></div>
+  <p><b>What it offers.</b> Another project, agent-net, uses these and reports messages queuing behind a running turn on Linux. <code>codex queue</code> is a shipped command.</p>
+  <p><b>Why not.</b> The Claude socket's support status wasn't established and it's untested on macOS. The docs read list no <code>thread/queue</code> method. Any harness update could break it.</p>
+  <p class="small"><b>Also rejected:</b> relaying each turn's final message automatically. It needs no tool, but it forwards text written for the human rather than for the other agent, and it would loop easily.</p>
+</div>
+
+<div class="table-wrap"><table>
+  <tr><th>Option</th><th>Same code both ways</th><th>Wakes an idle agent</th><th>Safe at a prompt</th><th>Unstable interface</th><th>Effort</th></tr>
+  <tr><td><b>A. MCP + gated paste</b></td><td>Yes</td><td>Yes</td><td>If the gate is right</td><td>No</td><td>Medium</td></tr>
+  <tr><td>B. Shell CLI + gated paste</td><td>Yes</td><td>Yes</td><td>If the gate is right</td><td>No</td><td>Low, if the sandbox allows it</td></tr>
+  <tr><td>C. Harness-native</td><td>No</td><td>Likely, unverified</td><td>Unknown</td><td>Yes</td><td>High</td></tr>
+  <tr><td>D. Polling or inbox</td><td>Yes</td><td>No</td><td>Yes</td><td>No</td><td>Low</td></tr>
+  <tr><td>E. Private interfaces</td><td>No</td><td>Reported, by others</td><td>Unknown</td><td>Yes</td><td>Medium</td></tr>
+</table></div>
+
+<h3 id="adapters">Why MCP fits mixed harnesses, and what it leaves to adapters</h3>
+<p class="prose">MCP gave one tool contract across two harnesses from different vendors, which is why it fits. But most of what makes delivery work isn't covered by it. Adding another harness would mean answering every row on the right for that harness. MCP support alone doesn't make it work, and no harness beyond these two has been examined for this record.</p>
+<div class="table-wrap"><table>
+  <tr><th>Shared today, for both harnesses</th><th>Has to be worked out per harness</th></tr>
+  <tr>
+    <td>
+      <ul style="margin:0;padding-left:18px">
+        <li>The tool contract: <code>to</code>, <code>body</code>, <code>reply_to</code></li>
+        <li>The HTTP server, token check and refusal words</li>
+        <li>Router, queue and gate</li>
+        <li>SQLite record and recovery</li>
+        <li>Frame and sanitising</li>
+      </ul>
+    </td>
+    <td>
+      <ul style="margin:0;padding-left:18px">
+        <li>How to inject MCP config and a token at launch</li>
+        <li>How to pre-approve one tool</li>
+        <li>Whether it has hooks, and what each one means. "SessionStart" already differs between these two.</li>
+        <li>How to bind a session</li>
+        <li>What an interactive TUI does with paste + Enter</li>
+        <li>Whether a built-in tool collides with ours</li>
+        <li>Whether it needs a first turn before it reports anything</li>
+      </ul>
+    </td>
+  </tr>
+</table></div>
+
+<h2 id="persist">8. Consequences and limits</h2>
+<h3>Four things that are easy to confuse</h3>
+<ol class="ladder">
+  <li><b>queued</b><span>A durable row exists. It's what the sender is told, and all it's told. <span class="tag t-code">CODE</span></span></li>
+  <li><b>pasted</b><span>The bytes reached the PTY, and Enter was written. The harness might still have ignored them.</span></li>
+  <li><b>accepted</b><span>The harness fired UserPromptSubmit, with an empty prompt or one containing the ID. <span class="tag t-unv">UNVERIFIED</span> whether each harness supplies the prompt text. If it doesn't, an empty prompt credits whatever message was pasted, including a submit that was really the user's.</span></li>
+  <li class="dark"><b>The model read it</b><span>No signal exists for this.</span></li>
+  <li class="dark"><b>The model acted on it</b><span>No signal exists either. Your evidence is a later tool call or the pane. All 10 stored messages reached <code>accepted</code>, and in run <code>01a1a744</code> Claude still got no reply.</span></li>
+</ol>
+
+<h3>Persistence isn't a work queue</h3>
+<p class="prose">SQLite here records what was sent and what happened to it, so nothing vanishes silently and a crash leaves an honest trail. It doesn't own work. There's no assignee, claim, deadline, retry or "done" signal from the recipient, and <code>accepted</code> doesn't mean the work happened. A message gets at most one delivery attempt in the run it was sent, and no run picks up another's messages. An owned work queue was left out on purpose (design decision 6).</p>
+
+<h3>What we get</h3>
+<ul class="prose">
+  <li>One code path in both directions, with the harness-specific parts confined to launch specs and a small hook rule.</li>
+  <li>A sender that can't be forged by a tool argument, and can't block on the recipient.</li>
+  <li>A safe default: every doubtful case holds, and any new state holds until someone adds a branch.</li>
+  <li>Messages you can watch arrive, and a log that keeps them.</li>
+</ul>
+
+<h3>What it costs, and present limits</h3>
+<ul class="prose">
+  <li><b>Peer messages look like user turns.</b> Only the frame says otherwise, and that's text a model can weigh, not a guarantee.</li>
+  <li><b>It rests on hooks.</b> A hook that's missing, untrusted or mistaken means messages hold until F4. Whether Stop fires after an interrupt is <span class="tag t-unv">UNVERIFIED</span>.</li>
+  <li><b>The sender is never told the outcome.</b> It only gets <code>queued</code>. Failed and held messages show up for the human only.</li>
+  <li><b>One Codex turn per launch,</b> even if nobody sends anything. The cost hasn't been measured.</li>
+  <li><b>Fixed limits, all guesses:</b> 20 relays between user submits, 64 KiB per body, 60 s startup, 5 min busy, 20 s confirm, 10 s write.</li>
+  <li><b>Two agents, one of each, on one machine.</b> Cross-machine messaging is the planned next step and isn't built. Any session ends with <code>rtk</code>.</li>
+  <li><b>Bodies are plain text on disk.</b> File permissions are their only protection.</li>
+  <li><b>Pane and paste risks are still open:</b> the young terminal emulator, partial pastes and paste mode. The current list is in <a href="../../implementation/outstanding-issues.md">outstanding issues</a>.</li>
+</ul>
+
+<h2 id="evidence">9. Evidence</h2>
+<p class="prose"><b>Every message in the database at the time of writing</b>, across all 5 retained runs. Read-only, with states and timings only. Only the first hold reason is stored, so a reason that changed later wouldn't show here. All are from the user's hand runs on macOS, and they span several builds.</p>
+<div class="table-wrap"><table>
+  <tr><th>Run</th><th>Direction</th><th>First hold</th><th>Delivering</th><th>Pasted</th><th>Accepted</th><th>Note</th></tr>
+  <tr><td rowspan="2"><code>01a1a744</code></td><td>Claude to Codex</td><td><code>starting</code></td><td>+92.0 s</td><td>+92.1 s</td><td>+93.4 s</td><td rowspan="2">Old tool name. No reply reached Claude, though both were accepted.</td></tr>
+  <tr><td>Claude to Codex</td><td><code>busy</code> at +31.6 s</td><td>+35.5 s</td><td>+35.6 s</td><td>+35.6 s</td></tr>
+  <tr><td rowspan="2"><code>01a1a918</code></td><td>Claude to Codex</td><td><code>starting</code></td><td>+39.1 s</td><td>+39.2 s</td><td>+41.5 s</td><td rowspan="2">Renamed tool. Reply reached Claude. The user had to type into Codex first.</td></tr>
+  <tr><td>Codex to Claude</td><td>none</td><td>+1 ms</td><td>+52 ms</td><td>+78 ms</td></tr>
+  <tr><td rowspan="4"><code>01a1a91c</code></td><td>Claude to Codex</td><td><code>starting</code></td><td>+9.7 s</td><td>+9.7 s</td><td>+10.6 s</td><td rowspan="4">Exchange both ways. Held once at startup only, matching the user's report.</td></tr>
+  <tr><td>Codex to Claude</td><td>none</td><td>+1 ms</td><td>+52 ms</td><td>+75 ms</td></tr>
+  <tr><td>Claude to Codex</td><td>none</td><td>+2 ms</td><td>+53 ms</td><td>+77 ms</td></tr>
+  <tr><td>Codex to Claude</td><td>none</td><td>+0 ms</td><td>+51 ms</td><td>+68 ms</td></tr>
+  <tr><td rowspan="2"><code>01a1a932</code></td><td>Claude to Codex</td><td>none</td><td>+3 ms</td><td>+54 ms</td><td>+87 ms</td><td rowspan="2">With the startup prompt. User: "I tested it and it works."</td></tr>
+  <tr><td>Codex to Claude</td><td>none</td><td>+1 ms</td><td>+52 ms</td><td>+73 ms</td></tr>
+</table></div>
+<div class="two">
+  <div class="card">
+    <h3>Seen in those runs</h3>
+    <ul class="small">
+      <li>Codex's nested <code>-c</code> config loads, and its MCP client reaches the server.</li>
+      <li>Both models can see and call the tool.</li>
+      <li>Hooks fire and session binding accepts them.</li>
+      <li>Paste and Enter land, and <code>queued</code> through <code>accepted</code> runs in both directions.</li>
+      <li>Holds on <code>starting</code> and <code>busy</code>, then delivery.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Never seen</h3>
+    <ul class="small">
+      <li>Any automated test passing. They compile and have never run.</li>
+      <li>Linux, or use over SSH.</li>
+      <li>A stored <code>unconfirmed</code>, <code>failed</code> or <code>interrupted</code> message, or a <code>crashed</code> run.</li>
+      <li>Delivery at or around a permission prompt, or over a draft.</li>
+      <li>A hold released by the startup turn's Stop.</li>
+      <li>The refusal reasons, the budget limit, or any time limit firing.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="sources">10. Sources</h2>
+<ul class="prose small">
+  <li>Source at commit <code>79ee72a</code>: <a href="../../../internal/server/mcp.go"><code>internal/server</code></a>, <a href="../../../internal/router/gate.go"><code>internal/router</code></a>, <a href="../../../internal/store/ops.go"><code>internal/store</code></a>, <a href="../../../internal/pane/pane.go"><code>internal/pane</code></a>, <a href="../../../internal/agent/agent.go"><code>internal/agent</code></a>, <a href="../../../internal/app/app.go"><code>internal/app</code></a>.</li>
+  <li>The <a href="../../design/mvp-two-pane-bridge.html">Two-Pane Bridge design</a>, v0.17: section 5 for the options, section 13 for the decisions. This record doesn't replace it.</li>
+  <li><a href="../../implementation/outstanding-issues.md">Outstanding issues</a>, for the current list of risks. <a href="../../design/ground-rules.md">Ground rules</a>, for GR-3.</li>
+  <li>The state history in <code>rtk</code>'s SQLite database, read read-only with no message bodies.</li>
+  <li>Claude Code and Codex docs and <code>--help</code>, as cited in the design and not rechecked here.</li>
+</ul>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var root = document.documentElement;
+  root.classList.add('js');
+
+  function all(selector, context) {
+    return Array.prototype.slice.call((context || document).querySelectorAll(selector));
+  }
+
+  // Map highlighting. Names come only from data-on attributes authored in this file.
+  var mapParts = all('[data-node], [data-wire]', document.getElementById('map'));
+
+  function lightMap(names) {
+    mapParts.forEach(function (part) {
+      var lit = names.indexOf(part.getAttribute('data-node')) !== -1 ||
+        names.indexOf(part.getAttribute('data-wire')) !== -1;
+      // The dashed hook arrows share a node name, so a wire name decides for them.
+      if (part.hasAttribute('data-wire') && part.hasAttribute('data-node')) {
+        lit = names.indexOf(part.getAttribute('data-wire')) !== -1;
+      }
+      part.classList.toggle('lit', lit);
+    });
+  }
+
+  function lightLife(state) {
+    all('[data-state]', document.getElementById('life')).forEach(function (chip) {
+      chip.classList.toggle('on', chip.getAttribute('data-state') === state);
+    });
+  }
+
+  // Steppers. Every step's text is already in the page; this only shows and hides it.
+  function initStepper(box) {
+    var items = all('.steps > li', box);
+    var prev = box.querySelector('[data-prev]');
+    var next = box.querySelector('[data-next]');
+    var pos = box.querySelector('[data-pos]');
+    var target = box.getAttribute('data-target');
+    var current = 0;
+
+    function apply() {
+      var item = items[current];
+      if (target === 'map') {
+        lightMap((item.getAttribute('data-on') || '').split(' '));
+      } else {
+        lightLife(item.getAttribute('data-msg') || '');
+      }
+    }
+
+    function show(index) {
+      current = Math.max(0, Math.min(items.length - 1, index));
+      items.forEach(function (item, i) {
+        var on = i === current;
+        item.classList.toggle('cur', on);
+        item.querySelector('.step-d').hidden = !on;
+        var head = item.querySelector('.step-h');
+        if (on) {
+          head.setAttribute('aria-current', 'step');
+        } else {
+          head.removeAttribute('aria-current');
+        }
+      });
+      prev.disabled = current === 0;
+      next.disabled = current === items.length - 1;
+      pos.textContent = 'Step ' + (current + 1) + ' of ' + items.length + ': ' +
+        items[current].querySelector('.step-h').textContent;
+      apply();
+    }
+
+    prev.addEventListener('click', function () {
+      show(current - 1);
+      if (prev.disabled) { next.focus(); }
+    });
+    next.addEventListener('click', function () {
+      show(current + 1);
+      if (next.disabled) { prev.focus(); }
+    });
+    items.forEach(function (item, i) {
+      item.querySelector('.step-h').addEventListener('click', function () { show(i); });
+    });
+    box.addEventListener('keydown', function (event) {
+      if (event.target.tagName === 'A') { return; }
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        show(current + 1);
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        show(current - 1);
+      }
+    });
+
+    box.stepperApply = apply;
+    show(0);
+  }
+
+  all('[data-stepper]').forEach(initStepper);
+
+  // Tabs, using the standard roving tabindex and arrow keys.
+  function selectTab(tabs, tab, focus) {
+    tabs.forEach(function (other) {
+      var on = other === tab;
+      other.setAttribute('aria-selected', on ? 'true' : 'false');
+      other.tabIndex = on ? 0 : -1;
+      document.getElementById(other.getAttribute('aria-controls')).hidden = !on;
+    });
+    if (focus) { tab.focus(); }
+    var panel = document.getElementById(tab.getAttribute('aria-controls'));
+    var stepper = panel.querySelector('[data-stepper]');
+    if (stepper) {
+      stepper.stepperApply();
+    } else if (panel.id === 'p-comp') {
+      lightMap([]);
+    }
+  }
+
+  var tabGroups = {};
+  all('[data-tabs]').forEach(function (list) {
+    var tabs = all('[role="tab"]', list);
+    tabGroups[tabs[0].id] = tabs;
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener('click', function () { selectTab(tabs, tab, false); });
+      tab.addEventListener('keydown', function (event) {
+        var to = null;
+        if (event.key === 'ArrowRight') { to = (i + 1) % tabs.length; }
+        if (event.key === 'ArrowLeft') { to = (i - 1 + tabs.length) % tabs.length; }
+        if (event.key === 'Home') { to = 0; }
+        if (event.key === 'End') { to = tabs.length - 1; }
+        if (to !== null) {
+          event.preventDefault();
+          selectTab(tabs, tabs[to], true);
+        }
+      });
+    });
+    selectTab(tabs, tabs[0], false);
+  });
+
+  // Selecting a part of the map shows its detail in the Components tab.
+  var details = all('[data-detail]');
+  var nodeButtons = all('button[data-node]');
+
+  function selectNode(name) {
+    details.forEach(function (section) {
+      section.hidden = section.getAttribute('data-detail') !== name;
+    });
+    nodeButtons.forEach(function (button) {
+      if (button.hasAttribute('aria-pressed')) {
+        button.setAttribute('aria-pressed', button.getAttribute('data-node') === name ? 'true' : 'false');
+      }
+    });
+  }
+
+  nodeButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      selectTab(tabGroups['t-comp'], document.getElementById('t-comp'), false);
+      selectNode(button.getAttribute('data-node'));
+    });
+  });
+  selectNode('server');
+
+  // A link to a scenario tab opens it.
+  all('a[href^="#t-"]').forEach(function (link) {
+    link.addEventListener('click', function () {
+      var tab = document.getElementById(link.getAttribute('href').slice(1));
+      Object.keys(tabGroups).forEach(function (key) {
+        if (tabGroups[key].indexOf(tab) !== -1) { selectTab(tabGroups[key], tab, true); }
+      });
+    });
+  });
+
+  // Gate explorer: mirrors gate and overrideOK in internal/router/gate.go.
+  var stateInput = document.getElementById('g-state');
+  var draftInput = document.getElementById('g-draft');
+  var flightInput = document.getElementById('g-flight');
+  var paneInput = document.getElementById('g-pane');
+  var output = document.getElementById('g-out');
+
+  function gate(state, drafting, inFlight, hasPane) {
+    if (!hasPane) { return { ok: false, hold: 'no_pane' }; }
+    if (inFlight) { return { ok: false, hold: 'previous_message' }; }
+    if (state === 'idle') {
+      return drafting ? { ok: false, hold: 'drafting' } : { ok: true, hold: '' };
+    }
+    return { ok: false, hold: state };
+  }
+
+  function overrideOK(state, drafting, inFlight, hasPane) {
+    if (!hasPane || inFlight) { return false; }
+    if (state === 'unknown') { return true; }
+    return state === 'idle' && drafting;
+  }
+
+  function updateGate() {
+    var state = stateInput.value;
+    var drafting = draftInput.checked;
+    var inFlight = flightInput.checked;
+    var hasPane = paneInput.checked;
+    var result = gate(state, drafting, inFlight, hasPane);
+    var canOverride = overrideOK(state, drafting, inFlight, hasPane);
+
+    var title;
+    var why;
+    if (result.ok) {
+      title = 'Deliver';
+      why = 'This is the only case that passes: idle, with a pane, nothing in flight and no draft.';
+    } else {
+      title = 'Hold: ' + result.hold;
+      why = canOverride ?
+        'F4 can override this, and you take on the risk.' :
+        'F4 can’t override this.';
+      if (result.hold === 'previous_message') {
+        why += ' In practice pump returns before asking, so the message simply stays queued.';
+      }
+      if (result.hold === 'needs_you') {
+        why += ' A pasted message could look like an answer to the prompt.';
+      }
+      if (result.hold === 'exited') {
+        why += ' A new send to this agent is refused as recipient_offline.';
+      }
+    }
+
+    output.setAttribute('data-res', result.ok ? 'deliver' : 'hold');
+    output.textContent = '';
+    var strong = document.createElement('b');
+    strong.textContent = title;
+    output.appendChild(strong);
+    output.appendChild(document.createTextNode(' — ' + why));
+  }
+
+  [stateInput, draftInput, flightInput, paneInput].forEach(function (input) {
+    input.addEventListener('change', updateGate);
+  });
+  updateGate();
+}());
+</script>
+</body>
+</html>
