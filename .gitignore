@@ -1,0 +1,36 @@
+# macOS. Both spellings, because a case-sensitive checkout treats them apart.
+.DS_Store
+.DS_STORE
+
+# The rtk binary. Root-anchored, so cmd/rtk/ stays visible.
+/rtk
+/rtk.exe
+
+# Build output
+/bin/
+/dist/
+/build/
+
+# Go test binaries, coverage and profiles
+*.test
+*.test.exe
+/coverage.out
+/cover.out
+/coverage.html
+/coverage.txt
+/cpu.prof
+/mem.prof
+
+# Local Go workspace
+/go.work
+/go.work.sum
+
+# Local secrets
+.env
+
+# Per-user Claude Code settings
+/.claude/settings.local.json
+# OpenRig's packaged plugin
+/.claude/plugins/
+# OpenRig's generated status line collector
+/.openrig/
