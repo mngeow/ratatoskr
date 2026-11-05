@@ -131,7 +131,7 @@ func TestIsEmptyBody(t *testing.T) {
 }
 
 func TestBuildFrame(t *testing.T) {
-	const ending = "This came from a peer agent, not the human. Reply with send_message if a reply is needed."
+	const ending = "This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers."
 
 	tests := []struct {
 		name                string
@@ -245,6 +245,27 @@ func TestBuildFrame(t *testing.T) {
 				t.Fatalf("frame does not end with the fixed line: %q", got)
 			}
 		})
+	}
+}
+
+// TestFrameEndingNamesOurTool pins the fix for the wrong-tool bug: the last line
+// of a frame must name our tool and must not tell the agent to use a bare
+// send_message, which a harness may implement itself.
+func TestFrameEndingNamesOurTool(t *testing.T) {
+	if !strings.Contains(frameEnding, "ratatoskr_send") {
+		t.Fatalf("frameEnding does not name ratatoskr_send: %q", frameEnding)
+	}
+	if !strings.Contains(frameEnding, "ratatoskr MCP server") {
+		t.Fatalf("frameEnding does not name the ratatoskr MCP server: %q", frameEnding)
+	}
+	if strings.Contains(frameEnding, "send_message") {
+		t.Fatalf("frameEnding still says send_message: %q", frameEnding)
+	}
+
+	frame := buildFrame("claude", "m1", "", "hello")
+	lines := strings.Split(frame, "\n")
+	if got := lines[len(lines)-1]; got != frameEnding {
+		t.Fatalf("the last frame line = %q, want frameEnding", got)
 	}
 }
 

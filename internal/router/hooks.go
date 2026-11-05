@@ -46,7 +46,14 @@ func (r *Router) hook(a *agent, ev protocol.HookEvent) {
 	// banner said is no longer true.
 	r.setBanner(r.hooksBannerKey(a), "")
 
-	a.state = nextState(a.state, ev.Kind)
+	// Codex sends its first hook when its first turn starts, so a SessionStart
+	// there means "a turn is beginning", not "ready for a message": it binds the
+	// session and clears the banner above, but the state stays starting or
+	// unknown until the first Stop. Claude's SessionStart is the launch signal
+	// and still lifts to idle.
+	if ev.Kind != protocol.HookSessionStart || sessionStartLifts(a.harness) {
+		a.state = nextState(a.state, ev.Kind)
+	}
 	r.emit(protocol.Event{Agent: r.agentViewPtr(a)})
 
 	if ev.Kind == protocol.HookUserPromptSubmit {

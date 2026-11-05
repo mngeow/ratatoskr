@@ -17,6 +17,27 @@ const (
 	holdNoPane   = "no_pane"
 )
 
+// harnessCodex is the one harness whose SessionStart does not mean idle.
+//
+// The name is duplicated here as a string because the router must not import
+// internal/agent (that package builds launch specs; the router must stay usable
+// without it). internal/agent only ever produces exactly "claude" or "codex", so
+// an exact comparison is enough; anything else keeps the old behaviour.
+const harnessCodex = "codex"
+
+// sessionStartLifts reports whether a SessionStart means the harness is idle.
+//
+// Claude announces the launch with it, so it lifts starting or unknown to idle.
+// Codex announces its first turn with it: it only sends a hook once a turn
+// begins, so a SessionStart means work is starting, not that the agent is ready
+// to receive a message. A Codex agent therefore stays starting or unknown until
+// its first Stop. Any harness other than exactly "codex" keeps the old rule.
+//
+// UNTESTED.
+func sessionStartLifts(harness string) bool {
+	return harness != harnessCodex
+}
+
 // gateInput is everything the delivery gate looks at. It is a value, not a
 // pointer, so a caller cannot hand the gate a view that changes under it.
 type gateInput struct {

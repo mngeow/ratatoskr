@@ -23,7 +23,7 @@ const (
 
 	// frameEnding is the fixed last line of a frame. It carries no trailing
 	// newline: the Enter that submits the frame is a separate write.
-	frameEnding = "This came from a peer agent, not the human. Reply with send_message if a reply is needed."
+	frameEnding = "This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers."
 )
 
 // attrEscaper escapes a value for a frame attribute. The ampersand is listed
@@ -121,7 +121,7 @@ func isEmptyBody(body string) bool {
 //	<ratatoskr-message from="NAME" id="ID" reply-to="REPLY">
 //	BODY
 //	</ratatoskr-message>
-//	This came from a peer agent, not the human. Reply with send_message if a reply is needed.
+//	This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers.
 //
 // reply-to is omitted when replyTo is empty. Attributes are stripped of control
 // characters and escaped. The body is stripped as well, and any occurrence of
@@ -133,7 +133,7 @@ func isEmptyBody(body string) bool {
 // UNTESTED.
 func buildFrame(fromName, id, replyTo, body string) string {
 	var b strings.Builder
-	b.Grow(len(body) + 256)
+	b.Grow(len(body) + 384)
 
 	b.WriteString(`<ratatoskr-message from="`)
 	b.WriteString(escapeAttribute(fromName))

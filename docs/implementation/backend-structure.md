@@ -8,7 +8,7 @@ Owner: `engineering.backend`. Status: **design only; nothing implemented, nothin
 | --- | --- | --- |
 | `internal/store` | SQLite, migrations, recovery, retention, lock file. One writer goroutine. | `protocol` |
 | `internal/router` | One actor goroutine owning agent state, per-recipient queues, gate, budget, frame building. | `protocol`, `store` (via a small interface it defines), `PaneWriter` |
-| `internal/server` | Loopback HTTP: stateless MCP `send_message`, hook endpoint, per-agent bearer tokens. `RunHook` for `rtk hook`. | `protocol`, `go-sdk` |
+| `internal/server` | Loopback HTTP: stateless MCP `ratatoskr_send`, hook endpoint, per-agent bearer tokens. `RunHook` for `rtk hook`. | `protocol`, `go-sdk` |
 | `internal/agent` | `LaunchSpec` builder and session dir per harness. Pure functions plus file writes. | `protocol` |
 
 Interfaces live with the consumer. `store` knows nothing of `router`.

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
@@ -11,9 +12,14 @@ import (
 const codexHelpSource = "UNTESTED: nested -c shapes are not shown in the docs"
 
 const (
+	// peerToolName is the tool the prompt tells Codex to use. It duplicates the
+	// server's tool name by necessity: internal/agent must not import
+	// internal/server, and the two are visible together only to a reader of both.
+	peerToolName = "ratatoskr_send"
+
 	codexServerURLKey      = "mcp_servers.ratatoskr.url"
 	codexTokenEnvKey       = "mcp_servers.ratatoskr.bearer_token_env_var"
-	codexApprovalModeKey   = "mcp_servers.ratatoskr.tools.send_message.approval_mode"
+	codexApprovalModeKey   = "mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode"
 	codexTokenEnvName      = "RATATOSKR_TOKEN"
 	codexApprovalModeValue = "approve"
 )
@@ -48,6 +54,40 @@ func codexSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Laun
 		addConfig("hooks."+event, value)
 	}
 
+	// The startup prompt is the trailing [PROMPT] argument: Codex sends its first
+	// hook only when a turn starts, so without this a held message waits for the
+	// user to type something.
+	argv = append(argv, codexStartupPrompt(p.DisplayName, p.Peers))
+
 	spec.Argv = argv
 	return spec, nil
+}
+
+// codexStartupPromptText is the fixed part of the prompt.
+const codexStartupPromptText = "Message a peer only with the " + peerToolName +
+	" tool from the ratatoskr MCP server; a built-in send_message does not reach peers." +
+	" Do not start any work or message anyone now. Reply with one short line saying you are ready, then wait."
+
+// codexStartupPrompt builds the first turn Codex is launched with.
+//
+// Every word here is visible in the process list, so nothing secret may ever be
+// added: no token, no URL, no session directory, no message content.
+//
+// It must begin with "You are": a leading dash or a subcommand word (exec,
+// review, login, resume) could be read by Codex's argument parser as an option
+// or a command instead of the [PROMPT]. The text is fixed, so no `--` separator
+// is used; whether the parser accepts one here was not checked.
+//
+// UNTESTED.
+func codexStartupPrompt(name string, peers []string) string {
+	base := "You are " + name + " in a Ratatoskr session"
+	switch len(peers) {
+	case 0:
+		base += "."
+	case 1:
+		base += "; your peer is " + peers[0] + "."
+	default:
+		base += "; your peers are " + strings.Join(peers, ", ") + "."
+	}
+	return base + " " + codexStartupPromptText
 }

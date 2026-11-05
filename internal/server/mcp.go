@@ -15,8 +15,11 @@ import (
 // Tool and server text. The instructions sentence is fixed by the design; the
 // tool description is the model-visible hint for the only tool an agent has.
 const (
-	toolName          = "send_message"
-	toolDescription   = "Send a message to a peer agent on the ratatoskr network."
+	toolName = "ratatoskr_send"
+	// toolDescription is read by the model, so it names the tool and rules out
+	// the harness's own messaging tools: Codex 0.166 ships a built-in
+	// send_message, and a bare "send a message" instruction sent it there.
+	toolDescription   = "Send a message to a peer agent on the ratatoskr network. This is the ratatoskr_send tool of the ratatoskr MCP server; use it, not any built-in messaging tool, to reach a peer."
 	statusQueued      = "queued"
 	internalErrorName = "internal_error"
 )
@@ -95,7 +98,7 @@ func instructions(name string, peers []string) string {
 		joined = "(none)"
 	}
 	return fmt.Sprintf(
-		"You are %s on a local ratatoskr network. Your peers: %s. Use send_message(to, body, reply_to?) to message a peer. Your normal replies are not sent to peers.",
+		"You are %s on a local ratatoskr network. Your peers: %s. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?). Other messaging tools, including any built-in send_message, do not reach your peers. Your normal replies are not sent to peers.",
 		name, joined,
 	)
 }

@@ -595,3 +595,96 @@ func TestNotificationsAfterCloseAreNoOpsAndDoNotBlock(t *testing.T) {
 		t.Fatalf("store was called %d times after Close", got-calls)
 	}
 }
+
+// newCodexDeliverRouter is newDeliverRouter with Codex agents. The shared helper
+// lives in fakes_test.go, which this brief does not let me change, and a Codex
+// agent has to be registered with Harness "codex" so the router sees it from the
+// start. The recipient comes back in the starting state with a pane attached.
+func newCodexDeliverRouter(t *testing.T, pane PaneWriter) (*Router, *fakeStore, *fakeClock, *agent) {
+	t.Helper()
+
+	r, fake, clock := newBareRouter(t)
+	for _, s := range []protocol.LaunchSpec{codexSpec("a", "alpha"), codexSpec("b", "beta")} {
+		if err := r.registerAgent(s); err != nil {
+			t.Fatalf("registerAgent: %v", err)
+		}
+	}
+
+	beta := r.agents["b"]
+	beta.w = pane
+	beta.state = protocol.AgentStarting
+	beta.startedAt = clock.now()
+	return r, fake, clock, beta
+}
+
+// TestCodexF4DeliversWhileUnknown: F4 is the user's override for exactly this
+// situation, and a Codex agent that has not reached Stop lives in it.
+func TestCodexF4DeliversWhileUnknown(t *testing.T) {
+	pane := &fakePane{}
+	r, _, _, beta := newCodexDeliverRouter(t, pane)
+
+	// Bind it and then leave it unknown, the state F4 exists to escape.
+	r.hook(beta, protocol.HookEvent{Kind: protocol.HookSessionStart, Source: bindingSessionSource, SessionID: "s1"})
+	beta.state = protocol.AgentUnknown
+
+	message := queueMessage(t, r, beta, protocol.MessageQueued)
+	r.pump(beta, true)
+
+	if beta.inflight != message {
+		t.Fatal("F4 did not deliver to an unknown Codex agent")
+	}
+
+	// And the invitation stays closed at a permission prompt.
+	other := &fakePane{}
+	r2, _, _, beta2 := newCodexDeliverRouter(t, other)
+	beta2.state = protocol.AgentNeedsYou
+	blocked := queueMessage(t, r2, beta2, protocol.MessageQueued)
+	r2.pump(beta2, true)
+
+	if beta2.inflight != nil {
+		t.Fatal("F4 delivered into a permission prompt")
+	}
+	if blocked.state != protocol.MessageHeld {
+		t.Fatalf("message state = %q, want %q", blocked.state, protocol.MessageHeld)
+	}
+}
+
+// TestTickStartupBannerOnlyWithoutAcceptedHook: a Codex agent that has already
+// reported its first turn stays starting by design, so the timeout must move it
+// to unknown without claiming its hooks never arrived.
+func TestTickStartupBannerOnlyWithoutAcceptedHook(t *testing.T) {
+	t.Run("no hooks ever accepted", func(t *testing.T) {
+		pane := &fakePane{}
+		r, _, clock, beta := newCodexDeliverRouter(t, pane)
+		beta.startedAt = clock.now().Add(-2 * r.cfg.StartupTimeout)
+
+		r.tick(clock.now())
+
+		if beta.state != protocol.AgentUnknown {
+			t.Fatalf("state = %q, want %q", beta.state, protocol.AgentUnknown)
+		}
+		if _, ok := r.banners[r.hooksBannerKey(beta)]; !ok {
+			t.Fatal("no banner was raised for an agent whose hooks never arrived")
+		}
+	})
+
+	t.Run("an accepted SessionStart first", func(t *testing.T) {
+		pane := &fakePane{}
+		r, _, clock, beta := newCodexDeliverRouter(t, pane)
+
+		r.hook(beta, protocol.HookEvent{Kind: protocol.HookSessionStart, Source: bindingSessionSource, SessionID: "s1"})
+		if beta.state != protocol.AgentStarting {
+			t.Fatalf("state = %q after SessionStart, want %q", beta.state, protocol.AgentStarting)
+		}
+
+		beta.startedAt = clock.now().Add(-2 * r.cfg.StartupTimeout)
+		r.tick(clock.now())
+
+		if beta.state != protocol.AgentUnknown {
+			t.Fatalf("state = %q, want %q", beta.state, protocol.AgentUnknown)
+		}
+		if banner, ok := r.banners[r.hooksBannerKey(beta)]; ok {
+			t.Fatalf("the timeout claimed hooks never arrived: %q", banner)
+		}
+	})
+}

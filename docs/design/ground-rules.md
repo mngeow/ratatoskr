@@ -25,13 +25,15 @@ Verified 2026-11-04 against upstream `go.mod` and the Go module proxy: latest re
 
 ## GR-3: No testing or pushing until the user says so
 
+A push authorization covers that delivery only. It doesn't authorize team testing.
+
 Set by the user on 2026-11-04, in their words: "Do not let the team test or push, I will instruct them when and how to do so." It stays in force until the user instructs otherwise, and it overrides testing and verification steps in any design or brief, including the spikes and acceptance checks in the Two-Pane Bridge design.
 
 - **Not allowed:** running tests or feasibility spikes, local or remote, automated or manual; running `rtk` or launching a harness to try behaviour; other executable probes in place of tests; SSH to a server for testing; pushing.
 - **Allowed:** implementation, documentation and static code review within approved scope; writing test files without running them; reading docs, source and `--help` output.
 - **Compile checks:** `gofmt`, `go vet` and `go build` are allowed as long as nothing built is run. This is architect's reading, and the user can tighten it.
 - **Reporting:** mark all behaviour as untested in code notes, the README and reports. Do not ask for test approval repeatedly.
-- **Commits:** not authorized by this rule. On 2026-11-04 the user authorized one local commit of the first version, without a push. Each later commit needs the user's say-so.
+- **Commits:** not authorized by this rule. The user authorized a local commit of the first version on 2026-11-04, and a commit and push of the follow-up changes to `main` on 2026-11-05. Each later commit or push needs the user's say-so.
 - **The user's own testing:** the user may test by hand at any time. Their results are recorded as theirs, and don't permit the team to run anything.
 
 ## Compliance checks

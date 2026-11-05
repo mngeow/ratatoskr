@@ -34,7 +34,7 @@ func TestClaudeSpecArgv(t *testing.T) {
 		"--session-id", spec.SessionID,
 		"--mcp-config", mcpPath,
 		"--settings", settingsPath,
-		"--allowedTools", "mcp__ratatoskr__send_message",
+		"--allowedTools", "mcp__ratatoskr__ratatoskr_send",
 	}
 	if len(spec.Argv) != len(want) {
 		t.Fatalf("argv has %d elements, want %d: %v", len(spec.Argv), len(want), spec.Argv)
@@ -170,6 +170,7 @@ func TestCodexSpecArgv(t *testing.T) {
 	params.RtkPath = "/opt/rtk"
 	params.SessionDir = "/run/session"
 	params.ServerAddr = "127.0.0.1:4100"
+	params.Peers = []string{"beta"}
 
 	spec, err := Build(params)
 	if err != nil {
@@ -184,13 +185,19 @@ func TestCodexSpecArgv(t *testing.T) {
 		params.Binary,
 		"-c", `mcp_servers.ratatoskr.url="http://127.0.0.1:4100/mcp"`,
 		"-c", `mcp_servers.ratatoskr.bearer_token_env_var="RATATOSKR_TOKEN"`,
-		"-c", `mcp_servers.ratatoskr.tools.send_message.approval_mode="approve"`,
+		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode="approve"`,
 	}
 	for _, event := range HookEvents {
 		want = append(want, "-c", `hooks.`+event+
 			`=[{hooks=[{type="command",command="/opt/rtk hook --agent alpha --event `+event+
 			` --session-dir /run/session",timeout=10}]}]`)
 	}
+	// The startup prompt is the trailing [PROMPT] argument.
+	want = append(want,
+		"You are alpha in a Ratatoskr session; your peer is beta."+
+			" Message a peer only with the ratatoskr_send tool from the ratatoskr MCP server;"+
+			" a built-in send_message does not reach peers. Do not start any work or message anyone now."+
+			" Reply with one short line saying you are ready, then wait.")
 
 	if len(spec.Argv) != len(want) {
 		t.Fatalf("argv has %d elements, want %d:\n%v", len(spec.Argv), len(want), spec.Argv)
@@ -305,4 +312,206 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("%s mode = %o, want %o", path, got, want)
 	}
+}
+
+// TestCodexStartupPrompt pins the exact prompt texts. It is model-visible, so
+// every character matters, and it is visible in the process list, so nothing
+// secret may appear in it.
+func TestCodexStartupPrompt(t *testing.T) {
+	const tail = "Message a peer only with the ratatoskr_send tool from the ratatoskr MCP server; a built-in send_message does not reach peers. Do not start any work or message anyone now. Reply with one short line saying you are ready, then wait."
+
+	tests := []struct {
+		name  string
+		peers []string
+		want  string
+	}{
+		{
+			name: "no peers",
+			want: "You are codex in a Ratatoskr session. " + tail,
+		},
+		{
+			name:  "one peer",
+			peers: []string{"claude"},
+			want:  "You are codex in a Ratatoskr session; your peer is claude. " + tail,
+		},
+		{
+			name:  "two peers keep the caller's order",
+			peers: []string{"claude", "gemini"},
+			want:  "You are codex in a Ratatoskr session; your peers are claude, gemini. " + tail,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := codexStartupPrompt("codex", tc.peers)
+			if got != tc.want {
+				t.Fatalf("codexStartupPrompt =\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCodexStartupPromptCarriesNothingSecret keeps the prompt safe in a process
+// list and safe for Codex's argument parser: no secret, no frame tag, no
+// newline, no apostrophe, and nothing that could be read as an option or a
+// subcommand.
+func TestCodexStartupPromptCarriesNothingSecret(t *testing.T) {
+	params := baseParams(t, harnessCodex)
+	params.Peers = []string{"beta"}
+
+	prompt := codexStartupPrompt(params.DisplayName, params.Peers)
+
+	if !strings.HasPrefix(prompt, "You are ") {
+		t.Fatalf("prompt does not start with 'You are ': %q", prompt)
+	}
+	if prompt[0] == '-' {
+		t.Fatalf("prompt starts with a dash, so Codex would read it as an option: %q", prompt)
+	}
+	if !strings.Contains(prompt, peerToolName) {
+		t.Fatalf("prompt does not name %q", peerToolName)
+	}
+	if !strings.Contains(prompt, "ratatoskr MCP server") {
+		t.Fatalf("prompt does not name the ratatoskr MCP server: %q", prompt)
+	}
+
+	forbidden := []string{
+		params.Token,      // the bearer token
+		params.SessionDir, // where the hook files live
+		params.ServerAddr, // the loopback address and port
+		"Bearer",
+		"http",
+		"<ratatoskr-message",
+		"</ratatoskr-message>",
+		"\n",
+		"'",
+	}
+	for _, secret := range forbidden {
+		if strings.Contains(prompt, secret) {
+			t.Fatalf("prompt contains %q: %q", secret, prompt)
+		}
+	}
+}
+
+// TestClaudeIgnoresPeers: the peer list only shapes Codex's first turn. Claude's
+// launch and every file it writes must be identical with and without peers.
+func TestClaudeIgnoresPeers(t *testing.T) {
+	params := baseParams(t, harnessClaude)
+
+	without, err := Build(params)
+	if err != nil {
+		t.Fatalf("Build without peers: %v", err)
+	}
+	mcpWithout := readFileForTest(t, params.SessionDir, claudeMCPFileName)
+	settingsWithout := readFileForTest(t, params.SessionDir, claudeSettingsFileName)
+
+	withPeers := params
+	withPeers.Peers = []string{"codex", "gemini"}
+	with, err := Build(withPeers)
+	if err != nil {
+		t.Fatalf("Build with peers: %v", err)
+	}
+	mcpWith := readFileForTest(t, params.SessionDir, claudeMCPFileName)
+	settingsWith := readFileForTest(t, params.SessionDir, claudeSettingsFileName)
+
+	for _, arg := range with.Argv {
+		if strings.Contains(arg, "Ratatoskr session") {
+			t.Fatalf("Claude's argv carries a startup prompt: %q", arg)
+		}
+	}
+	if last := with.Argv[len(with.Argv)-1]; last != claudeToolName {
+		t.Fatalf("last argv element = %q, want the --allowedTools value %q", last, claudeToolName)
+	}
+	if string(mcpWith) != string(mcpWithout) {
+		t.Fatalf("%s changed when peers were set", claudeMCPFileName)
+	}
+	if string(settingsWith) != string(settingsWithout) {
+		t.Fatalf("%s changed when peers were set", claudeSettingsFileName)
+	}
+	if len(with.Argv) != len(without.Argv) {
+		t.Fatalf("argv length changed with peers: %d -> %d", len(without.Argv), len(with.Argv))
+	}
+}
+
+// TestCodexHookElementsIgnorePeers: the hook command must stay byte-identical,
+// because Codex asks the user to re-trust a hook whose definition changes.
+func TestCodexHookElementsIgnorePeers(t *testing.T) {
+	params := baseParams(t, harnessCodex)
+
+	without, err := Build(params)
+	if err != nil {
+		t.Fatalf("Build without peers: %v", err)
+	}
+
+	withPeers := params
+	withPeers.Peers = []string{"claude"}
+	with, err := Build(withPeers)
+	if err != nil {
+		t.Fatalf("Build with peers: %v", err)
+	}
+
+	before := codexHookElements(without.Argv)
+	after := codexHookElements(with.Argv)
+
+	if len(before) != len(HookEvents) {
+		t.Fatalf("found %d hook elements, want %d", len(before), len(HookEvents))
+	}
+	if len(before) != len(after) {
+		t.Fatalf("hook element count changed with peers: %d -> %d", len(before), len(after))
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Fatalf("hook element %d changed:\n%q\n%q", i, before[i], after[i])
+		}
+	}
+}
+
+// TestBuildRejectsBadPeerNames: a peer name reaches a model-visible prompt, so it
+// gets the same pattern as our own display name.
+func TestBuildRejectsBadPeerNames(t *testing.T) {
+	bad := []string{"bad name", "A", "../peer", "peer/name", "", strings.Repeat("a", 33)}
+
+	for _, peer := range bad {
+		t.Run(peer, func(t *testing.T) {
+			params := baseParams(t, harnessCodex)
+			params.Peers = []string{"ok", peer}
+			if _, err := Build(params); err == nil {
+				t.Fatalf("Build accepted the peer name %q", peer)
+			}
+		})
+	}
+
+	// No peers at all is fine, and so is a valid list.
+	if _, err := Build(baseParams(t, harnessCodex)); err != nil {
+		t.Fatalf("Build rejected an empty peer list: %v", err)
+	}
+	params := baseParams(t, harnessCodex)
+	params.Peers = []string{"claude", "gemini"}
+	if _, err := Build(params); err != nil {
+		t.Fatalf("Build rejected valid peer names: %v", err)
+	}
+}
+
+// readFileForTest reads one file Build wrote into a session directory.
+func readFileForTest(t *testing.T, dir, name string) []byte {
+	t.Helper()
+
+	content, err := readFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	return content
+}
+
+// codexHookElements extracts the -c values whose key is a hook definition.
+func codexHookElements(argv []string) []string {
+	elements := make([]string, 0, len(HookEvents))
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] != "-c" {
+			continue
+		}
+		if strings.HasPrefix(argv[i+1], "hooks.") {
+			elements = append(elements, argv[i+1])
+		}
+	}
+	return elements
 }

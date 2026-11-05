@@ -215,7 +215,7 @@ th { background: var(--surface-2); font-weight: 600; }
 <h1>Two-Pane Bridge</h1>
 <p class="lede">A small Go program with a Bubble Tea TUI that runs Claude Code and Codex side by side and lets them message each other.</p>
 <div class="meta">
-  <span class="pill status">v0.13: the user reports mouse focus and Ctrl+C working by hand; the team has run nothing, and no test or other acceptance check has run</span>
+  <span class="pill status">v0.17: the user reports mouse focus, Ctrl+C, automatic Codex startup and messages both ways working by hand on macOS; the team has run nothing, and no automated test has run</span>
   <span class="pill">Implemented, compile-checked only</span>
   <span class="pill">With delivery lead</span>
   <span class="pill">2026-11-04</span>
@@ -223,11 +223,11 @@ th { background: var(--surface-2); font-weight: 600; }
 </div>
 
 <div class="note">
-  <p><strong>The design in brief.</strong> One Go binary owns both terminal sessions. An agent <em>sends</em> by calling a <code>send_message</code> tool over MCP, which both harnesses support. The program <em>delivers</em> by typing into the recipient's pane, but only when hooks report that recipient is idle. Both directions use the same code, and neither harness needs a plugin in another language.</p>
+  <p><strong>The design in brief.</strong> One Go binary owns both terminal sessions. An agent <em>sends</em> by calling a <code>ratatoskr_send</code> tool over MCP, which both harnesses support. The program <em>delivers</em> by typing into the recipient's pane, but only when hooks report that recipient is idle. Both directions use the same code, and neither harness needs a plugin in another language.</p>
   <p><strong>The riskiest part is not messaging.</strong> It is whether two full-screen TUIs render and take keyboard input properly inside Bubble Tea. That gets tested first, with tmux as the known alternative if it fails (section 4).</p>
 </div>
 
-<p><strong>How to read the evidence.</strong> The team has run nothing here. The user's hand runs are the only observations. They found the mouse and Ctrl+C bugs in section 4, and the user then reported that mouse focus and Ctrl+C work on the fixed build. Everything else here is still untested. Open items are in <a href="../implementation/outstanding-issues.md">Outstanding issues</a>.
+<p><strong>How to read the evidence.</strong> The team has run nothing here. The user's hand runs are the only observations. They found the mouse and Ctrl+C bugs in section 4, and the user then reported that mouse focus and Ctrl+C work on the fixed build. A later hand run on Codex 0.166.0, traced read-only by the architect, showed messages reaching Codex and being accepted, with its launch config, MCP connection, hooks and session binding working, and found two problems: decisions 10 and 11. Everything else here is still untested. Open items are in <a href="../implementation/outstanding-issues.md">Outstanding issues</a>.
 <span class="tag t-help">HELP</span> installed CLI help (Claude Code 2.1.311, Codex 0.166.0).
 <span class="tag t-docs">DOCS</span> vendor docs read 2026-11-04.
 <span class="tag t-consult">CONSULT</span> codebase-explorer's source analysis of other projects.
@@ -271,7 +271,7 @@ th { background: var(--surface-2); font-weight: 600; }
         <div class="dim">&gt; Ask Codex to review the parser</div>
         <div>Sending the review request</div>
         <div>to Codex now.</div>
-        <div class="dim">⏺ ratatoskr · send_message</div>
+        <div class="dim">⏺ ratatoskr · ratatoskr_send</div>
         <div>&nbsp;</div>
         <div class="dim">&gt; _</div>
       </div>
@@ -381,7 +381,7 @@ th { background: var(--surface-2); font-weight: 600; }
   <div class="tab-panel" id="p-a">
     <p class="flow-label">Same in both directions</p>
     <div class="flow">
-      <span class="step claude">Sender calls MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step claude">Sender calls MCP <code>ratatoskr_send</code></span><span class="arrow">→</span>
       <span class="step bridge">Router queues it and waits until the recipient is idle</span><span class="arrow">→</span>
       <span class="step codex">Bracketed paste + Enter into recipient's PTY</span>
     </div>
@@ -423,13 +423,13 @@ th { background: var(--surface-2); font-weight: 600; }
   <div class="tab-panel" id="p-c">
     <p class="flow-label">Claude → Codex</p>
     <div class="flow">
-      <span class="step claude">MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step claude">MCP <code>ratatoskr_send</code></span><span class="arrow">→</span>
       <span class="step bridge">Router</span><span class="arrow">→</span>
       <span class="step codex">App server <code>turn/start</code>, or <code>turn/steer</code> if busy; TUI attached with <code>codex --remote</code></span>
     </div>
     <p class="flow-label">Codex → Claude</p>
     <div class="flow">
-      <span class="step codex">MCP <code>send_message</code></span><span class="arrow">→</span>
+      <span class="step codex">MCP <code>ratatoskr_send</code></span><span class="arrow">→</span>
       <span class="step bridge">Router</span><span class="arrow">→</span>
       <span class="step claude">Channel notification <code>notifications/claude/channel</code></span>
     </div>
@@ -514,14 +514,14 @@ th { background: var(--surface-2); font-weight: 600; }
       <div class="seq-head bridge">ratatoskr</div>
       <div class="seq-head codex">Codex</div>
 
-      <div class="msg r ab"><b>1</b>MCP <code>send_message(to: codex, body)</code></div>
+      <div class="msg r ab"><b>1</b>MCP <code>ratatoskr_send(to: codex, body)</code></div>
       <div class="msg l ba"><b>2</b>commits m7, then returns <code>{id: m7, status: queued}</code></div>
       <div class="self"><b>3</b> Codex is busy: hold m7</div>
       <div class="msg l cb"><b>4</b>Stop hook: Codex is now idle</div>
       <div class="self"><b>5</b> Gate passes: commit <code>delivering</code>, strip control characters</div>
       <div class="msg r bc"><b>6</b>PTY: paste the frame, then Enter; commit <code>pasted</code></div>
       <div class="msg l cb"><b>7</b>UserPromptSubmit hook: commit m7 <code>accepted</code></div>
-      <div class="msg l cb"><b>8</b>MCP <code>send_message(to: claude, reply_to: m7)</code></div>
+      <div class="msg l cb"><b>8</b>MCP <code>ratatoskr_send(to: claude, reply_to: m7)</code></div>
       <div class="self"><b>9</b> Same steps in reverse</div>
       <div class="msg l ba"><b>10</b>PTY: paste the reply when Claude is idle</div>
     </div>
@@ -535,7 +535,7 @@ th { background: var(--surface-2); font-weight: 600; }
   <div class="states">
     <div class="state hold">
       <h4>starting</h4><p class="why">Hold</p>
-      <ul class="trans"><li><code>SessionStart</code> → idle</li><li>No hook event for a set time → unknown, with a banner</li></ul>
+      <ul class="trans"><li><code>SessionStart</code> → idle, Claude Code only. For Codex it binds the session and changes no state, because it arrives at the start of a turn. <span class="tag t-test">TEST</span></li><li>No hook event for a set time → unknown, with a banner</li></ul>
     </div>
     <div class="state go">
       <h4>idle</h4><p class="why">Deliver, unless you may be mid-draft in this pane. F4 overrides that.</p>
@@ -563,7 +563,7 @@ th { background: var(--surface-2); font-weight: 600; }
 
 <h2>8. Interfaces</h2>
 <h3>Agent tool</h3>
-<pre><code>send_message(to: string, body: string, reply_to?: string)
+<pre><code>ratatoskr_send(to: string, body: string, reply_to?: string)
   → { id, status: "queued" }
   → error { reason: "unknown_recipient" | "unknown_reply_to" | "recipient_offline" |
                    "budget_exhausted" | "too_large" | "empty_body" | "storage_unavailable" }</code></pre>
@@ -574,7 +574,7 @@ th { background: var(--surface-2); font-weight: 600; }
 <pre><code>&lt;ratatoskr-message from="claude" id="m7" reply-to="m6"&gt;
 Please review internal/parser for error handling.
 &lt;/ratatoskr-message&gt;
-This came from a peer agent, not the human. Reply with send_message if a reply is needed.</code></pre>
+This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers.</code></pre>
 
 <h3>Delivery status</h3>
 <div class="scroll"><table>
@@ -590,12 +590,12 @@ This came from a peer agent, not the human. Reply with send_message if a reply i
 
 <h3>Launch sketch</h3>
 <pre><code>claude --mcp-config &lt;session-dir&gt;/mcp.json --settings &lt;session-dir&gt;/settings.json \
-       --allowedTools mcp__ratatoskr__send_message
+       --allowedTools mcp__ratatoskr__ratatoskr_send
 
 RATATOSKR_TOKEN=... codex \
   -c 'mcp_servers.ratatoskr.url="http://127.0.0.1:&lt;port&gt;/mcp"' \
   -c 'mcp_servers.ratatoskr.bearer_token_env_var="RATATOSKR_TOKEN"' \
-  -c 'mcp_servers.ratatoskr.tools.send_message.approval_mode="approve"' \
+  -c 'mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode="approve"' \
   -c '&lt;hooks config, shape to be confirmed&gt;'</code></pre>
 <p>The flags and config keys are documented <span class="tag t-help">HELP</span> <span class="tag t-docs">DOCS</span>, but setting nested MCP and hook config with <code>-c</code> is unverified <span class="tag t-test">TEST</span>. Hooks call back through the <code>rtk hook</code> subcommand, so this is Go too. The hook command is identical across runs, with an absolute <code>rtk</code> path and no per-run values, because Codex skips new or changed hooks until you review them <span class="tag t-docs">DOCS</span>. Whether its trust record keys on the command string is unverified <span class="tag t-test">TEST</span>, and the bypass flag is not used. The command reads the server URL and token from a 0600 file in a fixed session directory, because it isn't verified that environment variables reach hooks. <strong>A hook event only counts if it comes from this run's harness session:</strong> ratatoskr compares the harness session ID in the hook's input with the ID bound to that agent. A missing or mismatching ID never applies its event. It is counted for the log and a banner, and an <code>idle</code> agent moves to <code>unknown</code>, because the agent's own ID may have changed and a stale <code>idle</code> could paste into a busy agent. A later event with the bound ID restores the matching state. ratatoskr never rebinds to a new ID, because an orphan could fire the event that triggered it. If <code>/clear</code>, <code>/compact</code>, resume or fork do change a harness's ID, which is not established <span class="tag t-test">TEST</span>, that agent needs F4 delivery for the rest of the run. Claude's ID is chosen at launch with <code>--session-id</code>; Codex's is bound from its first <code>SessionStart</code> with source <code>startup</code>, and if Codex doesn't report that, it stays <code>unknown</code> <span class="tag t-test">TEST</span>. This guards against a harness left over from a crash, which could read the new run's token and report a false "idle". The check can't rely on anything in the session directory. If a harness provides no usable session ID, its state stays <code>unknown</code> and you deliver with F4 <span class="tag t-test">TEST</span>. Backend also found that Codex may skip hooks until they pass its trust review <span class="tag t-test">TEST</span>. If so, that agent stays in <code>unknown</code> and you deliver with F4.</p>
 
@@ -657,7 +657,7 @@ message_events  (id INTEGER PRIMARY KEY, message_id, at, from_state, to_state, r
 <h3>Commit order</h3>
 <div class="scroll"><table>
   <tr><th>Moment</th><th>Transaction</th><th>Why</th></tr>
-  <tr><td><code>send_message</code> arrives</td><td>Insert the message and its first event, <strong>commit, then</strong> return <code>queued</code></td><td><code>queued</code> means durably recorded. If the commit fails, the sender gets an error and the message doesn't exist.</td></tr>
+  <tr><td><code>ratatoskr_send</code> arrives</td><td>Insert the message and its first event, <strong>commit, then</strong> return <code>queued</code></td><td><code>queued</code> means durably recorded. If the commit fails, the sender gets an error and the message doesn't exist.</td></tr>
   <tr><td>Gate passes</td><td>Commit <code>delivering</code>, <strong>then</strong> write to the PTY</td><td>A crash can't hide a write. If this commit fails, nothing is written.</td></tr>
   <tr><td>Write returns</td><td>Commit <code>pasted</code> or <code>failed</code></td><td>Records only what the write call reported.</td></tr>
   <tr><td>Hook or time limit</td><td>Commit <code>accepted</code> or <code>unconfirmed</code></td><td>The evidence decides the state.</td></tr>
@@ -755,7 +755,7 @@ message_events  (id INTEGER PRIMARY KEY, message_id, at, from_state, to_state, r
 <h2>13. Decisions</h2>
 <div class="dec"><h3>1. Messaging path</h3><p><strong>Decided by the user, 2026-11-04: option A</strong>, MCP to send and gated paste to deliver.</p></div>
 <div class="dec"><h3>2. Pane approach</h3><p><strong>Decided by the user, 2026-11-04, and reconfirmed after reviewing the tmux proposal: embedded in Bubble Tea.</strong> The spike still runs first. If it fails, that goes back to the user rather than switching to tmux automatically.</p></div>
-<div class="dec"><h3>3. Permission prompts</h3><p><strong>Decided by the user, 2026-11-04: prompt the user to approve.</strong> Each harness keeps its own prompts, the TUI shows a "needs you" badge, and the user answers in the pane. Only <code>send_message</code> is pre-approved.</p></div>
+<div class="dec"><h3>3. Permission prompts</h3><p><strong>Decided by the user, 2026-11-04: prompt the user to approve.</strong> Each harness keeps its own prompts, the TUI shows a "needs you" badge, and the user answers in the pane. Only <code>ratatoskr_send</code> is pre-approved.</p></div>
 <div class="dec"><h3>4. Platform</h3><p><strong>Decided by the user, 2026-11-04: macOS and Linux (Ubuntu server); Windows deferred.</strong> This version runs on either machine, with both agents on that machine. Cross-machine messaging follows under decision 5.</p></div>
 
 <div class="dec"><h3>5. When machines connect</h3><p><strong>Decided by the user, 2026-11-04: single machine first, then cross-machine messaging as the next step.</strong> The user's Mac and Ubuntu server can already reach each other over Tailscale, so a direct link is the likely starting point. That link gets its own design when the time comes.</p></div>
@@ -764,12 +764,14 @@ message_events  (id INTEGER PRIMARY KEY, message_id, at, from_state, to_state, r
 <div class="dec"><h3>7. Command and implementation</h3><p><strong>Decided by the user, 2026-11-04: the command that launches the TUI is <code>rtk</code>, and implementation may begin,</strong> with a setup README. The product is still Ratatoskr. A failed spike that reopens one of these decisions goes back to the user.</p></div>
 <div class="dec"><h3>8. Testing and pushing</h3><p><strong>Decided by the user, 2026-11-04: the team doesn't test or push until the user instructs it, and the user decides when and how</strong> (<a href="ground-rules.md">GR-3</a>). This replaces the earlier spikes-first order. Everything in this design is untested until then.</p></div>
 <div class="dec"><h3>9. Ctrl+C</h3><p><strong>Decided by the user, 2026-11-04:</strong> the first press interrupts the focused agent; a second press within about a second asks to quit rtk, warning first if messages are waiting or a draft is unsent; if no agent can receive the interrupt, one press asks to quit. Details are in section 4.</p></div>
+<div class="dec"><h3>10. Tool name</h3><p><strong>Architect's change, 2026-11-04: the MCP tool is <code>ratatoskr_send</code>, not <code>send_message</code>.</strong> Codex 0.166.0 has a built-in <code>send_message</code>. In the user's run, Codex followed the frame's old wording to that tool, messaged itself, and said it had replied, so nothing reached Claude. In the next user run, Codex found the tool as <code>mcp__ratatoskr__ratatoskr_send</code> and its reply reached Claude. Later runs on macOS repeated this.</p></div>
+<div class="dec"><h3>11. Codex's first message</h3><p><strong>Decided by the user, 2026-11-05: Codex launches with a short automatic prompt,</strong> passed as its launch argument, not typed into the pane. Codex fires <code>SessionStart</code> on its first turn, not at launch, and the router waits for a hook before delivering. Without a first turn, messages would hold until the user started one. The prompt starts that turn, says who the peer is and names <code>ratatoskr_send</code>. It costs one extra Codex model turn at every launch, even if no message is sent, and shows in the pane. Messages sent meanwhile wait until that turn ends. It doesn't bypass trust or permission prompts. Pasting into a <code>starting</code> agent is rejected, because Enter could answer a dialog. The user tested this on macOS and reports it works: in that run, a message from Claude reached Codex with no hold and Codex's reply came back. Other platforms and dialog cases are untested.</p></div>
 
 <h2>14. Growing to several machines</h2>
 <p>The planned next step after this version (decision 5), and not built in it. Cross-machine messaging adds a layer and leaves the agent-facing parts alone: sending is still a local MCP call, and delivery is still a gated paste on the recipient's machine. agent-net separates its local and between-machine links in a similar way. <span class="tag t-consult">CONSULT</span></p>
 <div class="figure">
   <div class="flow">
-    <span class="step claude">Mac: Claude calls <code>send_message</code></span><span class="arrow">→</span>
+    <span class="step claude">Mac: Claude calls <code>ratatoskr_send</code></span><span class="arrow">→</span>
     <span class="step bridge">Mac: ratatoskr</span><span class="arrow">⇒</span>
     <span class="step">Encrypted, authenticated link</span><span class="arrow">⇒</span>
     <span class="step bridge">Ubuntu: ratatoskr, delivery gate</span><span class="arrow">→</span>

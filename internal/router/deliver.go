@@ -238,7 +238,13 @@ func (r *Router) tick(now time.Time) {
 			// times out: nothing has been launched yet.
 			if !a.startedAt.IsZero() && now.Sub(a.startedAt) > r.cfg.StartupTimeout {
 				a.state = protocol.AgentUnknown
-				r.setBanner(r.hooksBannerKey(a), noHooksBanner(a.name))
+				// Only say hooks never arrived if none ever did. A Codex agent
+				// whose SessionStart bound it stays starting until its first Stop;
+				// if it times out there, its hooks did arrive, and saying they
+				// are missing would be wrong. It still goes to unknown (hold).
+				if a.lastEvent.IsZero() {
+					r.setBanner(r.hooksBannerKey(a), noHooksBanner(a.name))
+				}
 				r.emit(protocol.Event{Agent: r.agentViewPtr(a)})
 			}
 		case protocol.AgentBusy:

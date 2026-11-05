@@ -111,7 +111,7 @@ Table tests with a fake `Store` that logs calls, a fake `PaneWriter`, and a `Now
    <ratatoskr-message from="NAME" id="ID" reply-to="REPLY">
    BODY
    </ratatoskr-message>
-   This came from a peer agent, not the human. Reply with send_message if a reply is needed.
+   This came from a peer agent, not the human. To reply, use the ratatoskr_send tool from the ratatoskr MCP server; other messaging tools don't reach your peers.
    ```
 
    `reply-to="..."` is omitted when `replyTo` is empty. `fromName`, `id`, `replyTo` are run through `stripControl` and escaped as attribute values (`&` `"` `<` `>` and newline → entity or space). `body` is `stripControl`-ed, and any occurrence of `<ratatoskr-message` or `</ratatoskr-message` in it has its `<` replaced by `&lt;`, so a body cannot forge the frame. The result contains no ESC.
@@ -215,3 +215,14 @@ Starting point is the accepted, reviewed 2a code in `internal/router` (read it f
 **Tests (unrun):** table tests driving `hook`, `pump` and `tick` directly in the actor goroutine's place (tests call the methods on a router that was never `Start`ed, which is why they are unexported and single-threaded); a fake `PaneWriter` that records calls and can block, fail, or report `BytesWritten`; fake clock. Cover: the commit-order sequence in the fake store's call log; failing `delivering` commit ⇒ zero `PasteSubmit` calls; busy / needs_you / drafting / unknown holds; F4 allowed for `unknown`, refused for `needs_you`; early-confirm race; foreign prompt not credited; late accept; every timer; exit transitions; session binding table including Codex `startup` bind and non-`startup` SessionStart not binding; mismatch while idle ⇒ unknown, then a matching Stop ⇒ idle and a matching UserPromptSubmit ⇒ busy (recovery uses `nextState`, no saved state); a mismatch while busy or needs_you leaves the state alone.
 
 I write the `rtktest` kill points and the extra race-sensitive tests myself afterwards.
+
+
+## Amendment 2026-11-05: Codex SessionStart binds but does not make the agent idle
+
+Codex sends its first hook only when its first turn starts, so for Codex a SessionStart means "a turn is starting", not "ready". Delivering on it pasted a held message into a turn that had just begun (run 01a1a918). Rules, all UNTESTED:
+
+- `nextState` is unchanged and pure. `hook()` skips the `nextState` call for a SessionStart when `sessionStartLifts(a.harness)` is false, which is true only for the harness named exactly `codex` (`internal/router/gate.go`). Every other harness name keeps the old rule.
+- A Codex SessionStart still binds the session (`acceptHook`), sets `lastEvent`, clears the hooks banner and pumps; the gate then holds because the state is still `starting` or `unknown`. Codex becomes busy on UserPromptSubmit and idle on Stop, as before.
+- A late SessionStart no longer lifts a Codex `unknown` agent to idle. F4 on `unknown` is unchanged.
+- The startup timeout still moves a `starting` agent to `unknown`, but raises the "no hook events" banner only when no event was ever accepted (`lastEvent` zero). A bound Codex agent that then goes silent shows `unknown` without a banner; accepted for now.
+- Not traced: how the TUI words `starting`; it is outside the router.

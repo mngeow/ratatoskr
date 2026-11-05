@@ -20,7 +20,10 @@ const (
 	claudeSettingsFileName = "claude-settings.json"
 
 	claudeServerName = "ratatoskr"
-	claudeToolName   = "mcp__ratatoskr__send_message"
+	// Claude names an MCP tool mcp__<server>__<tool>. The doubled "ratatoskr"
+	// is intended: the server is ratatoskr and the tool is now ratatoskr_send,
+	// so a harness with its own send_message cannot be mistaken for ours.
+	claudeToolName = "mcp__ratatoskr__ratatoskr_send"
 )
 
 // claudeMCPFile is the --mcp-config document: one HTTP MCP server, authenticated

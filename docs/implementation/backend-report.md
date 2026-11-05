@@ -8,7 +8,7 @@ Owner: `engineering.backend`. Written 2026-11-04 under GR-3. **Nothing described
 | --- | --- | --- |
 | `internal/store` | SQLite schema and embedded migration, single writer goroutine, commit-order API (`InsertMessage`, `Transition` with the lifecycle graph), `FinishRun`, `Recover`, `Retain`, history reads, per-machine lock, `UnavailableCause`, `FailNextCommit` (rtktest) | Written by backend directly (process deviation, settled by the operator) |
 | `internal/router` | Pure helpers (`stripControl`, `isEmptyBody`, `buildFrame`, `preview`, `gate`, `overrideOK`, `nextState`), the actor (send, lifecycle, views, banners, events), delivery pump, write results, hooks and session binding, timers, `markExited`, rtktest kill points | Monkey briefs 1, 2a, 2b; reviewed and corrected by backend |
-| `internal/server` | Loopback HTTP, per-agent tokens, stateless MCP `send_message`, `/hook`, `RunHook`, `WriteHookFile` | Monkey brief 3; reviewed by backend |
+| `internal/server` | Loopback HTTP, per-agent tokens, stateless MCP `ratatoskr_send`, `/hook`, `RunHook`, `WriteHookFile` | Monkey brief 3; reviewed by backend |
 | `internal/agent` | `Build` (Claude and Codex), `HookCommand`, env filtering, `childTerminalEnv`, `PrepareSessionDir`, `Version` | Monkey brief 4; reviewed by backend |
 
 Unrun tests are written for every package, plus the `rtktest` seam tests. Design documents: `backend-structure.md`, `router-design.md`, `server-agent-design.md` in this directory.

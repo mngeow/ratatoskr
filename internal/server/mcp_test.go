@@ -48,7 +48,7 @@ func (*plainFail) Error() string { return "plain" }
 
 func TestInstructionsText(t *testing.T) {
 	got := instructions("alpha", []string{"beta", "gamma"})
-	want := "You are alpha on a local ratatoskr network. Your peers: beta, gamma. Use send_message(to, body, reply_to?) to message a peer. Your normal replies are not sent to peers."
+	want := "You are alpha on a local ratatoskr network. Your peers: beta, gamma. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?). Other messaging tools, including any built-in send_message, do not reach your peers. Your normal replies are not sent to peers."
 	if got != want {
 		t.Fatalf("instructions =\n%q\nwant\n%q", got, want)
 	}
@@ -56,6 +56,29 @@ func TestInstructionsText(t *testing.T) {
 	alone := instructions("alpha", nil)
 	if !strings.Contains(alone, "Your peers: (none).") {
 		t.Fatalf("instructions with no peers = %q", alone)
+	}
+}
+
+// TestInstructionsNameOurToolAndServer pins the fix for the wrong-tool bug: the
+// agent must be told the tool name and our server, because Codex 0.166 has its
+// own built-in send_message and a generic instruction sent replies there.
+func TestInstructionsNameOurToolAndServer(t *testing.T) {
+	for _, peers := range [][]string{{"beta"}, nil} {
+		text := instructions("alpha", peers)
+
+		if !strings.Contains(text, "ratatoskr_send") {
+			t.Fatalf("instructions do not name ratatoskr_send: %q", text)
+		}
+		if !strings.Contains(text, "ratatoskr MCP server") {
+			t.Fatalf("instructions do not name the ratatoskr MCP server: %q", text)
+		}
+		if !strings.Contains(text, toolName) {
+			t.Fatalf("instructions do not mention the registered tool name %q", toolName)
+		}
+	}
+
+	if strings.Contains(instructions("alpha", nil), "Use send_message(") {
+		t.Fatal("instructions still tell the agent to use a bare send_message")
 	}
 }
 

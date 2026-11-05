@@ -5,7 +5,7 @@
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
-> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS and reports that mouse click focus and Ctrl+C work. Nothing else has been checked: no automated test has been run, and message delivery, recovery and Linux haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version only.
+> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version only.
 
 ## Why
 
@@ -34,7 +34,7 @@ This is where the project is heading. The first version covers only what is unde
 ## Setup
 
 > [!WARNING]
-> Apart from mouse click focus and Ctrl+C, which the project's owner checked by hand on macOS, every command and behaviour in this section is **unverified**: it is written from the design and from each harness's docs and `--help`. Expect corrections once testing starts.
+> The project's owner has checked mouse click focus and Ctrl+C by hand on macOS, and has checked Codex's automatic startup and messaging between Claude Code and Codex in both directions, also by hand on macOS. No automated test has run. Every other command and behaviour in this section is **unverified**: it is written from the design and from each harness's docs and `--help`. Expect corrections once testing starts.
 
 The first version is one command, `rtk`. It is meant to open one terminal window with Claude Code and Codex side by side, so that they can message each other while you stay in control. It doesn't include discovery, teams, other harnesses or cross-machine messaging.
 
@@ -42,7 +42,7 @@ The first version is one command, `rtk`. It is meant to open one terminal window
 
 - macOS or Ubuntu. Windows is not supported.
 - Go 1.27.3 or newer, to build from source.
-- [Claude Code](https://code.claude.com/docs) and [Codex](https://learn.chatgpt.com/docs) on your `PATH`. The design was written against Claude Code 2.1.311 and Codex 0.166.0, but neither has been run with `rtk`, and `rtk` doesn't check harness versions.
+- [Claude Code](https://code.claude.com/docs) and [Codex](https://learn.chatgpt.com/docs) on your `PATH`. The design was written against Claude Code 2.1.311 and Codex 0.166.0, and `rtk` doesn't check harness versions.
 - A terminal at least wide enough for two usable panes.
 
 ### Build and install
@@ -75,7 +75,7 @@ From the project you want both agents to work in:
 rtk
 ```
 
-Both harnesses start as new sessions in that directory. Each one keeps its own permission prompts, and you answer them in its pane. Only the `send_message` tool is pre-approved.
+Both harnesses start as new sessions in that directory. Each one keeps its own permission prompts, and you answer them in its pane. Only the `ratatoskr_send` tool is pre-approved.
 
 Either harness may ask its usual first-run questions, such as whether to trust the directory. Answer them in its pane.
 
@@ -102,10 +102,10 @@ In the log, Left and Right step to older and newer runs, Up and Down select a me
 Ask one agent to message the other, for example in the Claude Code pane:
 
 ```text
-Ask Codex what files are in this directory, using send_message.
+Ask Codex what files are in this directory, using ratatoskr_send.
 ```
 
-The message should appear in the Codex pane once Codex is idle, and the log shows its status. These statuses describe delivery only: `accepted` means the harness took the input, not that the model read or acted on it.
+Codex's first turn is automatic: `rtk` launches it with a short startup prompt, which you'll see in its pane, telling it which agents it can reach and asking for a one-line ready reply. That costs one extra Codex model turn on every launch, even if no message is ever sent. Messages sent during startup wait for that turn to end. Trust and permission prompts are still yours to answer, and the startup turn may wait behind them. If Codex shows `unknown`, F4 delivers held messages. After startup, messages appear in the Codex pane once Codex is idle, and the log shows their status. These statuses describe delivery only: `accepted` means the harness took the input, not that the model read or acted on it.
 
 Agents can send at most 20 messages in a row. The budget resets when you press Enter in a pane.
 
@@ -114,7 +114,8 @@ Agents can send at most 20 messages in a row. The budget resets when you press E
 | Symptom | What to check |
 | --- | --- |
 | A pane shows a start error | Is that harness installed and on `PATH`? The other agent keeps running. |
-| `no hook events` banner, messages held | Codex hooks may need review. F4 delivers in the meantime. |
+| `no hook events` banner, messages held | Codex hooks may need review, and its automatic first turn may be waiting behind that prompt. Answer it in the Codex pane, or press F4 if Codex shows `unknown`. |
+| An agent says it replied but the other got nothing | It may have used a built-in messaging tool, which doesn't reach its peer. Ask it to use `ratatoskr_send`, and check the log (F3). Whether Codex can call this tool is still unverified. |
 | Agent stuck on `unknown` | A hook may not have fired, for example after an interrupt. Messages wait until the next hook event, or F4. |
 | Messages held while the agent is idle | `rtk` thinks you have an unsent draft in that pane. It can't see the harness's input box, so Esc, Ctrl+C, deleting text, menu use and clicks passed to the harness all count. Press Enter to submit, or F4 to deliver. F4 pastes after any text in the input box and submits both. |
 | Refuses to start: already running | Only one `rtk` can run per machine. |
@@ -137,6 +138,7 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 - **No scrollback in panes,** beyond what the harness itself redraws. Pane contents aren't saved.
 - **`/clear` or `/compact` may leave an agent needing F4** for the rest of that run, if those commands change the harness's session ID. Unverified.
 - **`rtk` can't see a harness's input box.** Any key except a plain Enter, and any click passed to the harness, counts as a draft, so messages can wait when nothing is typed. F4 delivers them, but it pastes after any text in the box and submits both.
+- **Messaging between the agents isn't working reliably yet.** In the one recorded attempt, messages reached Codex late and its reply never reached Claude. See [outstanding issues](docs/implementation/outstanding-issues.md).
 - **Pastes have limits.** A paste over 1 MiB is refused with a message. A slow paste can stop after 3 seconds with only part of it delivered.
 - **Pasting is how messages arrive,** so they look like user turns. The message frame says they came from a peer.
 - **No resume or resend.** Agent sessions end with `rtk` and a new run knows nothing about the last one. Unfinished messages are marked `interrupted` and never resent; read them in the log (F3) and pass them on yourself.

@@ -233,3 +233,27 @@ func TestNextStateExitedIsSticky(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionStartLifts pins the one harness difference: Codex reports its first
+// turn with a SessionStart, so that event must not look like readiness. Anything
+// that is not exactly "codex" keeps the old behaviour, including an empty or
+// differently-cased harness name.
+func TestSessionStartLifts(t *testing.T) {
+	tests := []struct {
+		harness string
+		want    bool
+	}{
+		{harness: "claude", want: true},
+		{harness: harnessCodex, want: false},
+		{harness: "", want: true},
+		{harness: "Codex", want: true},
+		{harness: "codex-cli", want: true},
+		{harness: "cursor", want: true},
+	}
+
+	for _, tc := range tests {
+		if got := sessionStartLifts(tc.harness); got != tc.want {
+			t.Fatalf("sessionStartLifts(%q) = %v, want %v", tc.harness, got, tc.want)
+		}
+	}
+}

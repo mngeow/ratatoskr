@@ -39,6 +39,9 @@ type Params struct {
 	ServerAddr  string
 	Token       string
 	BaseEnv     []string // typically os.Environ(); filtered in env.go
+	// Peers are the display names of the other agents. Only Codex's startup
+	// prompt names them; every harness still has them validated.
+	Peers []string
 }
 
 // Build validates the parameters and returns the launch spec for one harness.
@@ -109,6 +112,13 @@ func validate(p Params) error {
 	}
 	if !filepath.IsAbs(p.SessionDir) {
 		return fmt.Errorf("agent: session directory %q must be absolute", p.SessionDir)
+	}
+	// A peer name becomes part of a model-visible prompt, so it gets the same
+	// treatment as our own display name rather than being trusted blindly.
+	for _, peer := range p.Peers {
+		if !agentNamePattern.MatchString(peer) {
+			return fmt.Errorf("agent: peer name %q must match %s", peer, agentNamePattern)
+		}
 	}
 
 	switch p.Harness {

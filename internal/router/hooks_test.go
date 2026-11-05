@@ -415,3 +415,136 @@ func TestRememberUnconfirmedIsBounded(t *testing.T) {
 		t.Fatalf("newest remembered message = %q", got)
 	}
 }
+
+// codexSpec is spec() with Codex's harness name. spec() lives in router_test.go,
+// which this brief does not let me change, so the Codex variant lives here and is
+// shared with deliver_test.go.
+func codexSpec(id protocol.AgentID, name string) protocol.LaunchSpec {
+	s := spec(id, name)
+	s.Harness = harnessCodex
+	return s
+}
+
+// TestCodexSessionStartBindsWithoutLifting is the fix for run 01a1a918: a Codex
+// SessionStart arrives because a turn is starting, so it must bind the session
+// without making the agent look idle and without releasing a held message.
+func TestCodexSessionStartBindsWithoutLifting(t *testing.T) {
+	pane := &fakePane{}
+	r, fake, _, beta := newCodexDeliverRouter(t, pane)
+
+	message := queueMessage(t, r, beta, protocol.MessageQueued)
+
+	r.hook(beta, protocol.HookEvent{
+		Kind:      protocol.HookSessionStart,
+		Source:    bindingSessionSource,
+		SessionID: "s1",
+	})
+
+	if beta.boundSession != "s1" {
+		t.Fatalf("boundSession = %q, want s1: a Codex SessionStart is the binding event", beta.boundSession)
+	}
+	if beta.state != protocol.AgentStarting {
+		t.Fatalf("state = %q, want %q: a Codex SessionStart means a turn is starting", beta.state, protocol.AgentStarting)
+	}
+	if banner, ok := r.banners[r.hooksBannerKey(beta)]; ok {
+		t.Fatalf("an accepted SessionStart left a banner: %q", banner)
+	}
+	if message.state != protocol.MessageHeld {
+		t.Fatalf("message state = %q, want %q", message.state, protocol.MessageHeld)
+	}
+	if n := fake.countCall("Transition:" + message.id + ":queued>delivering"); n != 0 {
+		t.Fatalf("the message was committed as delivering %d times", n)
+	}
+	if frames := pane.submitted(); len(frames) != 0 {
+		t.Fatalf("the pane received %d frames, want none", len(frames))
+	}
+	// And the Claude control still lifts: the same event on a Claude agent is the
+	// launch signal, covered by TestSessionBindingRules' "binding startup binds
+	// and goes idle" case.
+	if !sessionStartLifts("claude") {
+		t.Fatal("Claude's SessionStart must still lift the agent to idle")
+	}
+}
+
+// TestCodexSessionStartClearsBannerWhileUnknown: the event still proves the hooks
+// are alive, even though it does not make the agent idle.
+func TestCodexSessionStartClearsBannerWhileUnknown(t *testing.T) {
+	pane := &fakePane{}
+	r, _, clock, beta := newCodexDeliverRouter(t, pane)
+
+	// Let the startup timeout move it to unknown and raise the no-hooks banner.
+	beta.startedAt = clock.now().Add(-2 * r.cfg.StartupTimeout)
+	r.tick(clock.now())
+	if beta.state != protocol.AgentUnknown {
+		t.Fatalf("state = %q, want %q after the startup timeout", beta.state, protocol.AgentUnknown)
+	}
+	if _, ok := r.banners[r.hooksBannerKey(beta)]; !ok {
+		t.Fatal("the startup timeout raised no banner for an agent with no hooks")
+	}
+
+	message := queueMessage(t, r, beta, protocol.MessageQueued)
+	r.hook(beta, protocol.HookEvent{
+		Kind:      protocol.HookSessionStart,
+		Source:    bindingSessionSource,
+		SessionID: "s1",
+	})
+
+	if beta.state != protocol.AgentUnknown {
+		t.Fatalf("state = %q, want %q to stay unknown", beta.state, protocol.AgentUnknown)
+	}
+	if banner, ok := r.banners[r.hooksBannerKey(beta)]; ok {
+		t.Fatalf("an accepted SessionStart left a banner: %q", banner)
+	}
+	if beta.boundSession != "s1" {
+		t.Fatalf("boundSession = %q, want s1", beta.boundSession)
+	}
+	if message.state != protocol.MessageHeld {
+		t.Fatalf("message state = %q, want %q", message.state, protocol.MessageHeld)
+	}
+}
+
+// TestCodexStopDeliversHeldMessage walks the whole sequence: bind without
+// lifting, become busy on the first submit, idle on Stop, and only then deliver.
+func TestCodexStopDeliversHeldMessage(t *testing.T) {
+	pane := &fakePane{}
+	r, fake, _, beta := newCodexDeliverRouter(t, pane)
+
+	message := queueMessage(t, r, beta, protocol.MessageQueued)
+
+	r.hook(beta, protocol.HookEvent{Kind: protocol.HookSessionStart, Source: bindingSessionSource, SessionID: "s1"})
+	if message.state != protocol.MessageHeld {
+		t.Fatalf("after SessionStart the message is %q, want held", message.state)
+	}
+
+	r.hook(beta, protocol.HookEvent{Kind: protocol.HookUserPromptSubmit, SessionID: "s1"})
+	if beta.state != protocol.AgentBusy {
+		t.Fatalf("state = %q after a submit, want %q", beta.state, protocol.AgentBusy)
+	}
+	if message.state != protocol.MessageHeld {
+		t.Fatalf("a busy agent released the message: %q", message.state)
+	}
+
+	r.hook(beta, protocol.HookEvent{Kind: protocol.HookStop, SessionID: "s1"})
+	if beta.state != protocol.AgentIdle {
+		t.Fatalf("state = %q after Stop, want %q", beta.state, protocol.AgentIdle)
+	}
+
+	// Stop pumps, so the message is already in flight by now.
+	if beta.inflight != message {
+		t.Fatal("Stop did not put the held message in flight")
+	}
+	if n := fake.countCall("Transition:" + message.id + ":held>delivering"); n != 1 {
+		t.Fatalf("held->delivering transitions = %d, want 1", n)
+	}
+
+	// Run the write result the way the actor would.
+	fn := <-r.in
+	fn()
+
+	if message.state != protocol.MessagePasted {
+		t.Fatalf("message state = %q after the write, want %q", message.state, protocol.MessagePasted)
+	}
+	if frames := pane.submitted(); len(frames) != 1 {
+		t.Fatalf("the pane received %d frames, want 1", len(frames))
+	}
+}

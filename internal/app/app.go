@@ -290,7 +290,7 @@ func startAgents(ctx context.Context, r *router.Router, srv *server.Server, p ag
 		}
 		token := srv.AddAgent(agentID, h.name, peers)
 
-		spec, buildErr := buildSpec(ctx, agentID, h.name, h.harness, token, srv.Addr(), p)
+		spec, buildErr := buildSpec(ctx, agentID, h.name, peers, h.harness, token, srv.Addr(), p)
 		if err := r.RegisterAgent(ctx, spec); err != nil {
 			return nil, panes, err
 		}
@@ -320,7 +320,7 @@ func startAgents(ctx context.Context, r *router.Router, srv *server.Server, p ag
 
 // buildSpec writes one agent's hook file and launch configuration. It always
 // returns a spec the router can register, even on failure.
-func buildSpec(ctx context.Context, id protocol.AgentID, name, harness, token, addr string, p agentParams) (protocol.LaunchSpec, error) {
+func buildSpec(ctx context.Context, id protocol.AgentID, name string, peers []string, harness, token, addr string, p agentParams) (protocol.LaunchSpec, error) {
 	failed := protocol.LaunchSpec{ID: id, DisplayName: name, Harness: harness}
 	if token == "" {
 		return failed, fmt.Errorf("server refused agent %q", name)
@@ -332,6 +332,7 @@ func buildSpec(ctx context.Context, id protocol.AgentID, name, harness, token, a
 		ID: id, DisplayName: name, Harness: harness, Dir: p.dir,
 		RtkPath: p.rtkPath, SessionDir: p.sessionDir,
 		ServerAddr: addr, Token: token, BaseEnv: p.env,
+		Peers: peers,
 	})
 	if err != nil {
 		return failed, err
