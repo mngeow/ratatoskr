@@ -355,14 +355,13 @@ func TestPushDirectoryReachesAttachedStreams(t *testing.T) {
 
 	waitFor(t, "the initial directory", func() bool { return len(fixture.recorder.frames(t)) > 0 })
 
-	// A registration goes through the same handler the runtime uses.
-	body, err := json.Marshal(protocol.SessionsRequest{Agents: []string{"claude", "codex"}})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	recorder := call(fixture.server, http.MethodPost, "/v1/sessions", version(), fixture.credential, string(body))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("registration = %d: %s", recorder.Code, recorder.Body.String())
+	// Two adds go through the same handlers the daemon uses.
+	for _, name := range []string{"claude", "codex"} {
+		body := string(mustJSON(t, protocol.AddSessionRequest{Name: name}))
+		recorder := call(fixture.server, http.MethodPost, protocol.SessionsPath, version(), fixture.credential, body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("add %s = %d: %s", name, recorder.Code, recorder.Body.String())
+		}
 	}
 
 	waitFor(t, "a pushed directory with two sessions", func() bool {

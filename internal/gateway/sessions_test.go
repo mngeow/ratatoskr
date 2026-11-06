@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,89 +21,184 @@ func idGenerator(prefix string) func() (string, error) {
 	}
 }
 
-func TestStartSessionsValidation(t *testing.T) {
+// startSessionsForTest ends the host's open sessions and adds each name, returning the
+// new rows. It replaces the old multi-name StartSessions for tests that only need
+// sessions to exist.
+func startSessionsForTest(t *testing.T, store *Store, host string, now time.Time, names ...string) []SessionRow {
+	t.Helper()
+	ctx := context.Background()
+
+	if err := store.EndSessions(ctx, host, now); err != nil {
+		t.Fatalf("EndSessions %s: %v", host, err)
+	}
+	rows := make([]SessionRow, 0, len(names))
+	for _, name := range names {
+		row, err := store.AddSession(ctx, host, name, now, randomID)
+		if err != nil {
+			t.Fatalf("AddSession %s/%s: %v", host, name, err)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func TestAddSessionValidation(t *testing.T) {
 	store, _ := openStore(t, false)
 	ctx := context.Background()
 
 	tests := []struct {
-		name  string
-		host  string
-		names []string
-		want  error
+		name string
+		host string
+		add  string
+		want error
 	}{
-		{name: "bad host", host: "Laptop", names: []string{"claude"}, want: ErrBadHostName},
-		{name: "no names", host: "laptop", names: nil, want: ErrBadAgentList},
-		{name: "too many", host: "laptop", names: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}, want: ErrBadAgentList},
-		{name: "duplicate", host: "laptop", names: []string{"claude", "claude"}, want: ErrBadAgentList},
-		{name: "uppercase", host: "laptop", names: []string{"Claude"}, want: ErrBadAgentName},
-		{name: "empty name", host: "laptop", names: []string{""}, want: ErrBadAgentName},
-		{name: "too long", host: "laptop", names: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, want: ErrBadAgentName},
+		{name: "bad host", host: "Laptop", add: "claude", want: ErrBadHostName},
+		{name: "uppercase", host: "laptop", add: "Claude", want: ErrBadAgentName},
+		{name: "empty name", host: "laptop", add: "", want: ErrBadAgentName},
+		{name: "too long", host: "laptop", add: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", want: ErrBadAgentName},
+		{name: "a slash", host: "laptop", add: "cli/ent", want: ErrBadAgentName},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := store.StartSessions(ctx, tc.host, tc.names, sessionNow, idGenerator("s")); !errors.Is(err, tc.want) {
+			if _, err := store.AddSession(ctx, tc.host, tc.add, sessionNow, idGenerator("s")); !errors.Is(err, tc.want) {
 				t.Fatalf("error = %v, want %v", err, tc.want)
 			}
-			// Nothing was written: a rejected registration must not end sessions.
+			// Nothing was written: a rejected add must not end a session either.
 			var count int
 			if err := store.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&count); err != nil {
 				t.Fatalf("count sessions: %v", err)
 			}
 			if count != 0 {
-				t.Fatalf("a rejected registration wrote %d sessions", count)
+				t.Fatalf("a rejected add wrote %d sessions", count)
 			}
 		})
 	}
 
-	if _, err := store.StartSessions(ctx, "laptop", []string{"claude"}, sessionNow, nil); err == nil {
-		t.Fatal("StartSessions accepted a nil id generator")
+	if _, err := store.AddSession(ctx, "laptop", "claude", sessionNow, nil); err == nil {
+		t.Fatal("AddSession accepted a nil id generator")
 	}
 }
 
-func TestStartSessionsEndsEarlierAndCurrentSession(t *testing.T) {
+// TestAddSessionMintsANewIDAndReplacesOnlyTheSameName: a new ID every time, and the
+// host's other sessions untouched.
+func TestAddSessionMintsANewIDAndReplacesOnlyTheSameName(t *testing.T) {
 	store, _ := openStore(t, false)
 	ctx := context.Background()
 
-	first, err := store.StartSessions(ctx, "laptop", []string{"claude", "codex"}, sessionNow, idGenerator("a"))
+	firstClaude, err := store.AddSession(ctx, "laptop", "claude", sessionNow, idGenerator("a"))
 	if err != nil {
-		t.Fatalf("first StartSessions: %v", err)
+		t.Fatalf("first AddSession: %v", err)
 	}
-	if len(first) != 2 || first[0].Name != "claude" || first[1].Name != "codex" {
-		t.Fatalf("sessions = %+v, want both names in order", first)
+	firstCodex, err := store.AddSession(ctx, "laptop", "codex", sessionNow, idGenerator("b"))
+	if err != nil {
+		t.Fatalf("second AddSession: %v", err)
 	}
-	if first[0].ID == first[1].ID {
+	if firstClaude.ID == firstCodex.ID {
 		t.Fatal("two sessions share an id")
 	}
 
-	second, err := store.StartSessions(ctx, "laptop", []string{"claude"}, sessionNow.Add(time.Minute), idGenerator("b"))
+	secondClaude, err := store.AddSession(ctx, "laptop", "claude", sessionNow.Add(time.Minute), idGenerator("c"))
 	if err != nil {
-		t.Fatalf("second StartSessions: %v", err)
+		t.Fatalf("replacing AddSession: %v", err)
+	}
+	if secondClaude.ID == firstClaude.ID {
+		t.Fatalf("the replacement reused the id %q", secondClaude.ID)
 	}
 
 	current, ok, err := store.CurrentSession(ctx, "laptop", "claude")
 	if err != nil {
 		t.Fatalf("CurrentSession: %v", err)
 	}
-	if !ok || current.ID != second[0].ID {
-		t.Fatalf("current session = %+v, want the second registration", current)
+	if !ok || current.ID != secondClaude.ID {
+		t.Fatalf("current claude = %+v, want the replacement", current)
 	}
 
-	// The earlier claude and codex sessions are gone; EverSeen still knows them.
+	// codex was not touched by a claude add.
+	codexNow, ok, err := store.CurrentSession(ctx, "laptop", "codex")
+	if err != nil {
+		t.Fatalf("CurrentSession codex: %v", err)
+	}
+	if !ok || codexNow.ID != firstCodex.ID {
+		t.Fatalf("codex = %+v, want the untouched session %q", codexNow, firstCodex.ID)
+	}
+	// Even the replaced session is remembered as ever seen.
+	if seen, err := store.EverSeen(ctx, "laptop", "claude"); err != nil || !seen {
+		t.Fatalf("EverSeen claude = %t, %v", seen, err)
+	}
+}
+
+// TestAddSessionLimit: at most maxAgentsPerHost open sessions, and a replace at the limit
+// still works because the same-name session ends first.
+func TestAddSessionLimit(t *testing.T) {
+	store, _ := openStore(t, false)
+	ctx := context.Background()
+
+	fill := make([]string, 0, maxAgentsPerHost)
+	for i := 0; i < maxAgentsPerHost; i++ {
+		name := "agent" + string(rune('a'+i))
+		fill = append(fill, name)
+		if _, err := store.AddSession(ctx, "laptop", name, sessionNow, idGenerator("f")); err != nil {
+			t.Fatalf("AddSession %s: %v", name, err)
+		}
+	}
+
+	if _, err := store.AddSession(ctx, "laptop", "onemore", sessionNow, idGenerator("x")); !errors.Is(err, ErrTooManySessions) {
+		t.Fatalf("error = %v, want ErrTooManySessions", err)
+	}
+	if !strings.Contains(ErrTooManySessions.Error(), "open sessions") {
+		t.Fatalf("the sentinel text lost its meaning: %q", ErrTooManySessions.Error())
+	}
+
+	// Replacing one of them still works: the same-name session ends before the count.
+	if _, err := store.AddSession(ctx, "laptop", fill[0], sessionNow, idGenerator("y")); err != nil {
+		t.Fatalf("replacing at the limit: %v", err)
+	}
+
+	// Another host is unaffected.
+	if _, err := store.AddSession(ctx, "other", "claude", sessionNow, idGenerator("z")); err != nil {
+		t.Fatalf("another host was refused: %v", err)
+	}
+}
+
+// TestEndSession: only that name ends, and ending nothing is not an error.
+func TestEndSession(t *testing.T) {
+	store, _ := openStore(t, false)
+	ctx := context.Background()
+
+	if err := store.EndSession(ctx, "laptop", "claude", sessionNow); err != nil {
+		t.Fatalf("EndSession with nothing open: %v", err)
+	}
+
+	if _, err := store.AddSession(ctx, "laptop", "claude", sessionNow, idGenerator("a")); err != nil {
+		t.Fatalf("AddSession claude: %v", err)
+	}
+	if _, err := store.AddSession(ctx, "laptop", "codex", sessionNow, idGenerator("b")); err != nil {
+		t.Fatalf("AddSession codex: %v", err)
+	}
+
+	if err := store.EndSession(ctx, "laptop", "claude", sessionNow.Add(time.Minute)); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "claude"); err != nil {
+		t.Fatalf("CurrentSession claude: %v", err)
+	} else if ok {
+		t.Fatal("claude is still open after EndSession")
+	}
 	if _, ok, err := store.CurrentSession(ctx, "laptop", "codex"); err != nil {
 		t.Fatalf("CurrentSession codex: %v", err)
-	} else if ok {
-		t.Fatal("the earlier codex session is still current")
+	} else if !ok {
+		t.Fatal("EndSession ended codex too")
 	}
-	if seen, err := store.EverSeen(ctx, "laptop", "codex"); err != nil {
-		t.Fatalf("EverSeen: %v", err)
-	} else if !seen {
-		t.Fatal("EverSeen forgot a session that was registered")
+
+	// Ending it again is still not an error.
+	if err := store.EndSession(ctx, "laptop", "claude", sessionNow.Add(2*time.Minute)); err != nil {
+		t.Fatalf("EndSession again: %v", err)
 	}
-	if seen, err := store.EverSeen(ctx, "laptop", "gemini"); err != nil {
-		t.Fatalf("EverSeen: %v", err)
-	} else if seen {
-		t.Fatal("EverSeen invented a session")
+
+	// A malformed name is still refused.
+	if err := store.EndSession(ctx, "laptop", "Claude", sessionNow); !errors.Is(err, ErrBadAgentName) {
+		t.Fatalf("EndSession with a bad name = %v, want ErrBadAgentName", err)
 	}
 }
 
@@ -114,9 +210,7 @@ func TestEndSessions(t *testing.T) {
 		t.Fatalf("EndSessions with nothing open: %v", err)
 	}
 
-	if _, err := store.StartSessions(ctx, "laptop", []string{"claude"}, sessionNow, idGenerator("s")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, store, "laptop", sessionNow, "claude")
 	if err := store.EndSessions(ctx, "laptop", sessionNow.Add(time.Minute)); err != nil {
 		t.Fatalf("EndSessions: %v", err)
 	}
@@ -136,12 +230,8 @@ func TestDirectoryOrdersAndExcludesUnpaired(t *testing.T) {
 	pairHostFrom(t, store, "alpha", sessionNow)
 	pairHostFrom(t, store, "beta", sessionNow)
 
-	if _, err := store.StartSessions(ctx, "beta", []string{"zeta"}, sessionNow, idGenerator("b")); err != nil {
-		t.Fatalf("StartSessions beta: %v", err)
-	}
-	if _, err := store.StartSessions(ctx, "alpha", []string{"codex", "claude"}, sessionNow, idGenerator("a")); err != nil {
-		t.Fatalf("StartSessions alpha: %v", err)
-	}
+	startSessionsForTest(t, store, "beta", sessionNow, "zeta")
+	startSessionsForTest(t, store, "alpha", sessionNow, "codex", "claude")
 	if err := store.TouchHeartbeat(ctx, "beta", sessionNow); err != nil {
 		t.Fatalf("TouchHeartbeat: %v", err)
 	}

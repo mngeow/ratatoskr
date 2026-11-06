@@ -37,12 +37,8 @@ func newSendFixture(t *testing.T, ackWait time.Duration) *sendFixture {
 	sender := pairHostFrom(t, store, "alpha", now)
 	recipient := pairHostFrom(t, store, "beta", now)
 
-	if _, err := store.StartSessions(ctx, "alpha", []string{"claude"}, now, idGenerator("a")); err != nil {
-		t.Fatalf("StartSessions alpha: %v", err)
-	}
-	if _, err := store.StartSessions(ctx, "beta", []string{"codex"}, now, idGenerator("b")); err != nil {
-		t.Fatalf("StartSessions beta: %v", err)
-	}
+	startSessionsForTest(t, store, "alpha", now, "claude")
+	startSessionsForTest(t, store, "beta", now, "codex")
 	for _, host := range []string{"alpha", "beta"} {
 		if err := store.TouchHeartbeat(ctx, host, now); err != nil {
 			t.Fatalf("TouchHeartbeat %s: %v", host, err)
@@ -177,10 +173,7 @@ func TestSessionGoneAfterANewerRegistration(t *testing.T) {
 	ctx := context.Background()
 
 	// A newer registration for beta ends codex's session.
-	if _, err := fixture.store.StartSessions(ctx, "beta", []string{"other"},
-		fixture.now.Add(time.Minute), idGenerator("c")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, fixture.store, "beta", fixture.now.Add(time.Minute), "other")
 	if err := fixture.store.TouchHeartbeat(ctx, "beta", fixture.now); err != nil {
 		t.Fatalf("TouchHeartbeat: %v", err)
 	}

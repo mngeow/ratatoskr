@@ -206,30 +206,86 @@ func (c *Client) Address(local string) string {
 	return local + "@" + c.pairing.Host
 }
 
-// Register announces this run's agents and returns the sessions and directory the
-// gateway answered with. One attempt.
+// Connect tells the gateway this daemon is starting. It ends this host's earlier
+// sessions, once, because they belonged to the previous daemon instance, and answers the
+// directory. One attempt.
+//
+// A daemon calls this exactly once: a second connect would end the sessions the current
+// daemon just started.
 //
 // UNTESTED.
-func (c *Client) Register(ctx context.Context, agents []string) (protocol.SessionsResponse, error) {
-	status, wrote, payload, err := c.doBounded(ctx, http.MethodPost, "/v1/sessions", protocol.SessionsRequest{Agents: agents})
+func (c *Client) Connect(ctx context.Context) (protocol.ConnectResponse, error) {
+	status, wrote, payload, err := c.doBounded(ctx, http.MethodPost, protocol.ConnectPath, nil)
 	if err != nil && status == 0 {
 		if !wrote {
-			return protocol.SessionsResponse{}, fmt.Errorf("link: no connection to the gateway: %s", causeKind(err))
+			return protocol.ConnectResponse{}, fmt.Errorf("link: no connection to the gateway: %s", causeKind(err))
 		}
-		return protocol.SessionsResponse{}, errors.New("link: no complete answer from the gateway")
+		return protocol.ConnectResponse{}, errors.New("link: no complete answer from the gateway")
 	}
 
 	switch {
 	case status >= 200 && status < 300:
-		var response protocol.SessionsResponse
+		var response protocol.ConnectResponse
 		if err != nil || json.Unmarshal(payload, &response) != nil {
-			return protocol.SessionsResponse{}, errUnreadableAnswer
+			return protocol.ConnectResponse{}, errUnreadableAnswer
 		}
 		return response, nil
 	case status >= 300 && status < 500:
-		return protocol.SessionsResponse{}, refusalFrom(status, payload)
+		return protocol.ConnectResponse{}, refusalFrom(status, payload)
 	default:
-		return protocol.SessionsResponse{}, fmt.Errorf("link: the gateway could not register this runtime (status %d)", status)
+		return protocol.ConnectResponse{}, fmt.Errorf("link: the gateway could not accept this daemon (status %d)", status)
+	}
+}
+
+// AddSession registers one session and returns it with the current directory. One attempt.
+//
+// The gateway mints a new session id every time and replaces only an open session of the
+// same name, so a caller may add a name that is already running and get a fresh identity.
+//
+// UNTESTED.
+func (c *Client) AddSession(ctx context.Context, name string) (protocol.AddSessionResponse, error) {
+	status, wrote, payload, err := c.doBounded(ctx, http.MethodPost, protocol.SessionsPath, protocol.AddSessionRequest{Name: name})
+	if err != nil && status == 0 {
+		if !wrote {
+			return protocol.AddSessionResponse{}, fmt.Errorf("link: no connection to the gateway: %s", causeKind(err))
+		}
+		return protocol.AddSessionResponse{}, errors.New("link: no complete answer from the gateway")
+	}
+
+	switch {
+	case status >= 200 && status < 300:
+		var response protocol.AddSessionResponse
+		if err != nil || json.Unmarshal(payload, &response) != nil {
+			return protocol.AddSessionResponse{}, errUnreadableAnswer
+		}
+		return response, nil
+	case status >= 300 && status < 500:
+		return protocol.AddSessionResponse{}, refusalFrom(status, payload)
+	default:
+		return protocol.AddSessionResponse{}, fmt.Errorf("link: the gateway could not start this session (status %d)", status)
+	}
+}
+
+// EndSession ends one session by name. One attempt; any 2xx is success, so ending a
+// session the gateway already ended is not a failure.
+//
+// UNTESTED.
+func (c *Client) EndSession(ctx context.Context, name string) error {
+	status, wrote, payload, err := c.doBounded(ctx, http.MethodDelete, protocol.SessionsPath+"/"+name, nil)
+	if err != nil && status == 0 {
+		if !wrote {
+			return fmt.Errorf("link: no connection to the gateway: %s", causeKind(err))
+		}
+		return errors.New("link: no complete answer from the gateway")
+	}
+
+	switch {
+	case status >= 200 && status < 300:
+		return nil
+	case status >= 300 && status < 500:
+		return refusalFrom(status, payload)
+	default:
+		return fmt.Errorf("link: the gateway could not end that session (status %d)", status)
 	}
 }
 

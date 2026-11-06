@@ -197,9 +197,7 @@ func TestToSessionEndedInEveryRead(t *testing.T) {
 	storeMessage(t, store, "m1", "codex@alpha", "claude@beta", "hello")
 	storeMessage(t, store, "m2", "codex@alpha", "claude@beta", "still open")
 
-	if _, err := store.StartSessions(ctx, "beta", []string{"claude"}, ledgerWriteNow, idGenerator("s")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, store, "beta", ledgerWriteNow, "claude")
 	sessions, err := store.Directory(ctx)
 	if err != nil {
 		t.Fatalf("Directory: %v", err)

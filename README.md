@@ -5,7 +5,7 @@
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
-> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is new, and the owner reports that it worked in their own testing on 2026-11-06.
+> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is new, and the owner reports that it worked in their own testing on 2026-11-06. That test used the earlier `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has since replaced it, and **the daemon has never been run**.
 
 ## Why
 
@@ -51,8 +51,10 @@ From a checkout of this source:
 
 ```sh
 mkdir -p ~/.local/bin
-go build -o ~/.local/bin/rtk ./cmd/rtk
+go build -ldflags "-X main.version=$(git describe --always --dirty)-$(date +%Y%m%d%H%M%S)" -o ~/.local/bin/rtk ./cmd/rtk
 ```
+
+The version makes each build identifiable, which matters for the [daemon](#the-daemon-and-its-windows): it refuses a window from a different build, and builds without a version are all called `dev`, so it can't tell them apart.
 
 Make sure `~/.local/bin` is on your `PATH`. Rebuilding and moving the binary changes the hook command, so Codex may ask you to review its hooks again.
 
@@ -142,41 +144,44 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 - **Pastes have limits.** A paste over 1 MiB is refused with a message. A slow paste can stop after 3 seconds with only part of it delivered.
 - **Pasting is how messages arrive,** so they look like user turns. The message frame says they came from a peer.
 - **No resume or resend.** Agent sessions end with `rtk` and a new run knows nothing about the last one. Unfinished messages are marked `interrupted` and never resent; read them in the log (F3) and pass them on yourself.
-- **If an SSH connection drops,** `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap.
+- **If an SSH connection drops,** plain `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap. [The daemon](#the-daemon-and-its-windows) is designed to survive this, but it needs a gateway and hasn't been run.
 - **Not a security boundary.** Both agents run as you and could read each other's files or tokens. A message can't approve anything for the recipient, but it can still persuade its model, so its permission prompts remain the real check.
 
 ## Cross-machine messaging
 
 > [!WARNING]
 > **The project's owner tested this by hand on 2026-11-06, and reports:** "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." That's the only run so far, and the report doesn't say which setup, transport or failure cases it covered, so don't assume any particular one has been checked. No automated test has run, and the team hasn't run it. Plain `rtk` still has its own limits, described under [Setup](#setup).
+>
+> **That report doesn't cover what's described below.** It ran the earlier in-process `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has replaced that and changed how sessions register with the gateway, so connected messaging needs testing again. **The daemon is written and compile-checked, and has never been run,** so expect corrections.
 
 Claude Code and Codex can run on different machines and message each other through a central gateway. The gateway keeps every message that reaches it, with its full text, so you can read them in one place. [ADR-0002](docs/adr/0002-cross-machine-messaging/index.html) explains why it works this way.
 
 | Implemented | Not implemented |
 | --- | --- |
-| `rtk gateway` and `rtk runtime`, pairing, routing, the message ledger | One window for several machines: each machine has its own terminal |
+| `rtk gateway`, `rtk daemon` and `rtk attach`, pairing, routing, the message ledger | One window for several machines: each machine has its own windows |
 | Immediate failure when a machine can't be reached | Retries, or holding messages for a machine that's away |
 | Choosing which agents a machine runs | Attaching to a Claude Code or Codex you started separately |
 | A command-line view of the ledger | A web view, automatic deletion or multiple users |
+| Agents you start from a window and leave running | Parents spawning workers, which [ADR-0003](docs/adr/0003-per-host-daemon/index.html) proposes |
 
 ### What runs where
 
 | Command | Where | What it does |
 | --- | --- | --- |
 | `rtk gateway --listen ADDR` | Any one machine on your tailnet or, with [Direct LAN](#direct-lan-without-tailscale), your LAN. It can run without agents | Pairs machines, routes messages and stores them |
-| `rtk runtime [--agents claude,codex]` | Each machine with agents, in a terminal you keep open | Runs the agents and pastes their messages, as `rtk` does. Default: both agents |
+| `rtk daemon` | Each machine with agents, in the background | Runs the agents and pastes their messages, with or without a window open |
+| `rtk attach [--agents claude,codex]` | Each machine with agents, whenever you want to see them | Opens a window on the daemon's agents, starting any you list that aren't running. `rtk runtime` is an alias for it |
 
-Every message goes through the gateway, including between two agents on one machine. Runtimes dial out to the gateway, so only the gateway needs a listening port. Permission prompts stay in the window of the machine running that agent, and the gateway can't answer them.
+Every message goes through the gateway, including between two agents on one machine. Daemons dial out to the gateway, so only the gateway needs a listening port. Permission prompts stay on the machine running that agent, and the gateway can't answer them.
 
 Plain `rtk` doesn't use the gateway, and its messages aren't in the ledger.
 
 ### Prerequisites
 
 - Everything under [Prerequisites](#prerequisites), on each machine with agents, with each harness logged in.
-- The same build of `rtk` on every machine. A gateway-only machine needs `rtk` but no harness.
+- `rtk` built from the same source on every machine, including the gateway's. Machines only have to agree on gateway protocol 2, and the build must match exactly only between a window and its own machine's daemon. A gateway-only machine needs `rtk` but no harness.
 - [Tailscale](https://tailscale.com/) on each machine, using a normal network interface, unless you use [Direct LAN](#direct-lan-without-tailscale). Userspace-networking mode isn't supported. Find the gateway's address with `tailscale ip -4`.
 - Tailscale access between the machines on the port you choose. `rtk` doesn't change your tailnet's policy. Any device your policy allows can reach the port, though it can't do anything without pairing.
-- For a server, run `rtk runtime` inside `tmux` or `screen`, because `rtk` and its agents may end if SSH drops.
 
 ### Set up
 
@@ -201,20 +206,91 @@ Each code works once and expires after 10 minutes.
 rtk runtime pair --gateway 100.x.y.z:7777 --code XXXX-XXXX-XXXX
 ```
 
-**4. In your project on each of those machines,** start the runtime:
+**4. On each of those machines,** start the daemon, then open a window from your project and start its agents:
 
 ```sh
-rtk runtime --agents claude   # on the Mac
-rtk runtime --agents codex    # on the server
+rtk daemon
+rtk daemon status
 ```
 
-A runtime exits without starting any agent if it isn't paired, or if it can't reach the gateway.
+Check that `link:` says connected. Then, on the Mac:
+
+```sh
+rtk attach --agents claude
+```
+
+And on the server:
+
+```sh
+rtk attach --agents codex
+```
+
+Each agent runs in the directory you ran `rtk attach` from. `rtk daemon` exits with an error if the machine isn't paired. It starts without a gateway and keeps trying, but no agent can start until it has reached one: `rtk attach --agents` then says why, and starts nothing.
 
 **5. Ask one agent to message the other.** Other machines' agents need the full address, and a bare name such as `codex` only means an agent on the same machine:
 
 ```text
 Ask codex@ubuntu-b what files are in its directory, using ratatoskr_send.
 ```
+
+### The daemon and its windows
+
+> [!WARNING]
+> **Everything in this section is written and compile-checked, and has never been run.** It describes what the code is meant to do.
+
+Each machine with agents runs one daemon, which owns the agents and their connection to the gateway. A window is only a view of them, so closing it doesn't stop anything. Starting the daemon is always a separate step: `rtk attach` and `rtk runtime` never start one.
+
+| Command | What it does |
+| --- | --- |
+| `rtk daemon` | Starts this machine's daemon in the background, and prints its PID and log path |
+| `rtk daemon --foreground` | The same, staying in this terminal |
+| `rtk daemon status` | Shows its PID, build, uptime, log, gateway link, windows and agents |
+| `rtk attach` | Opens a window on the agents already running. If none are, it says so and exits |
+| `rtk attach --agents claude,codex` | The same, first starting any listed agent that isn't running, in this directory. Running agents stay where they started |
+| `rtk runtime [--agents claude,codex]` | An alias for `rtk attach`. **This has changed:** without `--agents` it no longer starts both agents, and it needs a running daemon |
+| `rtk daemon stop --session NAME` | Ends one agent |
+| `rtk daemon stop` | Stops the daemon and every agent. With agents running, it lists them and refuses unless you add `--yes` |
+
+**A window's keys.** Everything else works as in [Run](#run), including F1, F2, F3 and F4.
+
+| Key | Action |
+| --- | --- |
+| F10 | Detaches at once. The agents keep running, so there's no waiting-messages warning |
+| Ctrl+C | If this window holds input, the first press goes to the agent, and a second within a second detaches. **Otherwise the first press detaches.** That includes when you're a viewer, the agent has ended, the log is open or the terminal is too small |
+| F6 | Takes input for the focused agent |
+
+**Who can type.** One window at a time holds input for each agent. Each pane's header starts with `INPUT HOLDER`, `VIEWER` or `SESSION ENDED`.
+
+- A window that attaches takes input for any agent nobody holds, and is a viewer for the rest. Viewers can change focus and read the log, but the daemon refuses their keys, paste and mouse input.
+- F6 works straight away, with no request to the other window, which becomes a viewer and shows that it has.
+- When a window closes, its input is released, and nobody gets it automatically.
+- The holder's window sets the agent's terminal size. A viewer sees the same screen, cropped if it doesn't fit.
+- Nothing answers a permission prompt except a key press from the holder.
+
+**What happens when:**
+
+| Event | The agent | Its messages |
+| --- | --- | --- |
+| A window closes, or SSH drops | Keeps running | Keep arriving, and are held or pasted as usual |
+| It exits, or you run `rtk daemon stop --session NAME` | Ends, and the window shows it | New sends get `session_gone`. Unfinished ones become `interrupted` |
+| You start it again with `rtk attach --agents NAME` | A **new** session, with no memory of the last one | It never gets an older message |
+| `rtk daemon stop --yes` | Ends, as do all the others | New sends get `destination_unreachable`. Unfinished ones become `interrupted` |
+| The daemon crashes | **Ends, or is left running with nothing managing it.** It doesn't resume | Unfinished ones become `interrupted` at the next start, and are never pasted again |
+| The gateway is unreachable | Keeps running | Sends fail straight away. New agents can't start until it's back |
+
+**Limits you should know about:**
+
+- **The promise is only a closed window or a dropped SSH connection.** The daemon detaches itself but isn't a system service, so a reboot ends it and it doesn't restart by itself. Whether it survives logging out of macOS is unknown. `launchd` and `systemd` setup isn't included.
+- **Agents get the environment of the terminal that started the daemon,** fixed when it starts. Started over SSH, they keep that session's `SSH_AUTH_SOCK` and `SSH_CONNECTION`, which stop being valid when it ends, so `git` over SSH can start failing with no clear reason. To change an agent's environment, stop the daemon and start it from the right terminal.
+- **Codex may ask you to review its hooks once more.** The hook command names a fixed directory for each agent, so it should stay the same between daemon sessions, but it differs from plain `rtk`'s. A Codex used both ways may ask once for each. Until you trust them, Codex's hooks don't run and its messages are held. Whether this holds in practice hasn't been checked.
+- **The daemon needs a gateway.** It won't start without a pairing, so plain `rtk` remains the only way to run without one. For one machine on its own, a [loopback gateway](#b-everything-on-one-machine) works.
+- **One of each agent per machine,** because agents are named `claude` and `codex`. The daemon and plain `rtk` also exclude each other: `another ratatoskr is already running`.
+- **A window shows the agents that exist when it attaches.** An agent started later needs a new window, as its title says.
+- **Starting an agent straight after ending it can be refused.** The reason is shown, and a retry should work.
+- **The daemon's own agents are refused its socket, but this isn't a security boundary.** The socket is only for your user, and it refuses a connection whose parent processes include an agent. A process that double-forks gets past that check, and could then type into any agent, answer its prompts or stop the daemon. Agents already run as you, so treat this as protection against accidents.
+- **Time limits are guesses,** and `daemon.log` isn't rotated. It holds no message text, credentials or terminal contents.
+
+**To upgrade,** move every machine together, because the gateway protocol is now version 2 and refuses version 1. Quit any old `rtk runtime` windows and stop any daemons, install the new build everywhere, and restart `rtk gateway` with the same flags. Existing pairings and the gateway's database carry over. After a later rebuild, a window refuses to open against the running daemon and says to run `rtk daemon stop`, which works across builds, and then start the daemon again.
 
 ### Direct LAN, without Tailscale
 
@@ -229,25 +305,25 @@ Install the same new build on every machine first, then:
 
 1. Start the gateway with one of the commands above. With HTTPS, its first start creates a self-signed certificate in `gateway/tls/` and prints its fingerprint.
 2. In another terminal on the gateway machine, run `rtk gateway pair mac`, using a name you choose for each machine. Its last line is the complete pairing command, with the address, code and right flags.
-3. Run that line on the machine with agents. Then start `rtk runtime` as in [Set up](#set-up).
+3. Run that line on the machine with agents. Then start the daemon and a window as in [Set up](#set-up).
 
 A machine that will also run agents alongside the gateway pairs the same way, with the same LAN address.
 
 **What's allowed:** private addresses only: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. Public addresses and `0.0.0.0` are always refused. `--allow-lan`, `--insecure-http` and `--fingerprint` are refused on Tailscale and loopback addresses, which work as they did before.
 
-**Each machine has to choose HTTPS or plain HTTP itself,** because an attacker could fake an announcement from the gateway. The choice is saved in `pairing.json`, and nothing falls back from one to the other. To change it, quit the runtimes, restart the gateway with the new flags, then create a new code and pair each machine again before starting its runtime. A machine still paired for plain HTTP sends its credential unencrypted when it contacts a gateway that has moved to HTTPS, and the gateway only refuses it afterwards.
+**Each machine has to choose HTTPS or plain HTTP itself,** because an attacker could fake an announcement from the gateway. The choice is saved in `pairing.json`, and nothing falls back from one to the other. To change it, stop the daemons, restart the gateway with the new flags, then create a new code and pair each machine again before starting its daemon. A machine still paired for plain HTTP sends its credential unencrypted when it contacts a gateway that has moved to HTTPS, and the gateway only refuses it afterwards.
 
 **What plain HTTP costs you:**
 
 - **Anyone who can see the traffic can read it,** including every message, the pairing code and the credential. A stolen credential works until you run `rtk gateway unpair HOST`. Wi-Fi security such as WPA2 doesn't protect against other devices that know the network password.
 - **Anyone who can redirect the traffic can pose as the gateway,** and inject messages that get pasted into your agents. Permission prompts still appear only on the agent's own machine, but anything that agent is already allowed to do is exposed.
-- **A laptop keeps trying to reconnect.** On another network, it sends its credential to whatever answers at that address, so quit the runtime before you leave. Pinned HTTPS doesn't have this problem, because the certificate check fails first.
+- **A laptop keeps trying to reconnect.** On another network, it sends its credential to whatever answers at that address, so stop the daemon before you leave. Pinned HTTPS doesn't have this problem, because the certificate check fails first.
 
 **In both modes:**
 
-- **Every device on the LAN can reach the port.** It can't do anything without pairing, but a device could hold a connection open with a slow request. `rtk` doesn't configure a firewall, so if a runtime can't connect, check that the gateway machine allows incoming TCP on your port.
+- **Every device on the LAN can reach the port.** It can't do anything without pairing, but a device could hold a connection open with a slow request. `rtk` doesn't configure a firewall, so if a daemon can't connect, check that the gateway machine allows incoming TCP on your port.
 - **Hostnames aren't accepted,** so give the gateway a fixed address with a router DHCP reservation. If its address changes, start it on the new address and pair each machine again. The fingerprint stays the same, so don't regenerate the certificate.
-- **If the certificate doesn't match,** the runtime refuses to connect. Check the fingerprint printed by the gateway before pairing again, because the certificate may have been regenerated, or another machine may have answered at that address.
+- **If the certificate doesn't match,** the daemon refuses to connect. Check the fingerprint printed by the gateway before pairing again, because the certificate may have been regenerated, or another machine may have answered at that address.
 - **If a first start is interrupted,** the gateway may refuse to start and name a leftover key file to remove. Remove that file and start again.
 
 ### Read the messages
@@ -261,7 +337,7 @@ Run these on the gateway machine. They read its ledger directly, and they print 
 | `rtk gateway hosts` | Paired machines and their state, up to 15 seconds out of date |
 | `rtk gateway unpair HOST` | Removes a machine. Requests are refused at once, and its open connection closes within about 5 seconds |
 
-In a runtime's TUI, F3 opens received messages, and Tab switches to what this machine sent in the current run. The title shows the gateway state, such as `Gateway connected`.
+In a daemon window, F3 opens received messages, and Tab switches to what this machine sent in the current run. The title shows the gateway state, such as `Gateway connected`.
 
 ### What each result means
 
@@ -281,14 +357,22 @@ Nothing is resent automatically. If an agent sends again after an uncertain resu
 
 ### Test it
 
+> **For a step-by-step walkthrough, use the [daemon test guide](docs/testing/index.html).** It covers [one Mac](docs/testing/scenario-1-local/README.md), including several copies of each harness, a [LAN with plain HTTP](docs/testing/scenario-2-lan-http/README.md) and a [tailnet](docs/testing/scenario-3-tailnet/README.md), with diagrams and copy buttons. **`rtk` doesn't support HTTPS on a Tailscale address,** and the guide explains the alternatives. Open it from a local checkout, because GitHub shows `.html` as source.
+
 Please run these in order, because each one relies on the one before. Tell the team what you see, especially anything that differs. **Expected results come from reading the code,** not from a record of each check passing.
 
-**Before you start:** the first run of this build updates your existing message database, and an older `rtk` then refuses it. It leaves a backup beside the database, named `ratatoskr.db.bak-v1-<time>`. Keep your old binary and that backup if you want to be able to go back.
+**Before you start:**
+
+- **Build again, on every machine.** A binary from before the daemon has no daemon commands.
+- **Restart the gateway on the new build.** This work doesn't change its database.
+- **If this machine's database predates cross-machine messaging,** the first run updates it, and an older `rtk` then refuses it. It leaves a backup beside the database, named `ratatoskr.db.bak-v1-<time>`. Keep your old binary and that backup if you want to be able to go back.
 
 #### A. Plain `rtk` hasn't changed
 
 1. Build and install, then run `rtk` in a project. Claude Code and Codex should open side by side, with no gateway label in the title.
 2. Run the [First use](#first-use) message and a reply. Check F3 and Ctrl+C.
+
+3. Keep it open and, in a second terminal, try `rtk daemon` if this machine is paired, or `rtk daemon status` if not. `rtk daemon` should fail, naming `another ratatoskr is already running` and the log. `rtk daemon status` should say `no daemon is running`.
 
 This is the most important check, because everything else is new, and this already worked for you.
 
@@ -298,12 +382,35 @@ Use this to separate `rtk` problems from network problems.
 
 1. Run `rtk gateway --listen 127.0.0.1:7777`.
 2. In a second terminal, run `rtk gateway pair local`. Then run `rtk runtime pair --gateway 127.0.0.1:7777 --code ...`.
-3. Run `rtk runtime` in a project. The title should say `Gateway connected`, and the agents should appear as `claude@local` and `codex@local`.
-4. Have the agents message each other. Each message should appear in `rtk gateway log`, with its full text in `rtk gateway show ID`.
-5. Stop the gateway with Ctrl+C. The title should say `Gateway reconnecting — sends unavailable`, and a send should return `gateway_unreachable`, even between these two agents. Nothing appears in the log for it.
-6. Start the gateway again. The title should return to `Gateway connected`, and the failed message shouldn't arrive.
+3. Run `rtk daemon`. It should print `daemon started (pid N)` and the log path. `rtk daemon status` should show the link as connected, and a second `rtk daemon` should say `a daemon is already running`. Read `daemon.log`.
+4. In a project, run `rtk attach --agents claude,codex`. The title should say `Gateway connected`, and the agents should appear as `claude@local` and `codex@local`.
+5. Have the agents message each other. Each message should appear in `rtk gateway log`, with its full text in `rtk gateway show ID`.
+6. Stop the gateway with Ctrl+C. The title should say `Gateway reconnecting — sends unavailable`, and a send should return `gateway_unreachable`, even between these two agents. Nothing appears in the log for it.
+7. Start the gateway again. The title should return to `Gateway connected`, and the failed message shouldn't arrive.
 
-#### C. Across machines
+#### C. The daemon and its windows
+
+This is the point of the work. Continue from B, with the gateway running.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| 1 | Type in each pane. Press F10 | Typing reaches the agent. F10 prints `detached; the agents keep running (rtk attach returns to them, rtk daemon stop ends them)` |
+| 2 | Run `rtk attach` | The same agents, on their current screens |
+| 3 | **Close the terminal window.** In a new one, run `rtk daemon status`, then `rtk attach` | Both agents still listed, and you return to them |
+| 4 | Open a second terminal and run `rtk attach` | Both headers say `VIEWER`. Typing doesn't reach the agent |
+| 5 | Press F6 in the second window | It becomes `INPUT HOLDER`, and the first shows `VIEWER` |
+| 6 | Press Ctrl+C once in the viewer pane of the first window | It detaches straight away |
+| 7 | Close the holder window, then run `rtk daemon status` | The agents show `no holder` |
+| 8 | Ask an agent to message the other while no window is open, then attach | The message arrived or is held, and F3 shows it |
+| 9 | From inside an agent's pane, ask it to run `rtk daemon status` | Refused, because it comes from an agent this daemon started |
+| 10 | Run `rtk daemon stop --session codex` | `session ended: codex`, and `claude` keeps running |
+| 11 | Run `rtk attach --agents codex` | A new Codex session, which gets none of the earlier messages. **See whether Codex asks you to review its hooks.** It may ask once, and shouldn't ask on later starts |
+| 12 | Run `rtk daemon stop` | Lists the agents and refuses |
+| 13 | Run `rtk daemon stop --yes`, then plain `rtk` straight away | `daemon stopped` appears only after a few seconds at most, with no agents left running, and `rtk` opens. If it says `still finishing its shutdown`, tell the team |
+| 14 | On a server, attach over SSH and then drop the connection. Reconnect, and run `rtk attach` | The agents are still there |
+| 15 | Log out of macOS and back in, if you want to know, then run `rtk daemon status` | **Unknown.** The README doesn't promise this |
+
+#### D. Across machines
 
 Set up as above, with the gateway on any machine and an agent on two machines. A third machine for the gateway is the fullest test.
 
@@ -311,26 +418,26 @@ Set up as above, with the gateway on any machine and an agent on two machines. A
 2. Confirm that a permission prompt appears only on that agent's own machine.
 3. Run `rtk gateway hosts`. Both machines should show `live`.
 
-#### D. Failure cases
+#### E. Failure cases
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| 1 | Quit the recipient's runtime with F10, then send to it | `destination_unreachable`, with the text in the gateway's log |
-| 2 | Start that runtime again | The earlier message doesn't arrive |
-| 3 | Restart the recipient with only the other agent, such as `--agents claude`, then send to `codex@<host>` | `session_gone` |
+| 1 | Run `rtk daemon stop --yes` on the recipient, then send to it | `destination_unreachable`, with the text in the gateway's log |
+| 2 | Run `rtk daemon` and `rtk attach --agents ...` there | The earlier message doesn't arrive |
+| 3 | Run `rtk daemon stop --session codex` on the recipient, then send to `codex@<host>` | `session_gone` |
 | 4 | Send to a name that's never existed, such as `nobody@<host>` | `unknown_recipient`, and a list of known agents |
 | 5 | Close the recipient's laptop or cut its network, then send straight away | `delivery_uncertain` for up to about 20 seconds, as the gateway hasn't noticed yet |
 | 6 | Keep it away, wait 20 seconds and send again | `destination_unreachable` |
-| 7 | Bring it back | The runtime reconnects. Nothing from step 6 is delivered. See whether a message from step 5 turned up |
+| 7 | Bring it back | The daemon reconnects. Nothing from step 6 is delivered. See whether a message from step 5 turned up |
 | 8 | Send to an agent while it's busy, or while you're typing in its pane | `host_stored`, then `held` on its machine, then pasted when safe. This isn't a failure |
-| 9 | Run `rtk gateway unpair <host>` while that runtime is open | Within seconds its title says `Gateway refused — retrying`, and its sends fail with the reason |
-| 10 | Start `rtk runtime` with the gateway stopped | Exits with `cannot start`, with no agent started |
+| 9 | Run `rtk gateway unpair <host>` with a window open on that machine | Within seconds its title says `Gateway refused — retrying`, and its sends fail with the reason |
+| 10 | Stop the daemon and the gateway. Run `rtk daemon`, then `rtk attach --agents claude` | The daemon starts. Attach prints `could not start claude`, with the reason, and no agent starts until the gateway is back |
 | 11 | Run `rtk gateway --listen 0.0.0.0:7777`, then `--listen 100.x.y.z:0` | Both refused with a clear error |
-| 12 | Run `rtk` while `rtk runtime` is open under the same state directory | `another ratatoskr is already running` |
+| 12 | Run `rtk` while the daemon is running under the same state directory | `another ratatoskr is already running` |
 
-Also worth watching in step C: whether agents actually use `ratatoskr_send` with `name@host`, and whether the timeouts feel right. All of them are guesses.
+Also worth watching in part D: whether agents actually use `ratatoskr_send` with `name@host`, and whether the timeouts feel right. All of them are guesses.
 
-#### E. Automated tests
+#### F. Automated tests
 
 None of these have ever run, so expect some to fail on the tests themselves. From a checkout:
 
@@ -341,9 +448,9 @@ go test -race -tags rtktest ./internal/router ./internal/store
 
 Use `-race`, because some router tests read state that's owned by another goroutine, and a report there may be a bug in the test.
 
-#### F. Direct LAN
+#### G. Direct LAN
 
-Run this after C works, or instead of it if you aren't using Tailscale. Use your gateway's address in place of `192.168.50.217`.
+Run this after D works, or instead of it if you aren't using Tailscale. Use your gateway's address in place of `192.168.50.217`.
 
 | # | Do this | Expect |
 | --- | --- | --- |
@@ -354,19 +461,19 @@ Run this after C works, or instead of it if you aren't using Tailscale. Use your
 | 5 | Run `rtk gateway pair mac`, then run its pairing command without `--fingerprint` | Refused, showing both forms |
 | 6 | Run it with a wrong fingerprint, changing one digit | Refused with `does not match the pinned fingerprint` |
 | 7 | Run it exactly as printed, with the same code | Paired, showing `certificate pinned`. Step 6 shouldn't have used up the code, because nothing is sent before the check |
-| 8 | Start `rtk runtime`, and have agents message each other across machines | Title says `Gateway connected`, and messages appear in `rtk gateway log` |
+| 8 | Run `rtk daemon` and `rtk attach --agents ...`, and have agents message each other across machines | Title says `Gateway connected`, and messages appear in `rtk gateway log` |
 | 9 | Leave it idle for several minutes, then send again | Still connected, and the message arrives. This tests the long-lived connection over TLS |
-| 10 | Stop the gateway, run `mv` on its `gateway/tls` directory to set it aside, and start it again | A new fingerprint, and the running runtime doesn't reconnect. Its title stays `Gateway reconnecting — sends unavailable`, with the mismatch reason, and a send returns `gateway_unreachable` |
-| 11 | Stop the gateway, delete the new `gateway/tls`, move the original back, and start it again | The original fingerprint, and the runtime reconnects without pairing again |
-| 12 | Stop the runtime, then restart the gateway with `--allow-lan --insecure-http`, and start the runtime | Exits with `cannot start`, saying the gateway didn't answer with TLS |
-| 13 | Run `rtk gateway pair mac`, and run its pairing command | It has `--insecure-http`, and pairing prints the warning |
-| 14 | Start `rtk runtime`, and have agents message each other | Title says `Gateway connected (plain HTTP)`, and messages arrive |
+| 10 | Stop the gateway, run `mv` on its `gateway/tls` directory to set it aside, and start it again | A new fingerprint, and the running daemon doesn't reconnect. Its window's title stays `Gateway reconnecting — sends unavailable`, with the mismatch reason, and a send returns `gateway_unreachable` |
+| 11 | Stop the gateway, delete the new `gateway/tls`, move the original back, and start it again | The original fingerprint, and the daemon reconnects without pairing again |
+| 12 | Run `rtk daemon stop --yes`, restart the gateway with `--allow-lan --insecure-http`, then run `rtk daemon` and `rtk attach --agents claude` | Attach prints `could not start claude`, with a reason about the gateway not answering with TLS |
+| 13 | Run `rtk daemon stop --yes`, then `rtk gateway pair mac`, and run its pairing command | It has `--insecure-http`, and pairing prints the warning |
+| 14 | Run `rtk daemon` and `rtk attach --agents ...`, and have agents message each other | Title says `Gateway connected (plain HTTP)`, and messages arrive |
 
 Tell the team if a command or message differs from this, especially step 7, or any plain HTTP traffic in HTTPS mode.
 
 ### Cross-machine data and limits
 
-- **Files:** the gateway keeps its ledger in `gateway/gateway.db` inside the state directory shown under [Data](#data). With HTTPS, its certificate and private key are in `gateway/tls/`. A paired machine keeps its credential in `pairing.json` there, readable only by you.
+- **Files:** each daemon keeps its socket and log in `daemon/` inside the state directory shown under [Data](#data). The gateway keeps its ledger in `gateway/gateway.db` there. With HTTPS, its certificate and private key are in `gateway/tls/`. A paired machine keeps its credential in `pairing.json` there, readable only by you.
 - **The gateway never deletes messages automatically,** and full message text can include secrets. Its disk use grows until a retention policy exists. The 30-day limit applies only to each machine's local database. To erase the ledger, stop the gateway and delete its `gateway` directory.
 - **A message can be on three machines:** the sender, the gateway and the recipient.
 - **A compromised gateway** can read stored messages and inject prompts into connected agents. It can't answer permission prompts or bypass a machine's delivery gate.
@@ -374,8 +481,8 @@ Tell the team if a command or message differs from this, especially step 7, or a
 - **Agents can read the credential.** It's never given to them, but they run as you, so one with file access could read `pairing.json`.
 - **`--code` appears in your shell history and process list** until the code is used or expires.
 - **A failure after a send returns** reaches you and the ledger, but not the sending model.
-- **The ledger may miss a final state.** If a runtime quits before reporting `interrupted`, its log entry stays at the last reported state, marked `(session ended)`.
-- **One runtime per state directory,** and plain `rtk` counts as one. The loop budget of 20 is per runtime, and resets when you press Enter on that machine.
+- **The ledger may miss a final state.** If a daemon stops before reporting `interrupted`, its log entry stays at the last reported state, marked `(session ended)`.
+- **One daemon per state directory,** and plain `rtk` counts as one. The loop budget of 20 is per daemon, and resets when the window holding input presses Enter on that machine.
 
 ## Architecture decisions
 
@@ -384,7 +491,8 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
-| [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. The owner reports that it works in their testing on 2026-11-06 | Accepted |
+| [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. The owner reports that it worked in their testing on 2026-11-06, before the daemon replaced `rtk runtime` | Accepted |
+| [0003](docs/adr/0003-per-host-daemon/index.html) | Move from `rtk runtime` to a long-lived daemon on each machine, with attachable windows, as the basis for sessions that spawn workers. Plain `rtk` stays local. The daemon is written and compile-checked but has never been run. Workers aren't built, and some questions about them remain open | Accepted |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 

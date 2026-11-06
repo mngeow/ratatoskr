@@ -41,6 +41,9 @@ type interruptState struct {
 // what the feedback row is showing.
 func (m *Model) clearInterrupt() {
 	m.interrupt = interruptState{}
+	if m.daemon != nil && m.feedback == daemonCtrlCAgain {
+		m.feedback = ""
+	}
 	if m.feedback == ctrlCAgainFeedback {
 		// Only the hint this feature wrote is removed; any other message stays.
 		m.feedback = ""
@@ -83,6 +86,23 @@ func (m *Model) inputUnavailableLine() string {
 		if m.paneInputReady(i) {
 			continue
 		}
+		if m.daemon != nil {
+			// In a daemon window a viewer and an ended session are healthy states the header
+			// already names, not an input failure.
+			pane := daemonPane(slot.Pane)
+			if pane == nil {
+				continue
+			}
+			state := pane.State()
+			if state.Ended || !state.YouHold {
+				continue
+			}
+			if err := m.daemon.client.OperationError(slot.ID); err != nil {
+				return "I/O WARNING: " + sanitize(err.Error())
+			}
+			// The window holds input and still cannot type: that is the real failure.
+			return "INPUT UNAVAILABLE: " + m.slotName(i) + " cannot receive input"
+		}
 		return "INPUT UNAVAILABLE: " + m.slotName(i) + " cannot receive input"
 	}
 	return ""
@@ -91,6 +111,9 @@ func (m *Model) inputUnavailableLine() string {
 // ctrlC applies the decided policy and returns a command when it decided to
 // quit or to forward the press.
 func (m *Model) ctrlC(key tea.KeyPressMsg) tea.Cmd {
+	if m.daemon != nil {
+		return m.daemonCtrlC(key)
+	}
 	// Second press: same pane, inside the window, nothing else happened. Quit,
 	// using the draft state from before the first press so this feature's own
 	// draft does not count as a reason to warn.
@@ -129,6 +152,38 @@ func (m *Model) ctrlC(key tea.KeyPressMsg) tea.Cmd {
 	return command
 }
 
+// daemonCtrlC applies the window's Ctrl+C policy: forward once when this window holds the
+// focused session, detach on the second press or immediately when nothing can receive the key.
+//
+// A detach never stops a session, so the second press needs no draft or pending warning.
+func (m *Model) daemonCtrlC(key tea.KeyPressMsg) tea.Cmd {
+	if m.interrupt.armed && m.interrupt.pane == m.focus &&
+		m.now().Sub(m.interrupt.at) >= 0 && m.now().Sub(m.interrupt.at) <= interruptWindow {
+		m.clearInterrupt()
+		m.detachWindow()
+		return tea.Quit
+	}
+
+	// A viewer, an ended session, the log or a too-small terminal can receive nothing: detach.
+	if !m.canReceiveInput() {
+		m.clearInterrupt()
+		m.detachWindow()
+		return tea.Quit
+	}
+
+	m.interrupt = interruptState{armed: true, pane: m.focus, at: m.now(), draftBefore: m.anyDraft()}
+	room := len(m.input[m.focus]) < inputQueueLimit
+	command := m.enqueueInputFor(m.focus, inputAction{
+		key:        toKeyPress(key),
+		drafting:   true,
+		priorDraft: m.draftBefore(m.focus),
+	}, false)
+	if room {
+		m.feedback = daemonCtrlCAgain
+	}
+	return command
+}
+
 // isCtrlC reports Ctrl+C and nothing else: Ctrl+Shift+C is a different key and
 // belongs to the child.
 func isCtrlC(key tea.KeyPressMsg) bool {
@@ -140,6 +195,10 @@ func isCtrlC(key tea.KeyPressMsg) bool {
 // operation window expires, it is visible and Ctrl+C takes the quit path.
 const inputCommandLimit = 3 * time.Second // UNTESTED UI watchdog, not a preemptive goroutine cancel.
 func (m *Model) paneInputReady(i int) bool {
+	if m.daemon != nil {
+		p := daemonPane(m.slots[i].Pane)
+		return p != nil && p.InputReady() && !p.Ended() && p.State().YouHold && m.daemon.client.OperationError(m.slots[i].ID) == nil
+	}
 	p := m.slots[i].Pane
 	if p == nil || !p.InputReady() {
 		return false

@@ -213,7 +213,7 @@ Rules that must hold:
 
 ## Out of scope
 
-PTY streaming, attaching to a harness started separately, multi-user, public gateway, TLS other than the LAN HTTPS mode above, retries or store-and-forward, central-view UI beyond the CLI, retention, gateway-side loop budget, and daemon split.
+PTY streaming, attaching to a harness started separately, multi-user, public gateway, TLS other than the LAN HTTPS mode above, retries or store-and-forward, central-view UI beyond the CLI, retention, gateway-side loop budget, and daemon split. [ADR-0003](../adr/0003-per-host-daemon/index.html) has since chosen a daemon as the direction, but it isn't built, so this contract still describes the current code.
 
 ## Done means
 

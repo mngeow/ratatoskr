@@ -831,6 +831,9 @@ func splitWrapped(text string, width int) []string {
 // historyHints is the hint row while F3 is open.
 func (m *Model) historyHints() string {
 	if m.outbound.source {
+		if m.daemon != nil {
+			return strings.ReplaceAll(m.outboundHints(), "F10 quit", "F10 detach  F6 take input")
+		}
 		return m.outboundHints()
 	}
 	focus := "F1/F2 panes"
@@ -843,10 +846,15 @@ func (m *Model) historyHints() string {
 			focus = "Tab outbound  " + focus
 		}
 	}
-	if m.history.detailID != "" {
-		return "↑/↓ scroll  PgUp/PgDn page  Home/End  R reload  ←/→ runs  Esc list  F3 exit  " + focus + "  F10 quit"
+	quit := "F10 quit"
+	if m.daemon != nil {
+		// A window detaches; the sessions keep running.
+		quit = "F10 detach  F6 take input"
 	}
-	return "←/→ runs  ↑/↓ select  Enter detail  R refresh  PgUp/PgDn page  Esc/F3 back  " + focus + "  F10 quit"
+	if m.history.detailID != "" {
+		return "↑/↓ scroll  PgUp/PgDn page  Home/End  R reload  ←/→ runs  Esc list  F3 exit  " + focus + "  " + quit
+	}
+	return "←/→ runs  ↑/↓ select  Enter detail  R refresh  PgUp/PgDn page  Esc/F3 back  " + focus + "  " + quit
 }
 
 func isRefreshKey(k tea.KeyPressMsg) bool {

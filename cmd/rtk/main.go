@@ -11,8 +11,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/mngeow/ratatoskr/internal/app"
+	"github.com/mngeow/ratatoskr/internal/attach"
+	"github.com/mngeow/ratatoskr/internal/daemon"
 	"github.com/mngeow/ratatoskr/internal/gateway"
 	"github.com/mngeow/ratatoskr/internal/link"
 	"github.com/mngeow/ratatoskr/internal/server"
@@ -33,7 +36,13 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway
-       rtk runtime [--agents claude,codex]    open the agents, connected to the gateway
+       rtk attach [--agents claude,codex]     open a window on the daemon's sessions, starting any listed session that is not running
+       rtk runtime [--agents claude,codex]    an alias for rtk attach
+       rtk daemon                             start this machine's daemon in the background
+       rtk daemon --foreground                the same, staying in this terminal
+       rtk daemon status                      running or not, its sessions, windows and log path
+       rtk daemon stop [--yes]                stop the daemon and every session
+       rtk daemon stop --session NAME         end one session
 `
 
 func main() {
@@ -65,10 +74,31 @@ func main() {
 			os.Exit(1)
 		}
 		return
-	case kindRuntimeRun:
-		// RunRuntime installs its own signal handling, like Run, so a run's panes
-		// and link shut down in order rather than being killed here.
-		if err := app.RunRuntime(version, cmd.agents); err != nil {
+	case kindAttach:
+		// A window owns its own signal handling: a signal closes its socket and leaves the
+		// daemon and its sessions running.
+		if err := attach.Run(version, cmd.agents); err != nil {
+			fmt.Fprintln(os.Stderr, "rtk:", err)
+			os.Exit(1)
+		}
+		return
+	case kindDaemonRun:
+		daemon.SetBuild(version)
+		if err := runDaemon(cmd.foreground); err != nil {
+			fmt.Fprintln(os.Stderr, "rtk:", err)
+			os.Exit(1)
+		}
+		return
+	case kindDaemonStatus:
+		daemon.SetBuild(version)
+		if err := daemonStatus(); err != nil {
+			fmt.Fprintln(os.Stderr, "rtk:", err)
+			os.Exit(1)
+		}
+		return
+	case kindDaemonStop:
+		daemon.SetBuild(version)
+		if err := daemonStop(cmd); err != nil {
 			fmt.Fprintln(os.Stderr, "rtk:", err)
 			os.Exit(1)
 		}
@@ -101,4 +131,52 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rtk:", err)
 		os.Exit(1)
 	}
+}
+
+// daemonConfig is the daemon's configuration for this binary and this state directory.
+func daemonConfig(foreground bool) (daemon.Config, error) {
+	stateDir, err := store.DefaultDir()
+	if err != nil {
+		return daemon.Config{}, fmt.Errorf("state directory: %w", err)
+	}
+	return daemon.Config{Version: version, StateDir: stateDir, Foreground: foreground}, nil
+}
+
+// runDaemon starts the daemon: in the background, or in this terminal with --foreground.
+func runDaemon(foreground bool) error {
+	cfg, err := daemonConfig(foreground)
+	if err != nil {
+		return err
+	}
+	if !foreground {
+		return daemon.Start(cfg, os.Stdout)
+	}
+	// The daemon installs its own signal handling and ignores SIGHUP.
+	return daemon.Run(context.Background(), cfg)
+}
+
+// daemonStatus prints the running daemon's status.
+func daemonStatus() error {
+	cfg, err := daemonConfig(false)
+	if err != nil {
+		return err
+	}
+	status, err := daemon.Status(context.Background(), cfg.StateDir)
+	if err != nil {
+		return err
+	}
+	daemon.PrintStatus(os.Stdout, status, version, time.Now())
+	return nil
+}
+
+// daemonStop stops the daemon, or one of its sessions.
+func daemonStop(cmd command) error {
+	cfg, err := daemonConfig(false)
+	if err != nil {
+		return err
+	}
+	if cmd.session != "" {
+		return daemon.StopSession(context.Background(), cfg.StateDir, cmd.session, os.Stdout)
+	}
+	return daemon.Stop(context.Background(), cfg.StateDir, cmd.yes, os.Stdout)
 }

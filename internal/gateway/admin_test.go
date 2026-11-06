@@ -283,9 +283,7 @@ func TestReportMarkerForAnEndedSession(t *testing.T) {
 	insertMessage(t, store, "open", "codex@alpha", "claude@beta", "hello", "host_stored", adminNow)
 	insertMessage(t, store, "nosession", "codex@alpha", "claude@beta", "hello", "host_stored", adminNow)
 
-	if _, err := store.StartSessions(ctx, "beta", []string{"claude"}, adminNow, idGenerator("s")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, store, "beta", adminNow, "claude")
 	if _, err := store.db.ExecContext(ctx,
 		`INSERT INTO sessions(id, host, name, started_at, ended_at) VALUES('ended-session','beta','claude',?,?)`,
 		adminNow.UnixMilli(), adminNow.UnixMilli()); err != nil {

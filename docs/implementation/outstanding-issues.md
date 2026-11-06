@@ -22,6 +22,7 @@ Owner: `delivery.lead`. This is the current list for the `rtk` first version. It
 
 - All automated tests. They compile but have never been executed.
 - Anything in the cross-machine candidate (`rtk gateway`, `rtk runtime`) by the team, and any automated test of it. The user's manual test is recorded above. What it doesn't separately confirm stays open in [Cross-machine candidate](#cross-machine-candidate) and [Direct LAN](#direct-lan).
+- All of the per-host daemon (`rtk daemon`, `rtk attach`). See [Per-host daemon](#per-host-daemon).
 - Linux at runtime, and use over SSH.
 - Recovery after a crash, and storage failure handling. The runners for acceptance checks 10 and 12 aren't written.
 - The other acceptance checks in design section 12. Mouse focus and Ctrl+C aren't numbered checks.
@@ -118,7 +119,7 @@ Every value here is a guess, marked in code, and none has been measured. A wrong
 
 ### Cross-machine candidate
 
-`rtk gateway` and `rtk runtime`, built from the [contract](cross-machine-contract.md) and [design](cross-machine-design.md) in the working tree. The user reports that the basic path works, from their manual test on 2026-11-06. The team has only run `gofmt`, `go vet` and `go build`, which pass for macOS and Linux. Tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`. "Not separately confirmed" below means that the user's general report may cover the row, but doesn't say so.
+`rtk gateway` and `rtk runtime`, built from the [contract](cross-machine-contract.md) and [design](cross-machine-design.md). The user reports that the basic path works, from their manual test on 2026-11-06. The team has only run `gofmt`, `go vet` and `go build`, which pass for macOS and Linux. Tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`. "Not separately confirmed" below means that the user's general report may cover the row, but doesn't say so.
 
 | Risk or gap | If it's wrong, or what it means | Status | What would resolve it |
 | --- | --- | --- | --- |
@@ -163,6 +164,36 @@ Every value here is a guess, marked in code, and none has been measured. A wrong
 | The address comes from what was typed, and hostnames are refused | If the gateway's DHCP address changes, runtimes must re-pair at the new address. The fingerprint stays the same, so don't regenerate the certificate | Known limit | A router DHCP reservation |
 | `Gateway connected (plain HTTP)` title | Wording and fit have only been worked out: 30 cells against a minimum usable width of 40 | Not separately confirmed. The team has rendered nothing | Run `rtk runtime` paired with `--insecure-http` |
 | Reaching a real LAN address on macOS and Linux | A firewall may block it. Apple's documentation exempts terminal tools from the Local Network prompt, but that hasn't been seen here | Not separately confirmed. The report doesn't name the transport or firewall setup | A run between two machines on the LAN |
+
+### Per-host daemon
+
+`rtk daemon`, `rtk attach` and `rtk runtime` as its alias, built from the [daemon contract](daemon-contract.md) and [design](daemon-design.md). All of it is written and never run: `gofmt`, `go vet` and `go build` pass for macOS and Linux, tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`.
+
+| Risk or gap | If it's wrong, or what it means | Status | What would resolve it |
+| --- | --- | --- | --- |
+| Whether a daemon survives a macOS logout | `setsid` isn't service supervision, so macOS may end it with the login session. The promise is only a closed window or dropped SSH | Unverified, and a known limit | Log out and back in, then `rtk daemon status` |
+| Self-detach, and readiness through the socket | `rtk daemon` might report failure for a healthy child, or hang | Never run | `rtk daemon`, close the terminal, `rtk daemon status` |
+| Peer credentials and the parent-chain walk on macOS and Linux | Connections wrongly refused, or the agent check doing nothing. The walk isn't a security boundary | Never run | `rtk attach` from a shell, and from inside an agent |
+| Harnesses start with default SIGHUP handling while the daemon ignores it | Harness tools could ignore hangups and be left behind | Fixed by review, never run | On Linux, read `SigIgn` in `/proc/<harness pid>/status` |
+| The user's cross-machine test of 2026-11-06 ran the old in-process `rtk runtime` | That path is gone, so the test doesn't carry over to the daemon, and gateway protocol 2 changes registration | Open: connected messaging needs testing again | The two-machine run again, through `rtk daemon` and `rtk attach` |
+| Gateway protocol 2 | Version 1 runtimes are refused, so every machine and the gateway must move together. No schema change | Never run | Restart the gateway on the new build with its existing database, then a daemon reconnecting with its existing pairing |
+| Plain `rtk` is unchanged by this work | `app.go` has no diff, and shared files gained only additions or guarded branches. A regression would be in the mode the user has checked by hand | Argued from the diffs | Plain `rtk`, one message round trip |
+| `rtk attach`, `windowclient` and the socket surface end to end | A window may fail to open, misdraw or disconnect. Static review found four bugs here that would have stopped everything, and more may remain | Never run | `rtk attach --agents claude,codex` |
+| Input ownership: viewers refused, F6 takeover, a closing holder releasing input | Input could reach a session from the wrong window, or a window could be stuck as viewer | Never run | Two windows on one session |
+| A window closing or SSH dropping changes nothing at the gateway | A session could end, or messages be marked `interrupted` | By review, never run | Close a window with a message held, then re-attach |
+| Slow windows: latest-wins frames, bounded queues, disconnect on overflow | A window could be dropped too eagerly, or lag | By review, never run | A window on a slow SSH link under heavy output |
+| Pane polling every 30 ms per session | Cost unmeasured | Known limit | Watch CPU with idle sessions |
+| The first daemon Codex session may ask to trust its hooks once | Its `--session-dir` differs from plain `rtk`'s. Later sessions use the same fixed `session/<name>/`, so they shouldn't ask. Whether Codex's trust covers the whole command hasn't been checked | Unverified | Start a Codex session, end it, and start it again |
+| A hook left over from an ended harness could read the replacement's hook file | It would report under the new session. It needs a straggler hook at the moment of a re-add | Accepted for now | None unless seen |
+| `rtk daemon stop` waits for the process to exit: 30 s against a worked-out worst case of 22 s, an `UNTESTED guess` | A slower stop prints that it's still finishing, and the lock stays held until it does. A reused PID can only cause that message, never a false `daemon stopped` | Reviewed, never run | `rtk daemon stop --yes`, then plain `rtk` at once |
+| A session directory left behind blocks that name | The add fails with `file exists` until the directory goes, and the log says why it couldn't be removed. A daemon restart clears `session/` | Known gap, accepted | None unless seen |
+| A window shows the sessions that exist when it attaches | A session started later needs a re-attach. The title says so | Accepted first limit | None in this phase |
+| A re-add straight after ending a session can be refused as a duplicate | It fails with the reason, and a retry works | Accepted, never run | `rtk daemon stop --session NAME`, then attach at once |
+| `rtk daemon stop --yes` is checked by the client only | A session started between the status and the stop is stopped too | Accepted | None needed |
+| Control connections work across builds | `status` and `stop` from a new build reach an old daemon. Their messages may only gain fields | Decided by architect, never run | Stop an old daemon with a new build |
+| Peers are fixed when a session is added | An agent's listed peers can go stale. `unknown_recipient` returns the current list | Known limit, as before | None needed unless it misleads |
+| `daemon.log` has no rotation | It grows slowly, with one line per connection and session change | Known gap | Rotate it if it matters |
+| A daemon crash ends or orphans agents, and nothing resumes | Survivors aren't tracked or killed, by contract | Accepted | None in this phase |
 
 ## Deferred features
 

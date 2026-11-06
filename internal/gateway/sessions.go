@@ -24,8 +24,8 @@ const (
 	// name that can be launched locally can also be registered here.
 	agentNamePatternText = `^[a-z0-9_-]{1,32}$`
 
-	// maxAgentsPerHost bounds one registration. Two harnesses exist and the
-	// runtime sends two names, so anything beyond a handful is a caller bug.
+	// maxAgentsPerHost bounds the open sessions one host may have. Two harnesses
+	// exist, so anything beyond a handful is a caller bug or a leak.
 	maxAgentsPerHost = 8 // UNTESTED guess
 )
 
@@ -56,79 +56,93 @@ type DirectoryRow struct {
 	LastHeartbeat time.Time // zero when the gateway has never heard from the host
 }
 
-// StartSessions registers a run's agents, ending that host's earlier sessions.
+// ErrTooManySessions refuses an add when the host already has as many open sessions as
+// it may.
+var ErrTooManySessions = errors.New("gateway: too many open sessions on this host")
+
+// AddSession registers one session of one agent name on one host.
 //
-// Everything is validated before the database is touched: the host name, the
-// number of names, duplicates, and each name against the display-name rule. A
-// bad registration must not leave the previous one half-ended.
+// A new ID every time, so a replacement is never confused with what it replaced. Only an
+// open session of the same name is ended first: the host's other sessions are untouched.
+// The limit counts open sessions after that replacement, so replacing at the limit still
+// works.
+//
+// The name is validated before the database is touched, and everything happens in one
+// transaction, so a refused add leaves the previous state exactly as it was.
 //
 // UNTESTED.
-func (s *Store) StartSessions(ctx context.Context, host string, names []string, now time.Time, newID func() (string, error)) ([]SessionRow, error) {
+func (s *Store) AddSession(ctx context.Context, host, name string, now time.Time, newID func() (string, error)) (SessionRow, error) {
 	if !hostNamePattern.MatchString(host) {
-		return nil, fmt.Errorf("%w: %q", ErrBadHostName, host)
+		return SessionRow{}, fmt.Errorf("%w: %q", ErrBadHostName, host)
+	}
+	if !agentNamePattern.MatchString(name) {
+		return SessionRow{}, fmt.Errorf("%w: %q must match %s", ErrBadAgentName, name, agentNamePatternText)
 	}
 	if newID == nil {
-		return nil, errors.New("gateway: start sessions: nil id generator")
-	}
-	if err := validateAgentNames(names); err != nil {
-		return nil, err
+		return SessionRow{}, errors.New("gateway: add session: nil id generator")
 	}
 
-	rows := make([]SessionRow, 0, len(names))
+	id, err := newID()
+	if err != nil {
+		return SessionRow{}, fmt.Errorf("gateway: new session id: %w", err)
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("gateway: begin sessions: %w", err)
+		return SessionRow{}, fmt.Errorf("gateway: begin session: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback()
 	}()
 
-	// The host's earlier sessions end first: one host has one live run.
+	// The same name first: an add replaces a running session of that name, and nothing
+	// else.
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE sessions SET ended_at=? WHERE host=? AND ended_at IS NULL`,
-		now.UnixMilli(), host); err != nil {
-		return nil, fmt.Errorf("gateway: end earlier sessions: %w", err)
+		`UPDATE sessions SET ended_at=? WHERE host=? AND name=? AND ended_at IS NULL`,
+		now.UnixMilli(), host, name); err != nil {
+		return SessionRow{}, fmt.Errorf("gateway: end the replaced session: %w", err)
 	}
 
-	for _, name := range names {
-		id, err := newID()
-		if err != nil {
-			return nil, fmt.Errorf("gateway: new session id: %w", err)
-		}
-		row := SessionRow{ID: id, Host: host, Name: name, StartedAt: now}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO sessions(id, host, name, started_at, ended_at) VALUES(?,?,?,?,NULL)`,
-			row.ID, row.Host, row.Name, now.UnixMilli()); err != nil {
-			return nil, fmt.Errorf("gateway: insert session: %w", err)
-		}
-		rows = append(rows, row)
+	var open int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sessions WHERE host=? AND ended_at IS NULL`, host).Scan(&open); err != nil {
+		return SessionRow{}, fmt.Errorf("gateway: count open sessions: %w", err)
+	}
+	if open >= maxAgentsPerHost {
+		return SessionRow{}, fmt.Errorf("%w: this host already has %d open sessions: end one with `rtk daemon stop --session NAME`", ErrTooManySessions, open)
+	}
+
+	row := SessionRow{ID: id, Host: host, Name: name, StartedAt: now}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO sessions(id, host, name, started_at, ended_at) VALUES(?,?,?,?,NULL)`,
+		row.ID, row.Host, row.Name, now.UnixMilli()); err != nil {
+		return SessionRow{}, fmt.Errorf("gateway: insert session: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("gateway: commit sessions: %w", err)
+		return SessionRow{}, fmt.Errorf("gateway: commit session: %w", err)
 	}
-	return rows, nil
+	return row, nil
 }
 
-// validateAgentNames applies every list rule before the database is touched.
-func validateAgentNames(names []string) error {
-	if len(names) == 0 {
-		return fmt.Errorf("%w: no agent names", ErrBadAgentList)
+// EndSession ends one open session by name. Ending one that is not open is not an error:
+// a daemon and its gateway can disagree about who ended what, and the answer is the same.
+//
+// The host's other sessions are untouched.
+//
+// UNTESTED.
+func (s *Store) EndSession(ctx context.Context, host, name string, now time.Time) error {
+	if !hostNamePattern.MatchString(host) {
+		return fmt.Errorf("%w: %q", ErrBadHostName, host)
 	}
-	if len(names) > maxAgentsPerHost {
-		return fmt.Errorf("%w: %d names, at most %d", ErrBadAgentList, len(names), maxAgentsPerHost)
+	if !agentNamePattern.MatchString(name) {
+		return fmt.Errorf("%w: %q must match %s", ErrBadAgentName, name, agentNamePatternText)
 	}
 
-	seen := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		if !agentNamePattern.MatchString(name) {
-			return fmt.Errorf("%w: %q must match %s", ErrBadAgentName, name, agentNamePatternText)
-		}
-		if _, duplicate := seen[name]; duplicate {
-			return fmt.Errorf("%w: duplicate agent name %q", ErrBadAgentList, name)
-		}
-		seen[name] = struct{}{}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET ended_at=? WHERE host=? AND name=? AND ended_at IS NULL`,
+		now.UnixMilli(), host, name); err != nil {
+		return fmt.Errorf("gateway: end session: %w", err)
 	}
 	return nil
 }

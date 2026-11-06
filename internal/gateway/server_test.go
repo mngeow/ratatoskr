@@ -189,34 +189,37 @@ func TestPairThenSessions(t *testing.T) {
 		t.Fatalf("pair response = %+v", paired)
 	}
 
-	// The credential works on the next call.
-	sessionsBody, _ := json.Marshal(protocol.SessionsRequest{Agents: []string{"claude", "codex"}})
-	recorder = call(server, http.MethodPost, "/v1/sessions", version(), paired.Credential, string(sessionsBody))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("sessions = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	// The credential works on the next call: a connect, then two adds.
+	if connected := connectOverWire(t, server, paired.Credential); connected.Host != "desktop" {
+		t.Fatalf("connect host = %q, want desktop", connected.Host)
 	}
 
-	var response protocol.SessionsResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("parse sessions response: %v", err)
+	claude := addSessionOverWire(t, server, paired.Credential, "claude")
+	if claude.Host != "desktop" {
+		t.Fatalf("host = %q, want desktop", claude.Host)
 	}
-	if response.Host != "desktop" {
-		t.Fatalf("host = %q, want desktop", response.Host)
+	if claude.Session.Address != "claude@desktop" {
+		t.Fatalf("address = %q, want claude@desktop", claude.Session.Address)
 	}
-	if len(response.Sessions) != 2 {
-		t.Fatalf("sessions = %+v, want two", response.Sessions)
+	if claude.Session.SessionID == "" {
+		t.Fatal("the add answer carried no session id")
 	}
-	if response.Sessions[0].Address != "claude@desktop" {
-		t.Fatalf("address = %q, want claude@desktop", response.Sessions[0].Address)
+	// The directory lists the session, and it is not live without a stream.
+	if len(claude.Directory) != 1 {
+		t.Fatalf("directory = %+v, want one entry", claude.Directory)
 	}
-	// The directory lists both, and neither is live without a stream.
-	if len(response.Directory) != 2 {
-		t.Fatalf("directory = %+v, want two entries", response.Directory)
-	}
-	for _, entry := range response.Directory {
+	for _, entry := range claude.Directory {
 		if entry.Live {
 			t.Fatalf("entry %+v is live although no stream exists", entry)
 		}
+	}
+
+	codex := addSessionOverWire(t, server, paired.Credential, "codex")
+	if codex.Session.SessionID == claude.Session.SessionID {
+		t.Fatal("two sessions share an id")
+	}
+	if len(codex.Directory) != 2 {
+		t.Fatalf("directory = %+v, want both sessions", codex.Directory)
 	}
 }
 
@@ -260,69 +263,64 @@ func TestPairFailuresLookIdentical(t *testing.T) {
 	}
 }
 
-func TestSessionsEndsEarlierAndTakesHostFromCredential(t *testing.T) {
+// TestAddSessionReplacesTheSameNameAndTakesHostFromCredential: a new id each time, a
+// body cannot name another host, and only the same name is ended.
+func TestAddSessionReplacesTheSameNameAndTakesHostFromCredential(t *testing.T) {
 	server, store, credential := newGatewayServer(t, Options{})
 	ctx := context.Background()
 
-	first, _ := json.Marshal(protocol.SessionsRequest{Agents: []string{"claude"}})
-	recorder := call(server, http.MethodPost, "/v1/sessions", version(), credential, string(first))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("first registration = %d: %s", recorder.Code, recorder.Body.String())
-	}
-	var firstResponse protocol.SessionsResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &firstResponse); err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	firstID := firstResponse.Sessions[0].SessionID
+	first := addSessionOverWire(t, server, credential, "claude")
+	addSessionOverWire(t, server, credential, "codex")
 
 	// The body tries to name another host; the credential decides.
-	second, _ := json.Marshal(map[string]any{"agents": []string{"claude"}, "host": "somebody-else"})
-	recorder = call(server, http.MethodPost, "/v1/sessions", version(), credential, string(second))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("second registration = %d: %s", recorder.Code, recorder.Body.String())
+	body := `{"name":"claude","host":"somebody-else"}`
+	recorder := call(server, http.MethodPost, protocol.SessionsPath, version(), credential, body)
+	if recorder.Code != http.StatusBadRequest {
+		// An unknown field is a bad request; the point is that no host was taken from it.
+		t.Fatalf("a body naming a host = %d: %s", recorder.Code, recorder.Body.String())
 	}
-	var secondResponse protocol.SessionsResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &secondResponse); err != nil {
-		t.Fatalf("parse: %v", err)
+
+	second := addSessionOverWire(t, server, credential, "claude")
+	if second.Host != "laptop" {
+		t.Fatalf("host = %q, want the credential's laptop", second.Host)
 	}
-	if secondResponse.Host != "laptop" {
-		t.Fatalf("host = %q, want the credential's laptop", secondResponse.Host)
-	}
-	if secondResponse.Sessions[0].SessionID == firstID {
-		t.Fatal("a new registration reused the earlier session id")
+	if second.Session.SessionID == first.Session.SessionID {
+		t.Fatal("the replacement reused the earlier session id")
 	}
 
 	var ended int
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=? AND ended_at IS NOT NULL`, firstID).Scan(&ended); err != nil {
-		t.Fatalf("read earlier session: %v", err)
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=? AND ended_at IS NOT NULL`, first.Session.SessionID).Scan(&ended); err != nil {
+		t.Fatalf("read the earlier session: %v", err)
 	}
 	if ended != 1 {
-		t.Fatal("the earlier session was not ended by the new registration")
+		t.Fatal("the replaced session was not ended")
+	}
+
+	// codex was not touched.
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "codex"); err != nil {
+		t.Fatalf("CurrentSession: %v", err)
+	} else if !ok {
+		t.Fatal("adding claude ended codex")
 	}
 }
 
-func TestSessionsRejectsBadAgentNames(t *testing.T) {
+func TestAddSessionRejectsBadAgentNames(t *testing.T) {
 	server, _, credential := newGatewayServer(t, Options{})
 
 	tests := []struct {
-		name   string
-		agents []string
+		name string
+		body string
 	}{
-		{name: "uppercase", agents: []string{"Claude"}},
-		{name: "too long", agents: []string{strings.Repeat("a", 33)}},
-		{name: "empty name", agents: []string{""}},
-		{name: "no names", agents: nil},
-		{name: "duplicate", agents: []string{"claude", "claude"}},
-		{name: "nine names", agents: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"}},
+		{name: "uppercase", body: mustJSON(t, protocol.AddSessionRequest{Name: "Claude"})},
+		{name: "too long", body: mustJSON(t, protocol.AddSessionRequest{Name: strings.Repeat("a", 33)})},
+		{name: "empty name", body: mustJSON(t, protocol.AddSessionRequest{Name: ""})},
+		{name: "no body", body: ""},
+		{name: "a slash", body: mustJSON(t, protocol.AddSessionRequest{Name: "cli/ent"})},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body, err := json.Marshal(protocol.SessionsRequest{Agents: tc.agents})
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			recorder := call(server, http.MethodPost, "/v1/sessions", version(), credential, string(body))
+			recorder := call(server, http.MethodPost, protocol.SessionsPath, version(), credential, tc.body)
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400: %s", recorder.Code, recorder.Body.String())
 			}
@@ -347,23 +345,20 @@ func TestDirectoryLiveness(t *testing.T) {
 	})
 	server.streamOpen = func(string) bool { return streamOpen }
 
-	body, _ := json.Marshal(protocol.SessionsRequest{Agents: []string{"claude"}})
-	if recorder := call(server, http.MethodPost, "/v1/sessions", version(), credential, string(body)); recorder.Code != http.StatusOK {
-		t.Fatalf("registration = %d: %s", recorder.Code, recorder.Body.String())
-	}
+	addSessionOverWire(t, server, credential, "claude")
 
 	// A stale heartbeat is not live, even with a stream open.
 	if err := store.TouchHeartbeat(ctx, "laptop", gatewayNow.Add(-liveWindow-time.Second)); err != nil {
 		t.Fatalf("TouchHeartbeat: %v", err)
 	}
 	server.streamOpen = func(string) bool { return true }
-	request := httptest.NewRequest(http.MethodPost, "/v1/sessions", atJSONBody(t, []string{"claude"}))
+	request := httptest.NewRequest(http.MethodPost, protocol.SessionsPath, addSessionJSONBody(t, "claude"))
 	request.Header.Set(protocol.WireVersionHeader, version())
 	request.Header.Set("Authorization", "Bearer "+credential)
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
 
-	var response protocol.SessionsResponse
+	var response protocol.AddSessionResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -376,7 +371,7 @@ func TestDirectoryLiveness(t *testing.T) {
 		t.Fatalf("TouchHeartbeat: %v", err)
 	}
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodPost, "/v1/sessions", atJSONBody(t, []string{"claude"}))
+	request = httptest.NewRequest(http.MethodPost, protocol.SessionsPath, addSessionJSONBody(t, "claude"))
 	request.Header.Set(protocol.WireVersionHeader, version())
 	request.Header.Set("Authorization", "Bearer "+credential)
 	server.Handler().ServeHTTP(recorder, request)
@@ -390,7 +385,7 @@ func TestDirectoryLiveness(t *testing.T) {
 	// No stream means not live, however fresh the heartbeat is.
 	server.streamOpen = func(string) bool { return false }
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodPost, "/v1/sessions", atJSONBody(t, []string{"claude"}))
+	request = httptest.NewRequest(http.MethodPost, protocol.SessionsPath, addSessionJSONBody(t, "claude"))
 	request.Header.Set(protocol.WireVersionHeader, version())
 	request.Header.Set("Authorization", "Bearer "+credential)
 	server.Handler().ServeHTTP(recorder, request)
@@ -428,10 +423,7 @@ func TestEndSessionsRoute(t *testing.T) {
 	server, store, credential := newGatewayServer(t, Options{})
 	ctx := context.Background()
 
-	body, _ := json.Marshal(protocol.SessionsRequest{Agents: []string{"claude"}})
-	if recorder := call(server, http.MethodPost, "/v1/sessions", version(), credential, string(body)); recorder.Code != http.StatusOK {
-		t.Fatalf("registration = %d", recorder.Code)
-	}
+	addSessionOverWire(t, server, credential, "claude")
 
 	if recorder := call(server, http.MethodDelete, "/v1/sessions", version(), credential, ""); recorder.Code != http.StatusNoContent {
 		t.Fatalf("delete = %d, want 204", recorder.Code)
@@ -447,7 +439,8 @@ func TestEndSessionsRoute(t *testing.T) {
 func TestOversizeBodyRejected(t *testing.T) {
 	server, _, credential := newGatewayServer(t, Options{MaxBodyBytes: 16})
 
-	big := `{"agents":["claude"],"padding":"` + strings.Repeat("x", 64) + `"}`
+	// A body the route would accept, if only it were shorter.
+	big := `{"name":"` + strings.Repeat("c", 64) + `"}`
 	recorder := call(server, http.MethodPost, "/v1/sessions", version(), credential, big)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("oversize body = %d, want 400: %s", recorder.Code, recorder.Body.String())
@@ -516,10 +509,49 @@ func mustJSON(t *testing.T, value any) string {
 	return string(encoded)
 }
 
-// atJSONBody renders a sessions request body.
-func atJSONBody(t *testing.T, agents []string) *bytes.Reader {
+// addSessionJSON renders one add-session request body.
+func addSessionJSON(t *testing.T, name string) string {
 	t.Helper()
-	return bytes.NewReader([]byte(mustJSON(t, protocol.SessionsRequest{Agents: agents})))
+	return mustJSON(t, protocol.AddSessionRequest{Name: name})
+}
+
+// addSessionJSONBody renders one add-session request body as a reader.
+func addSessionJSONBody(t *testing.T, name string) *bytes.Reader {
+	t.Helper()
+	return bytes.NewReader([]byte(addSessionJSON(t, name)))
+}
+
+// addSessionOverWire adds one session over the real handler and returns its answer.
+//
+// It fails the test on anything but 200, because every caller here expects an add to
+// have worked.
+func addSessionOverWire(t *testing.T, server *Server, credential, name string) protocol.AddSessionResponse {
+	t.Helper()
+
+	recorder := call(server, http.MethodPost, protocol.SessionsPath, version(), credential, addSessionJSON(t, name))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("add session %q = %d: %s", name, recorder.Code, recorder.Body.String())
+	}
+	var response protocol.AddSessionResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse the add answer: %v", err)
+	}
+	return response
+}
+
+// connectOverWire connects over the real handler and returns the directory answer.
+func connectOverWire(t *testing.T, server *Server, credential string) protocol.ConnectResponse {
+	t.Helper()
+
+	recorder := call(server, http.MethodPost, protocol.ConnectPath, version(), credential, "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("connect = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response protocol.ConnectResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parse the connect answer: %v", err)
+	}
+	return response
 }
 
 // TestRewriteWrapperDoesNotHideFlushOrDeadlines: the stream route (slice 3b-ii)
@@ -551,16 +583,11 @@ func TestRewriteWrapperDoesNotHideFlushOrDeadlines(t *testing.T) {
 // that was already live must not push again.
 func TestAFirstHeartbeatPushesTheDirectory(t *testing.T) {
 	store, _ := openStore(t, false)
-	ctx := context.Background()
 	now := gatewayNow
 	alpha := pairHostFrom(t, store, "alpha", now)
 	beta := pairHostFrom(t, store, "beta", now)
-	if _, err := store.StartSessions(ctx, "alpha", []string{"claude"}, now, idGenerator("a")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
-	if _, err := store.StartSessions(ctx, "beta", []string{"codex"}, now, idGenerator("b")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, store, "alpha", now, "claude")
+	startSessionsForTest(t, store, "beta", now, "codex")
 
 	server := NewServer(store, Options{
 		Now: func() time.Time { return now }, PingEvery: time.Hour, WriteDeadline: time.Second, QueueSize: 8,
@@ -594,5 +621,116 @@ func TestAFirstHeartbeatPushesTheDirectory(t *testing.T) {
 	}
 	if pushes != 1 {
 		t.Fatalf("%d pushes for a host with no stream, want still 1", pushes)
+	}
+}
+
+// TestConnectEndsEarlierSessions: connecting is what a daemon does once, and it ends the
+// previous instance's sessions.
+func TestConnectEndsEarlierSessions(t *testing.T) {
+	server, store, credential := newGatewayServer(t, Options{})
+	ctx := context.Background()
+
+	first := addSessionOverWire(t, server, credential, "claude")
+
+	connected := connectOverWire(t, server, credential)
+	if connected.Host != "laptop" {
+		t.Fatalf("host = %q, want laptop", connected.Host)
+	}
+	if len(connected.Directory) != 0 {
+		t.Fatalf("directory = %+v, want nothing after the earlier sessions ended", connected.Directory)
+	}
+
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "claude"); err != nil {
+		t.Fatalf("CurrentSession: %v", err)
+	} else if ok {
+		t.Fatal("connect did not end the earlier session")
+	}
+
+	var ended int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions WHERE id=? AND ended_at IS NOT NULL`, first.Session.SessionID).Scan(&ended); err != nil {
+		t.Fatalf("read the earlier session: %v", err)
+	}
+	if ended != 1 {
+		t.Fatal("the earlier session was not marked ended")
+	}
+
+	// Connecting again with nothing open is not an error.
+	connectOverWire(t, server, credential)
+}
+
+// TestEndOneSessionRoute: only that name ends, 204 either way, and another host cannot
+// end it.
+func TestEndOneSessionRoute(t *testing.T) {
+	server, store, credential := newGatewayServer(t, Options{})
+	ctx := context.Background()
+
+	addSessionOverWire(t, server, credential, "claude")
+	addSessionOverWire(t, server, credential, "codex")
+
+	recorder := call(server, http.MethodDelete, protocol.SessionsPath+"/claude", version(), credential, "")
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("end claude = %d, want 204: %s", recorder.Code, recorder.Body.String())
+	}
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "claude"); err != nil {
+		t.Fatalf("CurrentSession claude: %v", err)
+	} else if ok {
+		t.Fatal("claude is still open")
+	}
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "codex"); err != nil {
+		t.Fatalf("CurrentSession codex: %v", err)
+	} else if !ok {
+		t.Fatal("ending claude ended codex")
+	}
+
+	// Ending it again is still 204.
+	if recorder := call(server, http.MethodDelete, protocol.SessionsPath+"/claude", version(), credential, ""); recorder.Code != http.StatusNoContent {
+		t.Fatalf("end claude again = %d, want 204", recorder.Code)
+	}
+
+	// A malformed name is a bad request.
+	if recorder := call(server, http.MethodDelete, protocol.SessionsPath+"/Claude", version(), credential, ""); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("bad name = %d, want 400: %s", recorder.Code, recorder.Body.String())
+	}
+
+	// Another host's credential ends nothing of ours.
+	other := pairHostFrom(t, store, "other", gatewayNow)
+	if recorder := call(server, http.MethodDelete, protocol.SessionsPath+"/codex", version(), other, ""); recorder.Code != http.StatusNoContent {
+		t.Fatalf("another host's end = %d, want 204", recorder.Code)
+	}
+	if _, ok, err := store.CurrentSession(ctx, "laptop", "codex"); err != nil {
+		t.Fatalf("CurrentSession codex: %v", err)
+	} else if !ok {
+		t.Fatal("another host ended laptop's session")
+	}
+}
+
+// TestVersionOneIsRefusedOnEveryNewRoute: withVersion wraps the whole mux, so a v1 client
+// cannot reach connect, add or end-one either.
+func TestVersionOneIsRefusedOnEveryNewRoute(t *testing.T) {
+	server, _, credential := newGatewayServer(t, Options{})
+
+	routes := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{name: "connect", method: http.MethodPost, path: protocol.ConnectPath},
+		{name: "add", method: http.MethodPost, path: protocol.SessionsPath, body: `{"name":"claude"}`},
+		{name: "end one", method: http.MethodDelete, path: protocol.SessionsPath + "/claude"},
+		{name: "end all", method: http.MethodDelete, path: protocol.SessionsPath},
+		{name: "stream", method: http.MethodGet, path: "/v1/stream"},
+	}
+
+	for _, route := range routes {
+		t.Run(route.name, func(t *testing.T) {
+			recorder := call(server, route.method, route.path, "1", credential, route.body)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", recorder.Code, recorder.Body.String())
+			}
+			if code := wireCode(t, recorder); code != protocol.WireErrVersion {
+				t.Fatalf("code = %q, want %q", code, protocol.WireErrVersion)
+			}
+		})
 	}
 }

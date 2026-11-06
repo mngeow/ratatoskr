@@ -40,7 +40,7 @@ type Params struct {
 	Binary      string // optional absolute path; default exec.LookPath(Harness)
 	Dir         string // working directory for the harness
 	RtkPath     string // absolute path of the running rtk binary
-	SessionDir  string // absolute, .../session
+	SessionDir  string // absolute; holds this agent's hook file: .../session for plain rtk, .../session/<name> for a daemon session (never the agent id: the hook command carries this path and must not change)
 	ServerAddr  string
 	Token       string
 	BaseEnv     []string // typically os.Environ(); filtered in env.go

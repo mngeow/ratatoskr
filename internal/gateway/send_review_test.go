@@ -119,9 +119,7 @@ func TestReplyToAnEndedSessionIsSessionGone(t *testing.T) {
 		t.Fatalf("InsertMessage: %v", err)
 	}
 	// beta restarts: a new session for the same name.
-	if _, err := fixture.store.StartSessions(ctx, "beta", []string{"codex"}, fixture.now, idGenerator("c")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, fixture.store, "beta", fixture.now, "codex")
 	if err := fixture.store.TouchHeartbeat(ctx, "beta", fixture.now); err != nil {
 		t.Fatalf("TouchHeartbeat: %v", err)
 	}
@@ -155,9 +153,7 @@ func TestPlainNameReachesTheCurrentSession(t *testing.T) {
 	fixture := newSendFixture(t, 10*time.Millisecond)
 	ctx := context.Background()
 
-	if _, err := fixture.store.StartSessions(ctx, "beta", []string{"codex"}, fixture.now, idGenerator("c")); err != nil {
-		t.Fatalf("StartSessions: %v", err)
-	}
+	startSessionsForTest(t, fixture.store, "beta", fixture.now, "codex")
 	current, _, err := fixture.store.CurrentSession(ctx, "beta", "codex")
 	if err != nil {
 		t.Fatalf("CurrentSession: %v", err)

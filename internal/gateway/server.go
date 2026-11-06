@@ -175,8 +175,10 @@ func randomID() (string, error) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/pair", s.handlePair)
-	mux.HandleFunc("POST /v1/sessions", s.withAuth(s.handleSessions))
-	mux.HandleFunc("DELETE /v1/sessions", s.withAuth(s.handleEndSessions))
+	mux.HandleFunc("POST "+protocol.ConnectPath, s.withAuth(s.handleConnect))
+	mux.HandleFunc("POST "+protocol.SessionsPath, s.withAuth(s.handleAddSession))
+	mux.HandleFunc("DELETE "+protocol.SessionsPath, s.withAuth(s.handleEndSessions))
+	mux.HandleFunc("DELETE "+protocol.SessionsPath+"/{name}", s.withAuth(s.handleEndSession))
 	mux.HandleFunc("POST /v1/heartbeat", s.withAuth(s.handleHeartbeat))
 	mux.HandleFunc("GET /v1/stream", s.withAuth(s.handleStream))
 	mux.HandleFunc("POST /v1/messages", s.withAuth(s.handleSend))
@@ -309,17 +311,46 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, protocol.PairResponse{Host: host, Credential: credential})
 }
 
-// handleSessions registers this run's agents.
-func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request, host string) {
-	var request protocol.SessionsRequest
+// handleConnect is the daemon starting: it ends this host's earlier sessions once,
+// because they belonged to the previous daemon instance, and answers the directory.
+//
+// The body is read and discarded rather than required, so a client that sends nothing -
+// or anything small - is served the same way.
+func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request, host string) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxSessionsBodyBytes))
+
+	if err := s.store.EndSessions(r.Context(), host, s.opts.Now()); err != nil {
+		writeWireError(w, http.StatusInternalServerError, protocol.WireErrInternal, "the request could not be completed")
+		return
+	}
+
+	directory, err := s.directoryEntries(r.Context())
+	if err != nil {
+		writeWireError(w, http.StatusInternalServerError, protocol.WireErrInternal, "the request could not be completed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protocol.ConnectResponse{Host: host, Directory: directory})
+	if s.onDirectoryChanged != nil {
+		s.onDirectoryChanged()
+	}
+}
+
+// handleAddSession registers one session, ending only an open session of the same name.
+func (s *Server) handleAddSession(w http.ResponseWriter, r *http.Request, host string) {
+	var request protocol.AddSessionRequest
 	if !decodeBody(w, r, maxSessionsBodyBytes, &request) {
 		return
 	}
 
-	sessions, err := s.store.StartSessions(r.Context(), host, request.Agents, s.opts.Now(), s.opts.NewID)
+	session, err := s.store.AddSession(r.Context(), host, request.Name, s.opts.Now(), s.opts.NewID)
 	switch {
-	case errors.Is(err, ErrBadAgentName), errors.Is(err, ErrBadAgentList), errors.Is(err, ErrBadHostName):
-		// The names are the caller's own, so naming the rule is safe and useful.
+	case errors.Is(err, ErrBadAgentName), errors.Is(err, ErrTooManySessions):
+		// The name and the limit are the caller's own, so naming them is safe and useful.
+		status := http.StatusBadRequest
+		writeWireError(w, status, protocol.WireErrBadRequest, err.Error())
+		return
+	case errors.Is(err, ErrBadHostName):
 		writeWireError(w, http.StatusBadRequest, protocol.WireErrBadRequest, err.Error())
 		return
 	case err != nil:
@@ -329,26 +360,48 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request, host str
 
 	directory, err := s.directoryEntries(r.Context())
 	if err != nil {
-		// The registration happened, but answering with an empty directory would
-		// tell the runtime that no peers exist. Fail instead.
+		// The session exists, but answering with an empty directory would tell the
+		// daemon that no peers exist. Fail instead.
 		writeWireError(w, http.StatusInternalServerError, protocol.WireErrInternal, "the request could not be completed")
 		return
 	}
 
-	response := protocol.SessionsResponse{
-		Host:      host,
-		Sessions:  make([]protocol.SessionInfo, 0, len(sessions)),
-		Directory: directory,
-	}
-	for _, session := range sessions {
-		response.Sessions = append(response.Sessions, protocol.SessionInfo{
+	writeJSON(w, http.StatusOK, protocol.AddSessionResponse{
+		Host: host,
+		Session: protocol.SessionInfo{
 			Name:      session.Name,
 			Address:   session.Name + "@" + host,
 			SessionID: session.ID,
-		})
+		},
+		Directory: directory,
+	})
+	if s.onDirectoryChanged != nil {
+		s.onDirectoryChanged()
+	}
+}
+
+// handleEndSession ends one session by name. The host's other sessions are untouched.
+//
+// A malformed name is a bad request; a valid name that is not open is 204, because a
+// daemon and its gateway can disagree about who ended what and the answer is the same.
+func (s *Server) handleEndSession(w http.ResponseWriter, r *http.Request, host string) {
+	name := r.PathValue("name")
+	if !agentNamePattern.MatchString(name) {
+		writeWireError(w, http.StatusBadRequest, protocol.WireErrBadRequest,
+			fmt.Sprintf("gateway: %q must match %s", name, agentNamePatternText))
+		return
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	if err := s.store.EndSession(r.Context(), host, name, s.opts.Now()); err != nil {
+		if errors.Is(err, ErrBadAgentName) {
+			writeWireError(w, http.StatusBadRequest, protocol.WireErrBadRequest, err.Error())
+			return
+		}
+		writeWireError(w, http.StatusInternalServerError, protocol.WireErrInternal, "the request could not be completed")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 	if s.onDirectoryChanged != nil {
 		s.onDirectoryChanged()
 	}

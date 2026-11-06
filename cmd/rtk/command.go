@@ -22,7 +22,11 @@ const (
 	kindGatewayServe
 	kindGatewayAdmin
 	kindRuntimePair
-	kindRuntimeRun
+	// kindAttach is `rtk attach` and also `rtk runtime`, which is an alias for it.
+	kindAttach
+	kindDaemonRun
+	kindDaemonStatus
+	kindDaemonStop
 )
 
 // command is one parsed invocation. Only the fields its kind uses are set.
@@ -31,7 +35,7 @@ type command struct {
 	listen      string   // kindGatewayServe
 	gatewayAddr string   // kindRuntimePair
 	code        string   // kindRuntimePair
-	agents      string   // kindRuntimeRun, raw; validated by tui.ParseAgents
+	agents      string   // kindAttach, raw; empty means start nothing
 	admin       []string // kindGatewayAdmin, the command word first
 
 	// allowLAN and insecureHTTP are the gateway's two opt-ins; fingerprint and
@@ -42,6 +46,12 @@ type command struct {
 	allowLAN     bool
 	insecureHTTP bool
 	fingerprint  string
+
+	// foreground and yes belong to the daemon forms: --foreground keeps it in this
+	// terminal, and --yes allows `daemon stop` to end running sessions.
+	foreground bool
+	yes        bool
+	session    string // kindDaemonStop, --session NAME
 }
 
 const (
@@ -82,8 +92,12 @@ func parseCommand(args []string) (command, error) {
 		return command{kind: kindHelp}, nil
 	case "gateway":
 		return parseGateway(args[1:])
+	case "attach":
+		return parseAttach(args[1:])
 	case "runtime":
 		return parseRuntime(args[1:])
+	case "daemon":
+		return parseDaemon(args[1:])
 	}
 	return command{}, fmt.Errorf("rtk: unknown argument %q", args[0])
 }
@@ -120,6 +134,58 @@ func parseGateway(args []string) (command, error) {
 	}, nil
 }
 
+// parseDaemon handles `rtk daemon`, `rtk daemon status` and `rtk daemon stop ...`.
+//
+// The semantic rule that `--session` and `--yes` do not belong together is checked here,
+// in one place, rather than in the command that acts on it.
+func parseDaemon(args []string) (command, error) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--help", "-h":
+			return command{kind: kindHelp}, nil
+		case "status":
+			if len(args) > 1 {
+				return command{}, fmt.Errorf("rtk: daemon status takes no arguments")
+			}
+			return command{kind: kindDaemonStatus}, nil
+		case "stop":
+			return parseDaemonStop(args[1:])
+		}
+	}
+
+	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	foreground := fs.Bool("foreground", false, "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("rtk: daemon: %v", err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: daemon: unexpected argument %q", rest[0])
+	}
+	return command{kind: kindDaemonRun, foreground: *foreground}, nil
+}
+
+// parseDaemonStop handles `rtk daemon stop [--yes] [--session NAME]`.
+func parseDaemonStop(args []string) (command, error) {
+	fs := flag.NewFlagSet("daemon stop", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	yes := fs.Bool("yes", false, "")
+	session := fs.String("session", "", "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("rtk: daemon stop: %v", err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: daemon stop: unexpected argument %q", rest[0])
+	}
+	if *yes && *session != "" {
+		return command{}, fmt.Errorf("rtk: daemon stop --session does not take --yes")
+	}
+	if *session != "" {
+		return command{kind: kindDaemonStop, session: *session}, nil
+	}
+	return command{kind: kindDaemonStop, yes: *yes}, nil
+}
+
 // parseRuntime handles `rtk runtime ...`.
 func parseRuntime(args []string) (command, error) {
 	if len(args) > 0 {
@@ -140,7 +206,24 @@ func parseRuntime(args []string) (command, error) {
 	if rest := fs.Args(); len(rest) > 0 {
 		return command{}, fmt.Errorf("rtk: runtime: unexpected argument %q", rest[0])
 	}
-	return command{kind: kindRuntimeRun, agents: *agents}, nil
+	return command{kind: kindAttach, agents: *agents}, nil
+}
+
+// parseAttach handles `rtk attach [--agents LIST]`.
+//
+// The flag is passed through raw: the list is validated where it is used, so the parser never
+// duplicates a rule.
+func parseAttach(args []string) (command, error) {
+	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	agents := fs.String("agents", "", "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("rtk: attach: %v", err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: attach: unexpected argument %q", rest[0])
+	}
+	return command{kind: kindAttach, agents: *agents}, nil
 }
 
 // parseRuntimePair handles `rtk runtime pair --gateway ADDR --code CODE`. Both flags

@@ -105,6 +105,10 @@ type Model struct {
 	// outbound is the F3 outbound source, which lives inside the log view.
 	outbound outboundState
 
+	// daemon is nil in every mode but a window attached to a daemon. Every daemon behaviour
+	// hangs off it, so the local paths are untouched.
+	daemon *daemonWindow
+
 	eventsClosed      bool
 	eventWaiting      bool
 	input             [2][]inputAction
@@ -141,11 +145,18 @@ type inputAction struct {
 	priorDraft bool
 	seq        uint64
 	epoch      uint64
+	// holderRev is the daemon holder revision this action was created for. A daemon window
+	// refuses an action whose revision no longer matches, so input queued before a takeover is
+	// never delivered to the window that lost input.
+	holderRev uint64
 }
 type inputDone struct {
 	index int
-	seq   uint64
-	err   error
+	// clearedDraft marks a daemon draft(false) whose acknowledgement arrived, which is what
+	// makes clearing the local draft honest.
+	clearedDraft bool
+	seq          uint64
+	err          error
 }
 
 // Messages the model sends itself.
@@ -191,6 +202,10 @@ func New(router Router, events <-chan protocol.Event, slots []Slot) (*Model, err
 // UNTESTED.
 func (m *Model) Init() tea.Cmd {
 	m.applySnapshot(m.router.Snapshot())
+	if m.daemon != nil {
+		// Exactly one window-event wait, beside the one event wait and the tick.
+		return tea.Batch(m.waitEvent(), m.tick(), m.waitWindowEvent())
+	}
 	return tea.Batch(m.waitEvent(), m.tick())
 }
 
@@ -222,7 +237,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventsClosed = true
 		return m, nil
 
+	case windowEventMsg:
+		return m, m.applyWindowEvent(msg)
+
+	case takeInputDone:
+		return m, m.applyTakeInputDone(msg)
+
 	case tickMsg:
+		if m.daemon != nil {
+			m.expireInterrupt()
+			// A coalesced frame can carry an ownership or ended change that no event announced,
+			// so the tick reconciles too. This is cached reads only: no IO in Update.
+			m.reconcileDaemon()
+			if m.daemon.disconnected {
+				return m, tea.Quit
+			}
+		}
 		// The outbound source refreshes on its own coalesced clock, and only while
 		// it is the source on show with its list, not a detail, in front.
 		if m.logMode && m.outbound.source && m.outbound.dirty && !m.outbound.pending && m.outbound.detailID == "" &&
@@ -350,7 +380,18 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	}
 
 	if isKey(k, tea.KeyF10) {
+		if m.daemon != nil {
+			// A window detaching stops nothing: the sessions keep running.
+			m.detachWindow()
+			return tea.Quit
+		}
 		return m.requestQuit()
+	}
+
+	if m.daemon != nil && isKey(k, tea.KeyF6) {
+		// F6 works before the log and the size warning, because taking input is how a viewer
+		// becomes useful, and it is not input for a child.
+		return m.requestTakeInput()
 	}
 
 	// Ctrl+C is decided before the log, the size warning and key forwarding: a
@@ -398,6 +439,12 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		command := m.enqueueControl(m.focus, 2)
+		if m.daemon != nil {
+			// The daemon's router owns the override. The window seeds from the daemon's cached
+			// drafting state once the acknowledgement arrives, so a refused override cannot look
+			// like a cleared draft.
+			return command
+		}
 		// Router owns the atomic override. Do not separately clear its gate.
 		m.drafts[m.slots[m.focus].ID] = false
 		m.feedback = "F4 requested: pastes after any text in the box and submits both"
@@ -425,6 +472,12 @@ func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	if !m.paneInputReady(m.focus) {
+		if m.daemon != nil {
+			// A viewer is a healthy view, not a failure: say what the keys do instead.
+			if pane := daemonPane(slot.Pane); pane != nil && !pane.Ended() && !pane.State().YouHold {
+				m.feedback = "VIEWER: F6 takes input; Ctrl+C detaches"
+			}
+		}
 		// No draft, no queued action: the header and feedback row already say the
 		// pane cannot receive input.
 		return nil
@@ -492,6 +545,7 @@ func (m *Model) enqueueInputFor(i int, action inputAction, silentOverflow bool) 
 	m.nextInput++
 	action.seq = m.nextInput
 	action.epoch = m.draftEpoch[i]
+	action.holderRev = m.daemonHolderRev(i)
 	m.input[i] = append(m.input[i], action)
 	return m.startInput(i)
 }
@@ -515,6 +569,11 @@ func (m *Model) startInput(i int) tea.Cmd {
 	m.inputStarted[i] = m.now()
 	a, p := m.input[i][0], m.slots[i].Pane
 	router, id := m.router, m.slots[i].ID
+	if m.daemon != nil {
+		// The daemon branch checks admission and every acknowledgement; the local branch below
+		// is unchanged.
+		return m.startDaemonInput(i, a, id)
+	}
 	return func() tea.Msg {
 		var err error
 		switch a.control {
@@ -544,6 +603,12 @@ func (m *Model) startInput(i int) tea.Cmd {
 
 func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 	i := done.index
+	if m.daemon != nil && i >= 0 && i < m.activeCount() && m.daemon.cancelledSeq[i] != 0 && done.seq == m.daemon.cancelledSeq[i] {
+		m.daemon.cancelledSeq[i] = 0
+		m.inputRunning[i] = false
+		m.inputStarted[i] = time.Time{}
+		return m.startInput(i)
+	}
 	if i < 0 || i >= m.activeCount() || len(m.input[i]) == 0 || m.input[i][0].seq != done.seq {
 		return nil
 	}
@@ -551,6 +616,10 @@ func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 	m.input[i] = m.input[i][1:]
 	m.inputRunning[i] = false
 	m.inputStarted[i] = time.Time{}
+
+	if m.daemon != nil {
+		return m.completeDaemonInput(i, a, done)
+	}
 	switch {
 	case errors.Is(done.err, pane.ErrMouseDisabled):
 		// The child stopped wanting this event between the decision and the
@@ -590,12 +659,18 @@ func (m *Model) markDraft() {
 
 func (m *Model) enqueueControl(i, kind int) tea.Cmd {
 	m.nextInput++
-	m.input[i] = append(m.input[i], inputAction{seq: m.nextInput, control: kind})
+	m.input[i] = append(m.input[i], inputAction{
+		seq: m.nextInput, control: kind,
+		epoch: m.draftEpoch[i], holderRev: m.daemonHolderRev(i),
+	})
 	return m.startInput(i)
 }
 func (m *Model) prependControl(i, kind int) {
 	m.nextInput++
-	m.input[i] = append([]inputAction{{seq: m.nextInput, control: kind}}, m.input[i]...)
+	m.input[i] = append([]inputAction{{
+		seq: m.nextInput, control: kind,
+		epoch: m.draftEpoch[i], holderRev: m.daemonHolderRev(i),
+	}}, m.input[i]...)
 }
 
 func (m *Model) markDraftAgent(id protocol.AgentID) {
@@ -673,6 +748,12 @@ func (m *Model) resize(width, height int) tea.Cmd {
 		// Non-blocking: the pane coalesces the request and applies the newest size
 		// from its own lifecycle worker, so a dragged window edge cannot stall the
 		// UI behind a PTY write.
+		if m.daemon != nil {
+			// A viewer keeps the size it wants and sends nothing until the daemon says it holds
+			// input; the client coalesces the request, so a dragged edge cannot pile up.
+			m.daemonDesiredSize(box.index, box.width, box.rows)
+			continue
+		}
 		if err := p.RequestResize(box.width, box.rows); err != nil {
 			m.feedback = fmt.Sprintf("resize %s failed: %s", m.slotName(box.index), sanitize(err.Error()))
 		}
@@ -758,6 +839,11 @@ func (m *Model) renderMinimal(width, height int) []string {
 		lines = append(lines, fitPlain(line, width))
 	}
 	lines = append(lines, fitPlain(m.titleLine(), width))
+	if m.daemon != nil && len(m.daemon.startErrors) > 0 {
+		// In a small terminal the start errors are the only place a partially failed attach is
+		// visible, so they get a line of their own.
+		lines = append(lines, fitPlain("start errors: "+strings.Join(m.daemon.startErrors, "; "), width))
+	}
 
 	if m.logMode {
 		lines = append(lines, fitPlain("log in a small terminal (F3/Esc back)", width))
@@ -789,6 +875,14 @@ func (m *Model) titleLine() string {
 		mode = "log"
 	}
 	title := fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
+	if m.daemon != nil {
+		// A session started after this window attached can never appear here, and the hint is
+		// part of the title so a crop cannot hide the fact that a re-attach is needed.
+		if m.runtimeMode() {
+			title = connectionLabel(m.conn) + "  " + title
+		}
+		return title + "  " + reattachHint
+	}
 	if m.runtimeMode() {
 		// The label leads so truncation cannot hide the gateway state.
 		return connectionLabel(m.conn) + "  " + title
@@ -831,6 +925,11 @@ func (m *Model) headerText(index int) string {
 		marker = "▶"
 	}
 
+	daemonLabel := ""
+	if m.daemon != nil {
+		daemonLabel = m.daemonHeaderLabel(index)
+	}
+
 	name := sanitize(slot.Name)
 	if name == "" {
 		name = string(slot.ID)
@@ -856,14 +955,24 @@ func (m *Model) headerText(index int) string {
 		draft = "*"
 	}
 
-	header := fmt.Sprintf("%s%d %s [%s]%s", marker, index+1, name, state, draft)
+	label := ""
+	if daemonLabel != "" {
+		label = daemonLabel + " "
+	}
+	header := fmt.Sprintf("%s%d %s%s [%s]%s", marker, index+1, label, name, state, draft)
 	if held > 0 {
 		header += fmt.Sprintf(" held=%d", held)
 	}
 	if slot.StartErr != nil {
 		header += " FAILED"
 	}
-	if slot.Pane != nil && !m.paneInputReady(index) {
+	if m.daemon != nil {
+		// The holder label already says VIEWER or SESSION ENDED, and the line above the panes
+		// reports a real input failure; only a transport or operation error belongs here.
+		if slot.Pane != nil && slot.Pane.Err() != nil {
+			header += " I/O WARNING"
+		}
+	} else if slot.Pane != nil && !m.paneInputReady(index) {
 		header += " INPUT UNAVAILABLE"
 	} else if slot.Pane != nil && slot.Pane.Err() != nil {
 		header += " I/O WARNING"
@@ -1035,6 +1144,16 @@ func holdReason(reason string) string {
 }
 
 func (m *Model) hintsLine() string {
+	if m.daemon != nil {
+		switch {
+		case m.tooSmall():
+			return "F10 detach   Ctrl+C detach   F6 take input (child input paused)"
+		case m.logMode:
+			return m.historyHelpLines()[recentMessageRows]
+		default:
+			return "F10 detach   Ctrl+C interrupt; again detach   " + m.focusHints() + "   F3 log   F4 deliver held   F6 take input"
+		}
+	}
 	switch {
 	case m.quitArmed:
 		return "F10 or Ctrl+C quits anyway   Esc cancels"

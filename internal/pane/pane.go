@@ -477,6 +477,42 @@ func (p *Pane) PasteSubmit(ctx context.Context, text string) error {
 	return nil
 }
 
+// PID is the child's process id, or 0 when the pane has no process yet.
+//
+// It is read-only and used by the daemon's best-effort ancestry check, which never signals
+// anything: a PID can be reused, so nothing may treat it as an identity.
+//
+// UNTESTED.
+func (p *Pane) PID() int {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return 0
+	}
+	return p.cmd.Process.Pid
+}
+
+// MouseModeBits is the mouse modes the child has asked for, as the bit mask
+// wire.MouseX10..wire.MouseSGR describes: X10 is bit 0 and SGR is bit 5.
+//
+// UNTESTED.
+func (p *Pane) MouseModeBits() uint32 {
+	if p == nil {
+		return 0
+	}
+	return p.mouseModes.Load()
+}
+
+// Size is the size last applied to the PTY, or, before the first application, the size the
+// pane was asked for.
+//
+// UNTESTED.
+func (p *Pane) Size() (cols, rows int) {
+	if p == nil {
+		return 0, 0
+	}
+	width, height := unpackSize(p.desired.Load())
+	return width, height
+}
+
 // Err returns the first transport error the pane saw, or nil. Shutdown and
 // expected post-exit errors are not recorded.
 func (p *Pane) Err() error {

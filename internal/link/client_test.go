@@ -443,27 +443,55 @@ func TestLookupUnknownMessage(t *testing.T) {
 	}
 }
 
-// TestRegisterUnregisterHeartbeat checks methods, paths and bodies.
-func TestRegisterUnregisterHeartbeat(t *testing.T) {
+// TestConnectAddEndHeartbeat checks methods, paths and bodies of the protocol 2 calls.
+func TestConnectAddEndHeartbeat(t *testing.T) {
 	client, transport, _ := newFakeClient(t,
-		fakeAnswer{status: http.StatusOK, body: `{"host":"laptop","sessions":[{"name":"claude","address":"claude@laptop","session_id":"s1"}],"directory":[]}`},
+		fakeAnswer{status: http.StatusOK, body: `{"host":"laptop","directory":[]}`},
+		fakeAnswer{status: http.StatusOK, body: `{"host":"laptop","session":{"name":"claude","address":"claude@laptop","session_id":"s1"},"directory":[]}`},
 		fakeAnswer{status: http.StatusNoContent},
 		fakeAnswer{status: http.StatusNoContent},
 	)
 
-	response, err := client.Register(context.Background(), []string{"claude"})
+	connected, err := client.Connect(context.Background())
 	if err != nil {
-		t.Fatalf("Register: %v", err)
+		t.Fatalf("Connect: %v", err)
 	}
-	if response.Host != "laptop" || len(response.Sessions) != 1 {
-		t.Fatalf("response = %+v", response)
+	if connected.Host != "laptop" {
+		t.Fatalf("connect = %+v", connected)
 	}
 	recorded := transport.last(t)
-	if recorded.method != http.MethodPost || recorded.path != "/v1/sessions" {
-		t.Fatalf("register request = %s %s", recorded.method, recorded.path)
+	if recorded.method != http.MethodPost || recorded.path != protocol.ConnectPath {
+		t.Fatalf("connect request = %s %s", recorded.method, recorded.path)
 	}
-	if !strings.Contains(recorded.body, `"claude"`) {
-		t.Fatalf("register body = %q", recorded.body)
+	if recorded.body != "" {
+		t.Fatalf("connect sent a body: %q", recorded.body)
+	}
+
+	added, err := client.AddSession(context.Background(), "claude")
+	if err != nil {
+		t.Fatalf("AddSession: %v", err)
+	}
+	if added.Host != "laptop" || added.Session.SessionID != "s1" || added.Session.Address != "claude@laptop" {
+		t.Fatalf("add = %+v", added)
+	}
+	recorded = transport.last(t)
+	if recorded.method != http.MethodPost || recorded.path != protocol.SessionsPath {
+		t.Fatalf("add request = %s %s", recorded.method, recorded.path)
+	}
+	var addBody protocol.AddSessionRequest
+	if err := json.Unmarshal([]byte(recorded.body), &addBody); err != nil {
+		t.Fatalf("add body is not JSON: %v", err)
+	}
+	if addBody.Name != "claude" {
+		t.Fatalf("add body = %+v", addBody)
+	}
+
+	if err := client.EndSession(context.Background(), "claude"); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	recorded = transport.last(t)
+	if recorded.method != http.MethodDelete || recorded.path != protocol.SessionsPath+"/claude" {
+		t.Fatalf("end request = %s %s", recorded.method, recorded.path)
 	}
 
 	if err := client.Unregister(context.Background()); err != nil {
@@ -489,6 +517,47 @@ func TestRegisterUnregisterHeartbeat(t *testing.T) {
 	if len(heartbeat) != 1 || heartbeat["at"] == nil {
 		t.Fatalf("heartbeat body = %v, want only at", heartbeat)
 	}
+}
+
+// TestConnectAddEndRefusals: a 4xx becomes a refusal with its code, an unreadable answer
+// is its own error, and a server error is named by status only.
+func TestConnectAddEndRefusals(t *testing.T) {
+	t.Run("a refused connect carries the code", func(t *testing.T) {
+		client, _, _ := newFakeClient(t, fakeAnswer{
+			status: http.StatusForbidden,
+			body:   `{"code":"unauthorized","message":"this host is not paired"}`,
+		})
+		_, err := client.Connect(context.Background())
+		refusal, ok := Refusal(err)
+		if !ok || refusal.Code == "" {
+			t.Fatalf("Connect error = %v, want a refusal", err)
+		}
+	})
+
+	t.Run("an unreadable add answer is refused", func(t *testing.T) {
+		client, _, _ := newFakeClient(t, fakeAnswer{status: http.StatusOK, body: `not json`})
+		if _, err := client.AddSession(context.Background(), "claude"); !errors.Is(err, errUnreadableAnswer) {
+			t.Fatalf("AddSession error = %v, want errUnreadableAnswer", err)
+		}
+	})
+
+	t.Run("a server error on end names no body", func(t *testing.T) {
+		client, _, _ := newFakeClient(t, fakeAnswer{status: http.StatusInternalServerError, body: `{"code":"internal","message":"x"}`})
+		err := client.EndSession(context.Background(), "claude")
+		if err == nil {
+			t.Fatal("EndSession accepted a 500")
+		}
+		if strings.Contains(err.Error(), "internal") {
+			t.Fatalf("error quotes the body: %v", err)
+		}
+	})
+
+	t.Run("ending an unknown session is still success", func(t *testing.T) {
+		client, _, _ := newFakeClient(t, fakeAnswer{status: http.StatusNoContent})
+		if err := client.EndSession(context.Background(), "claude"); err != nil {
+			t.Fatalf("EndSession: %v", err)
+		}
+	})
 }
 
 // TestAddress: the network name is the local name on this host.

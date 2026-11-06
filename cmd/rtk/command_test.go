@@ -65,16 +65,16 @@ func TestParseCommandForms(t *testing.T) {
 		},
 		{
 			name: "runtime run with both agents", args: []string{"runtime", "--agents", "claude,codex"},
-			want: command{kind: kindRuntimeRun, agents: "claude,codex"},
+			want: command{kind: kindAttach, agents: "claude,codex"},
 		},
 		{
 			// The raw string is passed through; tui.ParseAgents validates it later.
 			name: "runtime run passes an odd list through", args: []string{"runtime", "--agents", "claude,claude"},
-			want: command{kind: kindRuntimeRun, agents: "claude,claude"},
+			want: command{kind: kindAttach, agents: "claude,claude"},
 		},
 		{
 			name: "runtime run with no flag", args: []string{"runtime"},
-			want: command{kind: kindRuntimeRun, agents: ""},
+			want: command{kind: kindAttach, agents: ""},
 		},
 	}
 
@@ -254,6 +254,202 @@ func TestUsageListsTheTransportForms(t *testing.T) {
 		// The old forms must still be readable, since they still work.
 		"rtk gateway pair HOST",
 		"rtk runtime [--agents claude,codex]",
+	} {
+		if !strings.Contains(usage, form) {
+			t.Fatalf("usage does not mention %q:\n%s", form, usage)
+		}
+	}
+}
+
+// TestParseDaemonForms: the daemon lines of the contract.
+// UNTESTED: written, not run.
+func TestParseDaemonForms(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want command
+	}{
+		{
+			name: "start in the background",
+			args: []string{"daemon"},
+			want: command{kind: kindDaemonRun},
+		},
+		{
+			name: "start in the foreground",
+			args: []string{"daemon", "--foreground"},
+			want: command{kind: kindDaemonRun, foreground: true},
+		},
+		{
+			name: "status",
+			args: []string{"daemon", "status"},
+			want: command{kind: kindDaemonStatus},
+		},
+		{
+			name: "stop",
+			args: []string{"daemon", "stop"},
+			want: command{kind: kindDaemonStop},
+		},
+		{
+			name: "stop --yes",
+			args: []string{"daemon", "stop", "--yes"},
+			want: command{kind: kindDaemonStop, yes: true},
+		},
+		{
+			name: "stop --session",
+			args: []string{"daemon", "stop", "--session", "claude"},
+			want: command{kind: kindDaemonStop, session: "claude"},
+		},
+		{
+			name: "daemon --help",
+			args: []string{"daemon", "--help"},
+			want: command{kind: kindHelp},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCommand(tc.args)
+			if err != nil {
+				t.Fatalf("parseCommand(%q): %v", tc.args, err)
+			}
+			if got.kind != tc.want.kind {
+				t.Fatalf("kind = %v, want %v", got.kind, tc.want.kind)
+			}
+			if got.foreground != tc.want.foreground {
+				t.Fatalf("foreground = %t, want %t", got.foreground, tc.want.foreground)
+			}
+			if got.yes != tc.want.yes {
+				t.Fatalf("yes = %t, want %t", got.yes, tc.want.yes)
+			}
+			if got.session != tc.want.session {
+				t.Fatalf("session = %q, want %q", got.session, tc.want.session)
+			}
+		})
+	}
+}
+
+// TestParseDaemonErrors: each refusal, kept as a message-only parse error.
+func TestParseDaemonErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "status takes no arguments", args: []string{"daemon", "status", "extra"}, want: "rtk: daemon status takes no arguments"},
+		{name: "an unknown daemon flag", args: []string{"daemon", "--now"}, want: "rtk: daemon:"},
+		{name: "an extra daemon argument", args: []string{"daemon", "extra"}, want: "rtk: daemon: unexpected argument"},
+		{name: "an unknown stop flag", args: []string{"daemon", "stop", "--now"}, want: "rtk: daemon stop:"},
+		{name: "an extra stop argument", args: []string{"daemon", "stop", "extra"}, want: "rtk: daemon stop: unexpected argument"},
+		{
+			// The one semantic rule, in the one place it is checked.
+			name: "yes with a session", args: []string{"daemon", "stop", "--session", "claude", "--yes"},
+			want: "rtk: daemon stop --session does not take --yes",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseCommand(tc.args)
+			if err == nil {
+				t.Fatalf("parseCommand(%q) accepted the arguments", tc.args)
+			}
+			if !strings.HasPrefix(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want a prefix %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestUsageListsTheDaemonForms pins the contract's daemon lines.
+func TestUsageListsTheDaemonForms(t *testing.T) {
+	for _, form := range []string{
+		"rtk daemon                             start this machine's daemon in the background",
+		"rtk daemon --foreground                the same, staying in this terminal",
+		"rtk daemon status                      running or not, its sessions, windows and log path",
+		"rtk daemon stop [--yes]                stop the daemon and every session",
+		"rtk daemon stop --session NAME         end one session",
+	} {
+		if !strings.Contains(usage, form) {
+			t.Fatalf("usage does not mention %q:\n%s", form, usage)
+		}
+	}
+}
+
+// TestParseAttachAndAlias: `rtk attach` and `rtk runtime` are the same kind, and the runtime
+// pairing form is untouched.
+// UNTESTED: written, not run.
+func TestParseAttachAndAlias(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want command
+	}{
+		{
+			name: "attach starts nothing by default",
+			args: []string{"attach"},
+			want: command{kind: kindAttach},
+		},
+		{
+			name: "attach with a list",
+			args: []string{"attach", "--agents", "claude,codex"},
+			want: command{kind: kindAttach, agents: "claude,codex"},
+		},
+		{
+			name: "attach passes the raw list through",
+			args: []string{"attach", "--agents", "claude,claude"},
+			want: command{kind: kindAttach, agents: "claude,claude"},
+		},
+		{
+			name: "runtime is the same kind",
+			args: []string{"runtime"},
+			want: command{kind: kindAttach},
+		},
+		{
+			name: "runtime with a list is the same kind",
+			args: []string{"runtime", "--agents", "codex"},
+			want: command{kind: kindAttach, agents: "codex"},
+		},
+		{
+			name: "attach --help shows the shared usage",
+			args: []string{"attach", "--help"},
+			want: command{kind: kindHelp},
+		},
+		{
+			name: "runtime pair is still the pairing form",
+			args: []string{"runtime", "pair", "--gateway", "100.64.0.1:7777", "--code", "abcd"},
+			want: command{kind: kindRuntimePair, gatewayAddr: "100.64.0.1:7777", code: "abcd"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCommand(tc.args)
+			if err != nil {
+				t.Fatalf("parseCommand(%q): %v", tc.args, err)
+			}
+			if got.kind != tc.want.kind || got.agents != tc.want.agents ||
+				got.gatewayAddr != tc.want.gatewayAddr || got.code != tc.want.code {
+				t.Fatalf("parseCommand(%q) = %+v, want %+v", tc.args, got, tc.want)
+			}
+		})
+	}
+
+	for _, args := range [][]string{
+		{"attach", "--now"},
+		{"attach", "extra"},
+	} {
+		if _, err := parseCommand(args); err == nil {
+			t.Fatalf("parseCommand(%q) accepted the arguments", args)
+		}
+	}
+}
+
+// TestUsageListsAttachAndAlias pins the two new lines.
+func TestUsageListsAttachAndAlias(t *testing.T) {
+	for _, form := range []string{
+		"rtk attach [--agents claude,codex]",
+		"an alias for rtk attach",
+		"rtk runtime pair --gateway ADDR --code CODE",
 	} {
 		if !strings.Contains(usage, form) {
 			t.Fatalf("usage does not mention %q:\n%s", form, usage)

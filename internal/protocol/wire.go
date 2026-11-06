@@ -9,7 +9,11 @@ import "time"
 const (
 	// WireVersion is sent in WireVersionHeader on every request. A different
 	// value is refused with WireErrVersion, which the runtime shows to the user.
-	WireVersion       = 1
+	//
+	// Version 2 registers one session at a time: a daemon connects once (ending the
+	// previous instance's sessions), adds each session as it starts, and ends one by
+	// name. A version 1 client is refused, so every machine upgrades together.
+	WireVersion       = 2
 	WireVersionHeader = "X-Ratatoskr-Protocol"
 
 	// Error codes in WireError.Code.
@@ -50,12 +54,6 @@ type PairResponse struct {
 	Credential string `json:"credential"`
 }
 
-// SessionsRequest registers this run's agents by local display name. The host is
-// taken from the credential, never from the request.
-type SessionsRequest struct {
-	Agents []string `json:"agents"`
-}
-
 // SessionInfo is one registered agent.
 type SessionInfo struct {
 	Name      string `json:"name"`       // local display name
@@ -63,18 +61,42 @@ type SessionInfo struct {
 	SessionID string `json:"session_id"` // new for every registration
 }
 
+// Session routes of protocol version 2. The /v1/ prefix names the URL family; the
+// protocol version is the WireVersionHeader value.
+const (
+	// ConnectPath: the daemon starting. It ends this host's earlier sessions, once,
+	// because they belonged to the previous daemon instance.
+	ConnectPath = "/v1/connect"
+	// SessionsPath: POST adds one session (AddSessionRequest); DELETE ends all of this
+	// host's sessions; DELETE SessionsPath+"/"+name ends one by name.
+	SessionsPath = "/v1/sessions"
+)
+
+// ConnectResponse answers a connect: the host and the current directory.
+type ConnectResponse struct {
+	Host      string           `json:"host"`
+	Directory []DirectoryEntry `json:"directory"`
+}
+
+// AddSessionRequest registers one session by local display name. The host is taken
+// from the credential, never from the request.
+type AddSessionRequest struct {
+	Name string `json:"name"`
+}
+
+// AddSessionResponse answers an add: the new session (a new ID every time) and the
+// current directory.
+type AddSessionResponse struct {
+	Host      string           `json:"host"`
+	Session   SessionInfo      `json:"session"`
+	Directory []DirectoryEntry `json:"directory"`
+}
+
 // DirectoryEntry is one agent the gateway knows, live or not.
 type DirectoryEntry struct {
 	Address string `json:"address"` // name@host
 	Host    string `json:"host"`
 	Live    bool   `json:"live"` // host has a stream and the name has a current session
-}
-
-// SessionsResponse answers a registration.
-type SessionsResponse struct {
-	Host      string           `json:"host"`
-	Sessions  []SessionInfo    `json:"sessions"`
-	Directory []DirectoryEntry `json:"directory"`
 }
 
 // Offer is one message the gateway offers a host, once.
