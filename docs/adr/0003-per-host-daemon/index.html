@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0003 Per-Host Daemon</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+#ev-table tr.lit td { background: var(--accent-soft); }
+#ev-card { margin: 12px 0; }
+#ev-out span { display: block; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0003</p>
+  <h1>Moving from <code>rtk runtime</code> to a daemon on each host</h1>
+  <p class="prose">Why agents should stop living inside a terminal window, what that gives you, what it costs, and which choices are still yours.</p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Accepted, 2026-11-06. The daemon transition is written and compile-checked, with no worker features. It has never been run.</b> <span class="tag t-user">USER</span> "Yes, adopt the daemon". "Begin the implementation for daemon". The <a href="../../implementation/daemon-contract.md">implementation contract</a> has the current detail. The record was requested with: "Ok, create a new ADR for me, where we transition from the rtk runtime to a daemon based approach, clearly highlighting the benefits that you just told me about."</dd></div>
+    <div><dt>Written</dt><dd>2026-11-06, by the architect, at the user's request. Updated the same day as the user made decisions.</dd></div>
+    <div><dt>Source inspected</dt><dd>Commit <code>65aa2bf</code>, from before the daemon. Citations and their line numbers refer to that commit, and some of that code has since moved or gone. <code>internal/app/runtime.go</code>, which the daemon replaces, is cited without a link for that reason. The daemon itself came after that commit.</dd></div>
+    <div><dt>Tests</dt><dd><b>The daemon has never been run.</b> Only <code>gofmt</code>, <code>go vet</code> and <code>go build</code> have been applied, and its tests are written but not run (<a href="../../design/ground-rules.md">GR-3</a>). The only run behind this record is the user's own test of <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, which used the in-process <code>rtk runtime</code> that this work removes, so it doesn't carry over.</dd></div>
+  </dl>
+</header>
+
+<p class="prose small"><b>How to read the labels.</b>
+  <span class="tag t-user">USER</span> the user decided or reported it.
+  <span class="tag t-code">CODE</span> read in the source, not seen running.
+  <span class="tag t-arch">PROPOSAL</span> the architect's suggestion or reasoning.
+  <span class="tag t-unv">OPEN</span> undecided. Any recommendation beside it is only a recommendation.
+  <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+</p>
+<p class="prose small muted">The interactive parts of this page have been reviewed as source only and have never been opened in a browser. All the content is plain HTML, so with JavaScript off every panel and step is simply shown in full.</p>
+
+<h2 id="summary">1. Where this stands</h2>
+<div class="note">
+  <p><b>The proposal:</b> one long-lived <code>rtk</code> daemon on each machine owns the agents. The terminal window becomes something you attach to and close at will. The central gateway keeps its job from ADR-0002.</p>
+  <p><b>Why now:</b> the goal, relayed from the user, is that each independent session should eventually spawn workers on its own to finish tasks. Today every agent lives and dies with one terminal window, which is a poor home for work that's meant to outlast your attention.</p>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>Who decides what</th><th>In the proposal</th></tr>
+  <tr><td><b>Parent agents</b></td><td>Plan the work, delegate it, review the results and integrate them.</td></tr>
+  <tr><td><b>The daemon</b></td><td>Enforces the permissions and capacity limits you chose. It makes no product decisions: it doesn't decide what work to do, or whether a result is good.</td></tr>
+  <tr><td><b>You</b></td><td>Set the limits and the permissions agents start with, and answer permission prompts, within the ceiling on workers. Nothing in this design answers a prompt for you.</td></tr>
+</table></div>
+<p class="prose"><b>Decided:</b> your answers are in <a href="#decisions">section 11</a>, in your words. <b>Still open:</b> how to establish worker permissions, the loop budget and time limits, worktrees, how the daemon holds its processes, and a few smaller items, all listed in the same section. <b>Remote dispatch is deferred.</b> Building is authorized for the daemon transition only, and workers aren't part of it. <a href="#built">Section 12</a> says what has been written so far.</p>
+
+<h2 id="benefits">2. The benefits</h2>
+<p class="prose">These five are the reason for the change. Each one is a design intent, and none has been built. Your decisions narrow the last three, and each panel says how. Select one to see today's behaviour beside the proposal.</p>
+<div data-tabs>
+  <div role="tablist" aria-label="Benefits">
+    <button role="tab" id="b1" aria-controls="bp1">Detach</button>
+    <button role="tab" id="b2" aria-controls="bp2">Many windows</button>
+    <button role="tab" id="b3" aria-controls="bp3">Workers tracked</button>
+    <button role="tab" id="b4" aria-controls="bp4">Shared limits</button>
+    <button role="tab" id="b5" aria-controls="bp5">Remote dispatch (deferred)</button>
+  </div>
+  <div role="tabpanel" id="bp1" aria-labelledby="b1">
+    <h3>Close the TUI without stopping your agents</h3>
+    <div class="two">
+      <div class="card doesnt"><h3>Today</h3><p>The TUI process owns the agents. Quitting it, or losing the terminal to a hangup, stops them all. That's why the README suggests <code>tmux</code> on a server. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/model.go#L19"><code>internal/tui/model.go:19</code> <code>App owns the processes</code></a> <span class="src"><code>internal/app/runtime.go:86</code> <code>syscall.SIGHUP</code></span> <span class="src"><code>internal/app/runtime.go:284</code> <code>closeAll(closeGrace, panes)</code></span></p></div>
+      <div class="card does"><h3>With a daemon</h3><p><span class="tag t-arch">PROPOSAL</span> Closing a window, or an SSH connection dropping, ends only that window. Agents keep running, and messages keep arriving through the same gate. You attach later and see the current screen.</p></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="bp2" aria-labelledby="b2">
+    <h3>Several windows share one host service</h3>
+    <div class="two">
+      <div class="card doesnt"><h3>Today</h3><p>One run per state directory. A second <code>rtk</code> is refused, and a run's panes appear only in its own window. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/store/store.go#L77"><code>internal/store/store.go:77</code> <code>acquireLock(filepath.Join</code></a></p></div>
+      <div class="card does"><h3>With a daemon</h3><p><span class="tag t-arch">PROPOSAL</span> Any number of windows can attach to one daemon, and each can show different sessions. Several can view one session, but only one may type into it at a time (<a href="#input">section 7</a>).</p></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="bp3" aria-labelledby="b3">
+    <h3>Workers stay tracked when their parent's window goes away</h3>
+    <div class="two">
+      <div class="card doesnt"><h3>Today</h3><p>There are no workers. A harness can start its own sub-processes, but <code>rtk</code> can't see them, and nothing records who started what.</p></div>
+      <div class="card does"><h3>With a daemon</h3><p><span class="tag t-arch">PROPOSAL</span> The daemon starts each worker and keeps its record: owner, task, working directory and outcome. If the parent's <b>window</b> closes, the parent and its workers carry on. <span class="tag t-user">USER</span> If the parent's <b>session</b> ends, its workers are stopped, and the records stay readable. <a href="#identity">Section 5</a> has the details.</p></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="bp4" aria-labelledby="b4">
+    <h3>One place to limit how many workers run</h3>
+    <div class="two">
+      <div class="card doesnt"><h3>Today</h3><p>Nothing coordinates agents on a machine. If several sessions each spawned workers from separate foreground processes, none would see the others' load, or know that a worktree was already in use.</p></div>
+      <div class="card does"><h3>With a daemon</h3><p><span class="tag t-arch">PROPOSAL</span> All sessions on a host ask one daemon, so one limit applies to all of them. <span class="tag t-user">USER</span> The first limit is a maximum worker count. This is an admission check rather than a scheduler: at the limit, the request is refused and the parent decides what to do. A single daemon is also where CPU, memory and worktree coordination could live later, but none of those is decided.</p></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="bp5" aria-labelledby="b5">
+    <h3>Dispatch work to another machine through the gateway</h3>
+    <div class="two">
+      <div class="card doesnt"><h3>Today</h3><p>An agent can message <code>codex@ubuntu-b</code>, but only if you've already started a runtime there, and it can't start anything new on that machine.</p></div>
+      <div class="card does"><h3>With a daemon</h3><p><span class="tag t-arch">PROPOSAL</span> A parent asks the gateway to pass a request to the target machine's daemon, which is always there to receive it. That daemon applies its own limits, and starts a worker or refuses. <span class="tag t-user">USER</span> "Remote dispatch, will come back to it later". So this isn't part of the current design. It's kept here because a daemon is what would make it possible, and it <a href="#truth">carries a real risk</a>.</p></div>
+    </div>
+  </div>
+</div>
+
+<h2 id="shape">3. The shape of the change</h2>
+<div data-tabs>
+  <div role="tablist" aria-label="Today and proposed">
+    <button role="tab" id="s1" aria-controls="sp1">Today: everything in one process</button>
+    <button role="tab" id="s2" aria-controls="sp2">Proposed: daemon and windows</button>
+  </div>
+  <div role="tabpanel" id="sp1" aria-labelledby="s1">
+    <div class="topo">
+      <div class="host"><p class="host-l">Host A: one terminal, one <code>rtk runtime</code></p>
+        <div class="node">TUI<small>draws the panes, takes your keys</small></div>
+        <div class="node">Router, gate, MCP and hook server<small>on loopback</small></div>
+        <div class="node claude">claude@a</div><div class="node codex">codex@a</div></div>
+      <div class="mid"><div class="wire">send</div><div class="wire rev">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div class="host hub"><p class="host-l">Gateway</p><div class="node">Directory, routing, ledger</div></div>
+    </div>
+    <p class="prose"><span class="tag t-code">CODE</span> One process does it all, so everything in that box ends together. The PTY's controlling side is held there too. <a class="src" href="../../../internal/pane/pane.go#L192"><code>internal/pane/pane.go:192</code> <code>pty.StartWithSize</code></a> <a class="src" href="../../../internal/server/server.go#L97"><code>internal/server/server.go:97</code> <code>net.Listen("tcp", loopbackAddr)</code></a></p>
+  </div>
+  <div role="tabpanel" id="sp2" aria-labelledby="s2">
+    <div class="topo five" id="arch-map">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <p class="prose"><span class="tag t-arch">PROPOSAL</span> The middle box stays running when the windows close. Messages still go through the gateway, and windows talk only to their own machine's daemon. To see another machine's agents, you SSH there and attach, as you open a terminal there today.</p>
+  </div>
+</div>
+<h3>Who owns what</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Owns</th><th>Must not</th></tr>
+  <tr><td><b>Gateway</b> <small>(unchanged role)</small></td><td>Directory, routing, the central ledger with full bodies, pairing</td><td>Write to a PTY, read hooks, decide an agent is ready, answer prompts, start a process itself</td></tr>
+  <tr><td><b>Host daemon</b> <small>(new)</small></td><td>Harness PTYs, session and worker supervision, MCP and hook server, delivery gates, local history, lifecycle and capacity records, the gateway credential</td><td>Decide what work to do, judge a result, answer a prompt, retry a message or a task on its own</td></tr>
+  <tr><td><b>Window</b> <small>(the TUI, now a client)</small></td><td>Drawing, your keys, which sessions you're looking at</td><td>Hold any agent, paste a peer's message, hold the gateway credential, open the database</td></tr>
+  <tr><td><b>Parent agent</b></td><td>Planning, delegating, choosing each worker's harness, reviewing, integrating</td><td>Approve a worker's prompt, exceed the daemon's limits, give a worker more permissions than it has itself</td></tr>
+</table></div>
+
+<h2 id="kept">4. What stays from ADR-0002, and what changes</h2>
+<p class="prose">ADR-0002 remains the record of its decisions, and this page doesn't rewrite them. It did leave this open: it lists a daemon split under "later, only if wanted", as a separate decision, and the <a href="../../implementation/cross-machine-contract.md">contract</a> lists it as out of scope.</p>
+<div class="two">
+  <div class="card does"><h3>Retained</h3>
+    <ul>
+      <li>A central gateway sees every Ratatoskr message, including between two agents on one machine. <span class="tag t-user">USER</span></li>
+      <li><b>If the other host is unreachable, the send fails immediately.</b> No retry window, store-and-forward or replay. <span class="tag t-user">USER</span></li>
+      <li>Full message bodies in the ledger. <span class="tag t-user">USER</span></li>
+      <li>One <code>rtk</code> binary with different startup commands. <span class="tag t-user">USER</span></li>
+      <li>Tailnet or opt-in LAN, with pairing. No public gateway. <span class="tag t-user">USER</span></li>
+      <li>The result names, including the uncertain ones.</li>
+      <li>A new session never gets an older session's message.</li>
+      <li>The MCP and hook server stays on loopback.</li>
+      <li>Hosts dial out, and no PTY bytes cross the network.</li>
+      <li>The receiving host's gate decides when to paste.</li>
+    </ul>
+  </div>
+  <div class="card doesnt"><h3>Proposed to change</h3>
+    <ul>
+      <li><b><code>rtk runtime</code> stops owning agents.</b> It becomes an alias for <code>rtk attach</code> for a while. <span class="tag t-user">USER</span></li>
+      <li><b>"One host has one live run."</b> A host would register and end sessions one at a time, rather than replacing them all. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/gateway/sessions.go#L87"><code>internal/gateway/sessions.go:87</code> <code>one host has one live run</code></a></li>
+      <li><b>The cap of 8 agents per host</b> would become a daemon limit. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/gateway/sessions.go#L29"><code>internal/gateway/sessions.go:29</code> <code>maxAgentsPerHost = 8</code></a></li>
+      <li><b>"One terminal per host"</b> becomes any number of windows per host.</li>
+      <li><b>The protocol changes</b> for per-session registration, as a new version. Dispatch across machines is deferred, so it isn't part of this.</li>
+      <li><b>A new local socket</b> between windows and the daemon, the first new local control surface since ADR-0001.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="identity">5. Names for the things that come and go</h2>
+<p class="prose">Most of the confusion in this design comes from treating these as one thing. All of this is <span class="tag t-arch">PROPOSAL</span>, including the names.</p>
+<div class="table-wrap"><table>
+  <tr><th>Thing</th><th>What it is</th><th>Lives until</th><th>Can you message it?</th></tr>
+  <tr><td><b>Host</b></td><td>A paired machine, such as <code>ubuntu-b</code></td><td>Unpaired</td><td>No</td></tr>
+  <tr><td><b>Daemon instance</b></td><td>One running daemon. Takes today's per-machine lock, and replaces today's "run"</td><td>It stops or crashes</td><td>No</td></tr>
+  <tr><td><b>Session</b></td><td>One harness conversation, with a <code>name@host</code> address and a session ID</td><td>Its harness ends. <b>Not</b> when a window closes</td><td><b>Yes</b></td></tr>
+  <tr><td><b>Worker</b></td><td>A session started for an owner session, to do a task. It adds a worker ID, owner, task and outcome</td><td>As a session, with its record kept afterwards</td><td><b>Yes,</b> as any session</td></tr>
+  <tr><td><b>Dispatch</b></td><td>One request to start a worker, with its own ID, so that the same request can't start two</td><td>Its outcome is recorded</td><td>No</td></tr>
+  <tr><td><b>Process</b></td><td>The operating system's harness process and its children. A PID is never an identity</td><td>It exits. Children in another process group may outlive it</td><td>No</td></tr>
+  <tr><td><b>Window</b></td><td>One attached TUI. It has no network name</td><td>You close it, or its connection drops</td><td>No</td></tr>
+</table></div>
+<h3>What a worker can end as</h3>
+<p class="flow"><span class="f">dispatch requested</span><span class="f-a"></span><span class="f">admitted, or refused</span><span class="f-a"></span><span class="f">running</span><span class="f-a"></span><span class="f good">one final outcome</span></p>
+<div class="table-wrap"><table>
+  <tr><th>Outcome</th><th>Means</th><th>Doesn't mean</th></tr>
+  <tr><td><code>refused</code></td><td>Never started, with a reason: capacity, permissions, harness unavailable, or the caller being a worker</td><td>Queued. It won't start later</td></tr>
+  <tr><td><code>completed</code></td><td>The worker itself reported that it finished</td><td><b>That the work is right.</b> The parent reviews it</td></tr>
+  <tr><td><code>failed</code></td><td>The worker itself reported that it couldn't finish</td><td>Nothing changed. It may have left partial work</td></tr>
+  <tr><td><code>cancelled</code></td><td>You or its owner stopped it, or its owner session ended. The reason is recorded</td><td>That its changes were undone</td></tr>
+  <tr><td><code>exited_no_report</code></td><td>The process ended without reporting. The exit code is recorded</td><td>Success, even with exit code 0</td></tr>
+  <tr><td><code>lost</code></td><td>The daemon stopped while this was running, so nobody saw the end</td><td>That it stopped, failed or did nothing. <b>It's never rerun automatically</b></td></tr>
+</table></div>
+<p class="prose small"><code>needs_approval</code> is a status while running, not an outcome. It shows that a prompt is waiting.</p>
+<h3>Who owns a worker</h3>
+<ul class="prose">
+  <li><b>The owner session</b> asked for it, receives its result by ordinary message, and may cancel it.</li>
+  <li><b>You</b> can see and cancel any worker, and you answer its prompts. An answer doesn't lift its permissions above its parent's.</li>
+  <li><b>If the owner ends, its workers are stopped.</b> <span class="tag t-user">USER</span> "If owner ends, stop workers too". Ownership is never passed on. Any result already on its way ends <code>session_gone</code>, and isn't given to a new session, as ADR-0002 requires. The records stay readable.</li>
+  <li><b>What counts as the owner ending:</b> its harness process ending, for any reason, or the daemon stopping it. <b>What doesn't:</b> closing a window, an SSH drop, or anything else that leaves the process running. <span class="tag t-arch">PROPOSAL</span> Nor does <code>/clear</code> or <code>/compact</code>, because the harness process continues.</li>
+  <li><b>Workers can't start workers.</b> <span class="tag t-user">USER</span> So the tree is one level deep.</li>
+</ul>
+
+<h2 id="events">6. What each event stops, and what it doesn't</h2>
+<p class="prose">These are easy to run together, and they have very different consequences. <span class="tag t-arch">PROPOSAL</span></p>
+<div class="card js-only" id="ev-card">
+  <div class="gate-form"><label>Pick an event <select id="ev"></select></label></div>
+  <output class="gate-out" id="ev-out" for="ev"></output>
+</div>
+<div class="table-wrap"><table id="ev-table">
+  <tr><th>Event</th><th>Sessions and workers</th><th>Messages</th><th>Watch out</th></tr>
+  <tr><td>A window closes, or its SSH drops</td><td>Keep running, <b>including workers.</b> This isn't the owner ending</td><td>Keep arriving and being gated</td><td>If you left text half-typed, that session stays held as drafting, because <code>rtk</code> can't see the input box. It's shown when you attach again</td></tr>
+  <tr><td>One of several windows closes</td><td>Keep running</td><td>Unaffected</td><td>If it held input for a session, input is released, and no other window gets it until it asks. Workers aren't stopped</td></tr>
+  <tr><td>A parent session exits</td><td><b>Its workers are stopped,</b> and recorded as <code>cancelled</code>, reason owner ended <span class="tag t-user">USER</span></td><td>Worker results sent to it end <code>session_gone</code></td><td>Partial work stays where it is. Tools in another process group may outlive the stop. Nothing is delivered to a new session</td></tr>
+  <tr><td>A worker exits</td><td>Outcome recorded, and its capacity freed</td><td>The owner is told by an ordinary message, through the gate</td><td>The owner may be busy, so the news may be held</td></tr>
+  <tr><td>You stop the daemon</td><td><b>All of them stop,</b> and it warns you first if workers are running</td><td>Unfinished ones are marked <code>interrupted</code>. Gateway sessions end</td><td>Same for an upgrade, unless a handover is built. None is proposed</td></tr>
+  <tr><td>The daemon crashes</td><td><b>Agents don't survive by default,</b> and workers become <code>lost</code></td><td>Marked <code>interrupted</code> on next start, never pasted again</td><td>Some child processes may still be running, and partial work may remain. See the crash scenario in <a href="#scenarios">section 8</a></td></tr>
+  <tr><td>The machine reboots</td><td>As a crash</td><td>As a crash</td><td>The daemon starts again only if you've set it up as a service</td></tr>
+  <tr><td>The machine sleeps, or its network drops</td><td>Paused or still running, and the daemon remains</td><td>To this host: <code>delivery_uncertain</code> briefly, then <code>destination_unreachable</code>, with no replay on return</td><td>Same as ADR-0002. A daemon doesn't add waiting</td></tr>
+  <tr><td>The gateway is unreachable</td><td>Keep running. New workers are refused <span class="tag t-arch">PROPOSAL</span></td><td><b>All sends fail with <code>gateway_unreachable</code>,</b> even on one host</td><td>Same as ADR-0002. Workers keep working, but can't report back until it returns</td></tr>
+</table></div>
+
+<h2 id="input">7. Input: one writer, no double delivery, no automatic approval</h2>
+<p class="prose">Once several windows can see one session, "who is typing?" needs a real answer. Today the question can't come up, because only one TUI exists. This part is written, and has never been run. <span class="tag t-arch">BUILT, UNTESTED</span></p>
+<div class="two">
+  <div class="card"><h3>One input owner per session</h3>
+    <ul>
+      <li>Any window may view a session. A window that attaches takes input for any session nobody holds, and views the rest. <b>This changed during building:</b> the first version of this record said new windows start as viewers, which would have made one window on its own press a key per session on every attach.</li>
+      <li>One window at a time holds input, and the daemon refuses viewers' keys, paste and mouse input.</li>
+      <li>Taking over is an explicit action, F6, and the previous holder sees that it happened.</li>
+      <li>The input holder's size sets the PTY's size, since a PTY has only one. Others show it as it is, cropped if needed.</li>
+      <li>A window closing releases its input, and nothing else gets it automatically.</li>
+      <li>The daemon, and only the daemon, applies today's draft rule to the holder's keys. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/router/deliver.go#L19"><code>internal/router/deliver.go:19</code> <code>func (r *Router) UserDraft</code></a></li>
+    </ul>
+  </div>
+  <div class="card"><h3>Only the daemon pastes</h3>
+    <ul>
+      <li>Delivery stays in the daemon: one gate, one record before each write. Windows never receive a message to paste, so ten windows can't paste it ten times. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/router/gate.go#L61"><code>internal/router/gate.go:61</code> <code>func gate(in gateInput)</code></a></li>
+      <li>Windows get screen frames and status, as the TUI reads cached frames today. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/pane/pane.go#L377"><code>internal/pane/pane.go:377</code> <code>func (p *Pane) Snapshot()</code></a></li>
+      <li>A window reconnecting asks for the current frame. It isn't sent any messages again.</li>
+    </ul>
+  </div>
+</div>
+<div class="card doesnt" style="margin-top:14px"><h3>Permission prompts</h3>
+  <ul>
+    <li><b>The daemon never answers a prompt,</b> and neither does the gateway or a parent agent. A worker can't get approval from its parent. No message or request type means "approve".</li>
+    <li>A waiting prompt appears as <code>needs_approval</code> in every window and in the worker list, so that a detached worker doesn't wait unseen. You attach, take input and answer, within the <a href="#permissions">permission ceiling</a>.</li>
+    <li><b>The cost:</b> a worker that hits a prompt stops until you come. See <a href="#permissions">section 7a</a>.</li>
+  </ul>
+</div>
+
+<h2 id="permissions">7a. Worker permissions, and who may spawn</h2>
+<div class="note">
+  <p><span class="tag t-user">USER</span> "A workers permissions will always be a subset of the parents permissions. Can be less, equal, but never more than the parent."</p>
+  <p><span class="tag t-user">USER</span> "Yes a parent should be able to spawn without asking". <span class="tag t-user">USER</span> "Workers cannot start workers".</p>
+  <p><span class="tag t-user">USER</span> "A parent can decide what type of harness to launch. E.g. A claude code parent can launch a codex worker or a pi worker".</p>
+</div>
+<div class="two">
+  <div class="card does"><h3>What these mean</h3>
+    <ul>
+      <li><b>Spawning needs no per-spawn approval.</b> The spawn tool would be pre-approved for top-level sessions, as sending is today.</li>
+      <li><b>That approves the act of starting a worker, and nothing else.</b> It raises no permission, answers no prompt, and doesn't allow nested spawning.</li>
+      <li><b>Workers don't get the tool,</b> and the daemon refuses a spawn request from a worker's token, whatever its text says. <span class="tag t-arch">PROPOSAL</span></li>
+      <li><b>The parent chooses the worker's harness,</b> and it isn't limited to its own. The daemon starts the harness named, or refuses. <b>It never substitutes another one.</b></li>
+      <li><b>Permissions can only narrow.</b> A parent may start a worker with the same permissions or fewer.</li>
+      <li><b>The ceiling has no exceptions.</b> That includes approvals at a worker's native permission prompt, even when you give them by hand. <span class="tag t-user">USER</span> "never more than the parent".</li>
+    </ul>
+  </div>
+  <div class="card doesnt"><h3>What <code>rtk</code> can't honestly promise yet</h3>
+    <ul>
+      <li><b>It doesn't know a parent's effective permissions.</b> They come mostly from your own harness settings, project settings and any "always allow" answers during the session. <code>rtk</code> adds only its hooks and its one tool. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/agent/claude.go#L98"><code>internal/agent/claude.go:98</code> <code>"--settings", settingsPath,</code></a> <a class="src" href="../../../internal/agent/codex.go#L22"><code>internal/agent/codex.go:22</code> <code>codexApprovalModeKey   =</code></a></li>
+      <li><b>Each harness has its own permission model,</b> so a parent's permissions don't carry over to a different harness by themselves. Each parent and worker pairing needs a reviewed mapping before "equal or less" means anything for it. A pairing without one is refused. <span class="tag t-unv">OPEN</span></li>
+      <li><b>Pi isn't supported by <code>rtk</code> yet.</b> Only Claude Code and Codex can be launched today, and Pi's permission model, MCP and hooks haven't been checked. <span class="tag t-unv">UNVERIFIED</span> <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/agent/agent.go#L39"><code>internal/agent/agent.go:39</code> <code>exactly "claude" or "codex"</code></a></li>
+      <li><b>A different directory can mean different permissions,</b> because project settings differ. Worktrees are undecided, so this is too.</li>
+      <li><b>Native prompts could exceed the ceiling.</b> A harness's own prompt can offer more than the parent has, and <code>rtk</code> can't read what it asks or stop the answer. The ceiling already forbids this. The problem is only how to prevent or detect it. <span class="tag t-unv">OPEN</span></li>
+      <li><b>Prompt text isn't enforcement.</b> Telling a worker to stay within limits in its task limits nothing.</li>
+    </ul>
+  </div>
+</div>
+<p class="prose"><b>So the rule needs a mechanism, and it should fail closed:</b> <span class="tag t-arch">PROPOSAL</span> if the daemon can't establish that a worker's permissions are within its parent's, it refuses the spawn with reason permissions. It doesn't start the worker and hope. That includes a configuration where a native prompt could approve more than the parent has and nothing can prevent or detect it. If no harness configuration can meet this, workers stay unavailable rather than the rule being relaxed. Until a mechanism exists, the rule is a requirement, not a property of the system. <a href="#open">Section 11</a> has the open questions.</p>
+<p class="prose"><b>Choosing a harness is only that.</b> This decision doesn't cover which model or provider a worker uses, which remains undecided. It also doesn't make a harness available: one that isn't installed or logged in on that host fails with a clear reason. <span class="tag t-arch">PROPOSAL</span> The daemon can check that a harness is installed before starting it. A login problem may only show after it starts, and that's recorded as the worker's outcome. <span class="tag t-unv">UNVERIFIED</span></p>
+<p class="prose"><b>A limit that remains:</b> agents run as you. A worker allowed to use a shell could also run a harness or reach the daemon's socket directly, which no tool list can prevent. The same goes for a harness's own built-in subagents, which <code>rtk</code> doesn't see. "Workers cannot start workers" is enforced for Ratatoskr's own route. Beyond that, it relies on the worker's permissions.</p>
+
+<h2 id="scenarios">8. Scenarios</h2>
+<p class="prose">All of these describe the proposal. None exists. Step through each one, and the diagram shows where the work is happening.</p>
+<div data-tabs>
+  <div role="tablist" aria-label="Scenarios">
+    <button role="tab" id="n1" aria-controls="np1">Detach and return</button>
+    <button role="tab" id="n2" aria-controls="np2">Dispatch and return</button>
+    <button role="tab" id="n3" aria-controls="np3">Parallel sessions</button>
+    <button role="tab" id="n6" aria-controls="np6">Owner ends</button>
+    <button role="tab" id="n5" aria-controls="np5">Crash</button>
+    <button role="tab" id="n4" aria-controls="np4">Another machine (deferred)</button>
+  </div>
+
+  <div role="tabpanel" id="np1" aria-labelledby="n1">
+    <h3>You close your laptop's terminal, and come back later</h3>
+    <div class="topo five" id="m1">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m1"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win1,ipc,parent"><button class="step-h">You're attached to a session</button><div class="step-d"><p>Window 1 shows <code>claude@a</code> and holds its input.</p></div></li>
+      <li data-lit="d,parent"><button class="step-h">The window closes</button><div class="step-d"><p>The daemon sees the connection end, and releases input. Claude keeps working. Nothing is sent to the gateway, because nothing about the session changed.</p></div></li>
+      <li data-lit="gw,link,d,parent"><button class="step-h">A message arrives while nobody's watching</button><div class="step-d"><p>The gateway offers it, the daemon stores it and acknowledges, and the gate pastes when it's safe, exactly as in ADR-0002. If you'd left text half-typed, it's held as drafting instead.</p></div></li>
+      <li data-lit="win2,ipc,d,parent"><button class="step-h">You attach again</button><div class="step-d"><p>A new window gets the current screen and the message history. Earlier screen contents beyond what the harness redraws aren't available, because panes keep no scrollback today. It asks for input explicitly.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np2" aria-labelledby="n2">
+    <h3>A parent hands off a task, and gets the result back</h3>
+    <div class="topo five" id="m2">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m2"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="parent,d"><button class="step-h">The parent asks for a worker</button><div class="step-d"><p>Claude calls a new tool with a task and the harness it wants, such as Codex or Pi. <span class="tag t-user">USER</span> No per-spawn approval is needed, so the tool would be pre-approved, as sending is today. The working directory depends on the worktree decision. <span class="tag t-unv">OPEN</span> <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/agent/claude.go#L99"><code>internal/agent/claude.go:99</code> <code>"--allowedTools", claudeToolName</code></a> <a class="src" href="../../../internal/agent/codex.go#L22"><code>internal/agent/codex.go:22</code> <code>mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode</code></a></p></div></li>
+      <li data-lit="d"><button class="step-h">The daemon checks its limits</button><div class="step-d"><p>Is the caller a top-level session, not a worker? Is it under the maximum worker count? Is that harness supported and installed here? Can the worker's permissions be established as within the parent's, for this pairing of harnesses? If not, the parent gets <code>refused</code> with the reason at once. The daemon doesn't queue the task, or choose another plan.</p></div></li>
+      <li data-lit="d,worker,gw,link"><button class="step-h">The worker starts</button><div class="step-d"><p>The daemon registers a session such as <code>worker-7@a</code> with the gateway, records it, and starts the harness with its task. If the gateway can't be reached, it refuses instead, because a worker nobody can message and the ledger can't see is worse than none.</p></div></li>
+      <li data-lit="worker"><button class="step-h">The worker runs</button><div class="step-d"><p>The parent can carry on with something else. You can attach to the worker to watch it. A prompt shows <code>needs_approval</code>, and it waits for you. It can't start a worker of its own.</p></div></li>
+      <li data-lit="worker,link,gw,parent"><button class="step-h">The worker reports back</button><div class="step-d"><p>It sends its result as an ordinary message to its owner, through the gateway, so it's in the ledger. It also reports <code>completed</code> or <code>failed</code>, and its process ending records the final outcome.</p></div></li>
+      <li data-lit="parent"><button class="step-h">The parent reviews</button><div class="step-d"><p><code>completed</code> is the worker's own claim. The parent reads the result and the work, and decides whether to integrate it. The daemon has no opinion.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np3" aria-labelledby="n3">
+    <h3>Two sessions want workers at the same time</h3>
+    <div class="topo five" id="m3">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m3"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="parent,par2,d"><button class="step-h">Both ask one daemon</button><div class="step-d"><p><code>claude@a</code> and <code>codex@a</code> each ask for workers. Suppose <code>RTK_MAX_WORKERS</code> is 4, the proposed default, and three are running across the whole host.</p></div></li>
+      <li data-lit="d,worker"><button class="step-h">The first request gets the last place</button><div class="step-d"><p>The daemon handles admissions one at a time, so the count can't be overrun by two arriving together.</p></div></li>
+      <li data-lit="d,par2"><button class="step-h">The second is refused</button><div class="step-d"><p><code>codex@a</code> gets <code>refused</code>, reason capacity. It decides for itself: do the work itself, wait and ask again, or tell you. <b>There's no queue,</b> so no task starts later on a session that has moved on.</p></div></li>
+      <li data-lit="parent,par2"><button class="step-h">Sharing a directory isn't solved yet</button><div class="step-d"><p>Two workers may still collide in one directory. <span class="tag t-user">USER</span> "Do not decide on worktrees yet." This has to be settled before workers are built, because a worker has to start somewhere.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np4" aria-labelledby="n4">
+    <h3>A parent on one machine asks for a worker on another</h3>
+    <p class="prose"><b>Deferred, and not part of the current design.</b> <span class="tag t-user">USER</span> "Remote dispatch, will come back to it later". This shows how it could fit ADR-0002 when you return to it.</p>
+    <div class="topo five" id="m4">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m4"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="parent,d,link,gw"><button class="step-h">The request goes to the gateway</button><div class="step-d"><p>It's stored in the ledger first, with a dispatch ID, as a message is. The gateway routes it, and starts nothing itself.</p></div></li>
+      <li data-lit="gw"><button class="step-h">Target unreachable: it fails now</button><div class="step-d"><p>If host B isn't connected, the parent gets <code>destination_unreachable</code> straight away. <b>The request isn't held for when B returns.</b> This is the ADR-0002 rule, unchanged.</p></div></li>
+      <li data-lit="gw,remote"><button class="step-h">Target connected: its daemon decides</button><div class="step-d"><p>Host B's daemon applies its own opt-in, limits and worktree check. It may refuse. Remote dispatch is off unless you've turned it on for that machine.</p></div></li>
+      <li data-lit="remote,rworker"><button class="step-h">It starts, or the answer is lost</button><div class="step-d"><p>Normally the parent gets the worker's address. If no answer arrives in time, the result is uncertain: the worker may be running. The parent looks up the dispatch ID. If it does send the same dispatch again, the same ID can't start a second worker. A new dispatch ID could.</p></div></li>
+      <li data-lit="rworker,gw,link,parent"><button class="step-h">The result comes back as a message</button><div class="step-d"><p>From <code>worker-2@b</code> to its owner. If the parent's host is now away, that send fails immediately, and the result stays readable at host B and in the gateway's ledger. It's never delivered later.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np6" aria-labelledby="n6">
+    <h3>A window closing isn't the same as its session ending</h3>
+    <div class="topo five" id="m6">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m6"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="parent,worker"><button class="step-h">A parent has a worker running</button><div class="step-d"><p><code>claude@a</code> owns <code>worker-7@a</code>, and window 1 shows the parent.</p></div></li>
+      <li data-lit="win1,parent,worker"><button class="step-h">You close the window: nothing stops</button><div class="step-d"><p>The parent's process is still running, so its session hasn't ended. The worker carries on, and reports to its parent as usual.</p></div></li>
+      <li data-lit="parent,d"><button class="step-h">Later, the parent's harness exits</button><div class="step-d"><p>You quit Claude, or it crashes. The daemon sees the process end, and ends that session at the gateway. Which of these it was doesn't matter.</p></div></li>
+      <li data-lit="d,worker"><button class="step-h">The daemon stops its workers</button><div class="step-d"><p><span class="tag t-user">USER</span> "If owner ends, stop workers too". It sends the same signals as today's shutdown, and records <code>cancelled</code>, reason owner ended. If a worker had already finished, its own outcome stands.</p></div></li>
+      <li data-lit="d,worker"><button class="step-h">What's left behind</button><div class="step-d"><p>Partial work stays in place, with nothing undone. A tool the worker moved to another process group may outlive the stop. The record shows the task and where it ran, for you to inspect.</p></div></li>
+      <li data-lit="gw"><button class="step-h">Nothing moves to a new session</button><div class="step-d"><p>A new parent is a new session with a new ID. It doesn't inherit the workers or their results.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np5" aria-labelledby="n5">
+    <h3 id="s-crash">The daemon crashes while a worker is running</h3>
+    <div class="topo five" id="m5">
+      <div class="host"><p class="host-l">Windows on host A: they come and go</p>
+        <div class="node" data-k="win1">Window 1<small>holds input</small></div>
+        <div class="node" data-k="win2">Window 2<small>viewer</small></div></div>
+      <div class="mid"><div class="wire" data-k="ipc">keys</div><div class="wire rev" data-k="ipc">frames</div><p class="mid-l">local socket</p></div>
+      <div class="host"><p class="host-l">Host A: stays running</p>
+        <div class="node" data-k="d">rtk daemon<small>PTYs, gates, MCP, records</small></div>
+        <div class="node claude" data-k="parent">claude@a<small>parent session</small></div>
+        <div class="node codex" data-k="par2">codex@a<small>parent session</small></div>
+        <div class="node" data-k="worker">worker-7@a<small>worker</small></div></div>
+      <div class="mid"><div class="wire" data-k="link">send</div><div class="wire rev" data-k="link">offer</div><p class="mid-l">dial-out stream</p></div>
+      <div style="display:grid;gap:10px">
+        <div class="host hub"><p class="host-l">Gateway</p><div class="node" data-k="gw">Directory, routing, ledger</div></div>
+        <div class="host"><p class="host-l">Host B: stays running</p><div class="node" data-k="remote">rtk daemon</div><div class="node" data-k="rworker">worker-2@b<small>worker</small></div></div>
+      </div>
+    </div>
+    <div data-stepper data-map="m5"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="d"><button class="step-h">The daemon dies</button><div class="step-d"><p>It holds the controlling side of each PTY, so those close with it. Windows lose their connection and say so.</p></div></li>
+      <li data-lit="parent,worker"><button class="step-h">The agents probably end, but not certainly</button><div class="step-d"><p>A process normally gets a hangup when its terminal goes away. <span class="tag t-unv">UNVERIFIED</span> How each harness responds hasn't been checked. Tools in another process group may keep running, as the current code already notes. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/pane/doc.go#L47"><code>internal/pane/doc.go:47</code> <code>in another process group, may outlive it</code></a></p></div></li>
+      <li data-lit="gw"><button class="step-h">The gateway notices</button><div class="step-d"><p>Heartbeats stop. For up to about 15 seconds a send may end <code>delivery_uncertain</code>, and after that <code>destination_unreachable</code>, as in ADR-0002.</p></div></li>
+      <li data-lit="d"><button class="step-h">The daemon starts again</button><div class="step-d"><p>Recovery closes the old instance. Messages left unfinished become <code>interrupted</code>, and are never pasted again, as today. Running workers become <code>lost</code>. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/store/recover.go#L83"><code>internal/store/recover.go:83</code> <code>UPDATE messages SET state='interrupted'</code></a></p></div></li>
+      <li data-lit="d,gw"><button class="step-h">Nothing resumes by itself</button><div class="step-d"><p>The old sessions are over. Any new session gets a new ID, and old messages don't go to it. Tasks aren't rerun, because the first attempt may have changed files or pushed something. Its directory may contain partial work.</p></div></li>
+      <li data-lit="win1,d"><button class="step-h">You decide</button><div class="step-d"><p>The daemon shows what was lost, with its task and where it ran. You, or a new parent you've started, inspect that and choose what to do.</p></div></li>
+    </ol></div>
+  </div>
+</div>
+
+<h2 id="alternatives">9. The alternative: keep workers under the foreground runtime</h2>
+<p class="prose"><b>You chose the daemon.</b> This comparison is what that choice was weighed against. <span class="tag t-user">USER</span> "Yes, adopt the daemon".</p>
+<p class="prose"><b>This option would work,</b> and it's smaller today. A foreground <code>rtk runtime</code> could start workers as extra panes. The argument for the daemon is about lifetime and later migration, not possibility. <span class="tag t-arch">PROPOSAL</span></p>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Workers under the foreground runtime</th><th>Daemon on each host</th><th>Workers started by the gateway</th></tr>
+  <tr><th>Size of first step</th><td><b>Smallest</b></td><td>Large: split the process first</td><td>Large</td></tr>
+  <tr><th>Close the window</th><td>All workers stop, or the window can't be closed while they run</td><td><b>Workers carry on</b></td><td>Needs an agent on each host anyway</td></tr>
+  <tr><th>Parent disconnects</th><td>Same process, so a TUI crash takes everything</td><td><b>Tracked</b></td><td>Tracked centrally, but only at a distance</td></tr>
+  <tr><th>Limits across sessions</th><td>One process per terminal, and today only one per machine</td><td><b>One place</b></td><td>Possible, but it can't see local load directly</td></tr>
+  <tr><th>Remote dispatch</th><td>Only if someone left a runtime open there</td><td><b>Always something to receive it</b></td><td>Yes</td></tr>
+  <tr><th>New service to run</th><td><b>None</b></td><td>One per host</td><td>Gateway becomes a process starter</td></tr>
+  <tr><th>Later migration</th><td>Worker IDs, ownership and lifetimes would be defined around one window, then moved</td><td>None for this reason</td><td>Conflicts with ADR-0002</td></tr>
+  <tr><th>Fit with ADR-0002</th><td>Fits</td><td>Fits, with the changes in <a href="#kept">section 4</a></td><td><b>Breaks it:</b> the gateway must not reach into a host's agents</td></tr>
+</table></div>
+
+<h2 id="truth">10. Costs and truth boundaries</h2>
+<div class="note"><p><b>A daemon crash doesn't preserve your agents.</b> The daemon makes agents independent of the <em>window</em>, not of the daemon. Moving the processes into a service moves the single point of failure. It doesn't remove it.</p></div>
+<div data-tabs>
+  <div role="tablist" aria-label="Costs">
+    <button role="tab" id="c1" aria-controls="cp1">Security</button>
+    <button role="tab" id="c2" aria-controls="cp2">Running a service</button>
+    <button role="tab" id="c3" aria-controls="cp3">Unattended agents</button>
+    <button role="tab" id="c4" aria-controls="cp4">Reconnect and storage</button>
+    <button role="tab" id="c5" aria-controls="cp5">What stays the same</button>
+  </div>
+  <div role="tabpanel" id="cp1" aria-labelledby="c1">
+    <h3>New power means new ways to misuse it</h3>
+    <ul class="prose">
+      <li><b>The local socket is the main new risk.</b> Whatever a window can do, anything running as you could do if it reaches that socket. That includes an agent with shell access, which could take input on another session and <b>answer its permission prompt.</b> That isn't possible through <code>rtk</code> today, because no such socket exists. File permissions keep out other users, but not your own agents. <span class="tag t-unv">OPEN</span> Hardening could include refusing connections from the daemon's own harness process trees and keeping risky actions out of the socket. Neither would be a real security boundary against an agent running as you.</li>
+      <li><b>If remote dispatch is built later,</b> it raises the stakes of a compromised gateway. ADR-0002 accepts that one could inject prompts. With dispatch it could also start processes on a host. A list of allowed source hosts doesn't help here, because the gateway is what vouches for the source. So <b>the real protection is the host's own opt-in, off by default.</b> <span class="tag t-arch">PROPOSAL</span></li>
+      <li><b>The same would apply to plain LAN HTTP.</b> Anyone who can redirect that traffic could pose as the gateway. <span class="tag t-arch">PROPOSAL</span> Refuse remote dispatch on a plain HTTP pairing, with no override.</li>
+      <li><b>A hostile message could now lead to workers,</b> not only persuade one agent, and because spawning needs no approval, no person sees it happen. The worker count limits how many start, and the parent's permissions limit what they can do. Those permissions are the real check, as they are today.</li>
+      <li><b>Not a boundary, as before:</b> agents run as you, and can read each other's files. Separate directories would prevent accidents, not intent.</li>
+    </ul>
+  </div>
+  <div role="tabpanel" id="cp2" aria-labelledby="c2">
+    <h3>A service has to be installed, started and upgraded</h3>
+    <ul class="prose">
+      <li><b>Installation:</b> something must start it. Running it by hand is simplest, but doesn't survive a reboot. <code>launchd</code> and <code>systemd --user</code> differ, and on a server a user service may need lingering enabled. <span class="tag t-unv">UNVERIFIED</span></li>
+      <li><b>Environment:</b> agents inherit the runtime's environment today. A service has a different <code>PATH</code> and environment, which could break finding or logging in to a harness. <span class="tag t-unv">UNVERIFIED</span> <span class="tag t-code">CODE</span> <span class="src"><code>internal/app/runtime.go:177</code> <code>env: os.Environ()</code></span></li>
+      <li><b>Working directory:</b> today it's wherever you ran the command, so each new session must now say where it runs. <span class="tag t-code">CODE</span> <span class="src"><code>internal/app/runtime.go:60</code> <code>dir, err := os.Getwd()</code></span></li>
+      <li><b>Upgrading:</b> restarting the daemon ends every agent on that machine, unless a handover is built. It should warn you, and it should refuse a window from a different build rather than guess.</li>
+      <li><b>Logs and a way to see what's wrong,</b> because errors no longer appear in your terminal.</li>
+    </ul>
+  </div>
+  <div role="tabpanel" id="cp3" aria-labelledby="c3">
+    <h3>Agents that nobody is watching</h3>
+    <ul class="prose">
+      <li><b>Stopping with the owner has a price:</b> when a parent crashes, its workers' unfinished work stops too, and is left partial. That's what you chose over leaving workers running with nobody responsible for them.</li>
+      <li><b>Cancelling is imperfect:</b> stopping a worker sends the same signals as today, to its process group. Tools it moved to another group may survive, and its partial work stays.</li>
+      <li><b>The loop budget doesn't fit:</b> today it resets only when a person presses Enter. Unattended workers would hit 20 and be held. It stays until you decide otherwise, because "no spending limits" doesn't remove it. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/router/deliver.go#L45"><code>internal/router/deliver.go:45</code> <code>r.used = 0</code></a> <span class="tag t-unv">OPEN</span></li>
+      <li><b>Draft holds can last:</b> if you detach with text half-typed, that session waits until you return.</li>
+      <li><b>Spending:</b> <span class="tag t-user">USER</span> "No spending limits at first". A worker limit bounds how many run, not what they cost, and a parent can start replacements as workers finish.</li>
+    </ul>
+  </div>
+  <div role="tabpanel" id="cp4" aria-labelledby="c4">
+    <h3>More states to recover from</h3>
+    <ul class="prose">
+      <li><b>Windows reconnecting:</b> a new client protocol, version checks, slow clients that must not hold up the daemon, and frames that are dropped rather than queued.</li>
+      <li><b>Storage:</b> worker and dispatch records need a schema change, and a backup, as ADR-0002's did.</li>
+      <li><b>Retention:</b> the 30-day clean-up runs only at startup, and a daemon rarely starts. It would need a timer. <span class="tag t-code">CODE</span> <span class="src"><code>internal/app/runtime.go:102</code> <code>st.Retain(ctx, now.Add(-retention))</code></span></li>
+      <li><b>Recovery:</b> today's recovery assumes the whole run has ended, which stays true only while agents can't outlive the daemon. <a href="#decisions">Crash survival</a> would change that assumption.</li>
+    </ul>
+  </div>
+  <div role="tabpanel" id="cp5" aria-labelledby="c5">
+    <h3>What a daemon must not quietly change</h3>
+    <ul class="prose">
+      <li><b>No replay.</b> Because a daemon is always running, it's tempting to hold messages for a session or a host. That would reverse a decision you made. <span class="tag t-user">USER</span> "If other host is unreachable, fail immediately."</li>
+      <li><b>No dispatch queue,</b> for the same reason. A task doesn't start later without a fresh request.</li>
+      <li><b>No inferred success.</b> <code>accepted</code> still means only that the harness took the input, and <code>completed</code> is only the worker's claim.</li>
+      <li><b>No automatic retries</b> of messages or tasks.</li>
+      <li><b>Plain <code>rtk</code></b> stays local only. <span class="tag t-user">USER</span> It doesn't use the daemon or the gateway.</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="decisions">11. Decisions</h2>
+<p class="prose">Your answers of 2026-11-06, in your words, including one given later while working through the open questions. <b>They settle the design.</b> Building was authorized separately, for the daemon transition. Where you chose differently from the earlier recommendation, it's noted, so that the reasoning stays on record.</p>
+<div class="table-wrap"><table>
+  <tr><th>Your words</th><th>What it means here</th><th>What it doesn't mean</th></tr>
+  <tr><td><span class="tag t-user">USER</span> "Yes, adopt the daemon"</td><td>The daemon is the direction, ahead of workers</td><td>That it's built. <span class="tag t-user">USER</span> "Begin the implementation for daemon" authorized the transition. Worker features aren't part of that</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "A workers permissions will always be a subset of the parents permissions. Can be less, equal, but never more than the parent."</td><td>A worker's permissions are at or below its parent's effective permissions, across harnesses too</td><td>That <code>rtk</code> can prove this today. See <a href="#permissions">section 7a</a></td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Yes a parent should be able to spawn without asking"</td><td>No approval for each spawn. <small>Earlier recommendation: don't pre-approve at first</small></td><td>Raising permissions, answering other prompts, or nested spawning</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "A parent can decide what type of harness to launch. E.g. A claude code parent can launch a codex worker or a pi worker"</td><td>The parent chooses the worker's harness, and may choose a different one from its own</td><td>A choice of model or provider. That a harness is installed, logged in or supported. An exception to the permission ceiling</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Workers cannot start workers"</td><td>One level deep</td><td>That a harness's own subagents or a shell are blocked</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "No spending limits at first"</td><td>No cost or token limits in the first version</td><td>Removing the loop budget or ruling out time limits. Those are still open, below</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Maximum worker count, have it set by an environment variable, with a default value"</td><td>A count limit, set by environment variable. See the name and default below. <small>CPU and memory thresholds aren't part of this</small></td><td>A queue or scheduler. At the limit, the request is refused</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Do not decide on worktrees yet."</td><td>Undecided on purpose</td><td>That it can stay undecided once workers are being built</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "If owner ends, stop workers too"</td><td>When the owner's session ends, its workers are stopped. <small>Earlier recommendation: keep them running</small></td><td>Stopping workers when a window closes or SSH drops</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Remote dispatch, will come back to it later"</td><td>Deferred. Nothing about it is included</td><td>Rejected. The recommendations in <a href="#truth">section 10</a> wait for your return to it</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Starting the daemon will be an explicit command first"</td><td>You run <code>rtk daemon</code> yourself</td><td>A service setup, which can come later</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Command names wise, go with the recommendation"</td><td>The names below</td><td></td></tr>
+  <tr><td><span class="tag t-user">USER</span> "plain rtk is local only, yes"</td><td>Plain <code>rtk</code> uses neither daemon nor gateway</td><td></td></tr>
+</table></div>
+<h3 id="commands">Commands and the worker limit</h3>
+<div class="table-wrap"><table>
+  <tr><th>Form</th><th>What it does</th><th>Source</th></tr>
+  <tr><td><code>rtk daemon</code></td><td>Starts this machine's daemon</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td><code>rtk attach</code></td><td>Opens a window on the running daemon</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td><code>rtk runtime</code></td><td>An alias for <code>rtk attach</code> for a while. With no daemon running, it says so and exits, and doesn't start one, because starting is explicit. <span class="tag t-arch">BUILT, UNTESTED</span></td><td><span class="tag t-user">USER</span> alias</td></tr>
+  <tr><td><code>rtk</code></td><td>Local only, unchanged</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td><code>rtk gateway ...</code>, <code>rtk runtime pair ...</code></td><td>Unchanged. <span class="tag t-arch">PROPOSAL</span> The daemon uses the saved pairing</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td><code>RTK_MAX_WORKERS</code></td><td>Maximum live workers on this host, across all its sessions. Read when the daemon starts, so changing it needs a restart. Default <b>4</b>. <code>0</code> turns spawning off. Anything that isn't a whole number stops the daemon from starting, with a clear error</td><td><span class="tag t-user">USER</span> a variable with a default. <b><span class="tag t-arch">PROPOSAL</span> its name, the value 4 and the host-wide scope are the architect's.</b> You didn't pick a number, and 4 is a starting guess, not a measurement</td></tr>
+</table></div>
+<h3 id="open">Still open</h3>
+<p class="prose">These don't reopen your answers. The first three are engineering problems in carrying out what you chose, and the policy itself isn't in question. The rest are what your answers leave to be settled. <b>The first five must be settled before workers are built.</b> The last two, and the process strategy below, had to be settled before the daemon could be built. <b>The user asked the team to use reasonable documented engineering choices, so the daemon follows the recommendations below.</b> They're marked, and the user can still change them.</p>
+<div class="table-wrap"><table>
+  <tr><th>Question</th><th>Recommendation</th><th>Why it matters</th></tr>
+  <tr><td><b>How to carry the parent's ceiling to a worker's harness</b> <span class="tag t-unv">OPEN</span></td><td>Engineering, not policy. Work out the parent's effective permissions, and for each parent and worker pairing write a reviewed mapping that narrows when in doubt. A pairing without one is refused explicitly, and never given broader permissions or a different harness</td><td>Without this, the ceiling is only a stated intent, and your cross-harness choice can't be used</td></tr>
+  <tr><td><b>What Pi needs</b> <span class="tag t-unv">OPEN</span></td><td>Engineering. An adapter for launching it, connecting it to the MCP server, and feeding the gate from hooks or an equivalent, plus its permission mapping. Until then, a request for a Pi worker is refused as unsupported</td><td><code>rtk</code>'s delivery gate relies on harness hooks. Whether Pi offers these hasn't been checked <span class="tag t-unv">UNVERIFIED</span></td></tr>
+  <tr><td><b>How to keep native prompt approvals under the ceiling</b> <span class="tag t-unv">OPEN</span></td><td>An engineering question, not a policy one: the ceiling already says no. Look for a way to prevent these, such as a harness mode that denies rather than asks, or to detect them through harness hooks, and refuse any configuration that can do neither. <span class="tag t-unv">UNVERIFIED</span> Whether either harness supports this hasn't been checked</td><td>Until this is solved, a worker that could prompt can't honestly be said to stay under its parent</td></tr>
+  <tr><td><b>Loop budget and time limits</b> <span class="tag t-unv">OPEN</span></td><td>Count the budget per session tree, with a person able to reset it, and give each worker a time limit. Until you decide, the existing budget stays as it is</td><td>Today's budget would stall unattended work at 20 messages</td></tr>
+  <tr><td><b>Worktrees</b> <span class="tag t-unv">OPEN</span></td><td>Not offered, as you asked. You said not to decide yet</td><td>A worker needs a directory before workers can be built, and its project settings depend on that directory</td></tr>
+  <tr><td><b>Who can reach the local socket</b> <span class="tag t-arch">BUILT AS RECOMMENDED</span></td><td>Your user only, checked with OS peer credentials. Connections from the daemon's own harness process trees are refused as a best effort, which a double-forking process gets past. It stays a known limit</td><td>An agent could otherwise answer another's prompt or start workers. See <a href="#truth">section 10</a></td></tr>
+  <tr><td><b>Starting top-level sessions</b> <span class="tag t-arch">BUILT AS RECOMMENDED</span></td><td><code>rtk attach --agents claude,codex</code> starts any missing sessions, in the directory you ran it from</td><td>Today's <code>rtk runtime --agents</code> does this as part of owning agents</td></tr>
+</table></div>
+<h3>How the daemon holds its processes, and whether agents survive a crash</h3>
+<p class="prose">Your answers didn't cover this, and these are one decision. <span class="tag t-arch">BUILT AS RECOMMENDED</span> <b>The daemon uses A,</b> because it reuses today's code, and it's honest about what a crash means. Move to B only if crashes turn out to matter in practice. It's still yours to change.</p>
+<div data-tabs>
+  <div role="tablist" aria-label="Process strategies">
+    <button role="tab" id="p1" aria-controls="pp1">A: PTYs in the daemon</button>
+    <button role="tab" id="p2" aria-controls="pp2">B: A small holder per session</button>
+    <button role="tab" id="p3" aria-controls="pp3">C: Use tmux</button>
+  </div>
+  <div role="tabpanel" id="pp1" aria-labelledby="p1"><p><b>How:</b> today's <code>pane</code> code moves into the daemon, largely as it is. <b>Crash:</b> agents end or become unknown. <b>For:</b> the smallest change, with one process to reason about. <b>Against:</b> a daemon bug or an upgrade stops everything on the machine.</p></div>
+  <div role="tabpanel" id="pp2" aria-labelledby="p2"><p><b>How:</b> one tiny process per session holds the PTY, and the daemon reconnects to it. <b>Crash:</b> agents could survive. <b>For:</b> upgrades and crashes needn't stop agents. <b>Against:</b> a lot more to build, including re-adopting sessions, hooks and tokens. Messages being written during a crash stay uncertain. Today's recovery rules would need redesigning.</p></div>
+  <div role="tabpanel" id="pp3" aria-labelledby="p3"><p><b>How:</b> sessions live in tmux, and the daemon drives it. <b>Crash:</b> agents survive. <b>For:</b> proven and small. <b>Against:</b> the user chose embedded panes in Bubble Tea over tmux, in the <a href="../../design/terminal-approach-proposal.html">earlier proposal</a>, and this adds an external dependency, so it would reopen that choice.</p></div>
+</div>
+
+<h2 id="changes">12. What changes in the code, and in what order</h2>
+<p class="prose small muted">The first three steps below are the authorized daemon transition, and they're now written. The later ones aren't authorized. The <a href="../../implementation/daemon-contract.md">contract</a> has the detail, and the <a href="../../../README.md#the-daemon-and-its-windows">README</a> has the commands, keys and test steps. "Today" is commit <code>65aa2bf</code>.</p>
+<h3 id="built">Written so far, and what isn't</h3>
+<div class="two">
+  <div class="card"><h3>Written, never run <span class="tag t-arch">BUILT, UNTESTED</span></h3>
+    <ul>
+      <li><code>rtk daemon</code>, its status and stop forms, and <code>rtk attach</code>, with <code>rtk runtime</code> as an alias. Plain <code>rtk</code> stays local.</li>
+      <li>The daemon owns PTYs, gates, MCP and hooks, the store and the gateway link.</li>
+      <li>Several windows, with one input holder per session.</li>
+      <li>Gateway protocol version 2, which starts and ends sessions individually, with no schema change. All machines upgrade together.</li>
+    </ul>
+  </div>
+  <div class="card"><h3>Not written, or proposed only</h3>
+    <ul>
+      <li><b>All worker features:</b> the spawn tool, worker records, <code>RTK_MAX_WORKERS</code>, permission mappings and a Pi adapter.</li>
+      <li>Worktrees and remote dispatch.</li>
+      <li>Crash survival, resume, and <code>launchd</code> or <code>systemd</code> setup.</li>
+    </ul>
+  </div>
+</div>
+<p class="prose"><b>Limits found while building.</b> The promise is only that a closed window or a dropped SSH connection leaves agents running, because the daemon detaches itself but isn't a service, and whether it survives a macOS logout is unverified. Agents get the environment of the terminal that started the daemon. The daemon needs a pairing, so running without a gateway is still plain <code>rtk</code>'s job. A window shows the sessions that exist when it attaches. A viewer's first Ctrl+C detaches at once. A session's directory has one fixed path per name, because the path is part of the hook command, and Codex asks for trust again when that command changes. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/agent/hooks.go#L36"><code>internal/agent/hooks.go:36</code> <code>func HookCommand</code></a></p>
+<h3>Then and now</h3>
+<div class="table-wrap"><table>
+  <tr><th>Area</th><th>Today</th><th>Would become</th></tr>
+  <tr><td>Process owner</td><td><code>app</code> runs the TUI and stops agents when it ends. <span class="src"><code>internal/app/runtime.go:188</code> <code>runUI(ctx, tea.NewProgram</code></span></td><td>A daemon entry point without Bubble Tea, and a separate client</td></tr>
+  <tr><td>TUI</td><td>Reads panes directly. <a class="src" href="../../../internal/tui/model.go#L19"><code>internal/tui/model.go:19</code> <code>App owns the processes</code></a></td><td>Reads frames and status over a socket. The largest single change</td></tr>
+  <tr><td>Agents</td><td>Fixed at launch, with one working directory. <span class="src"><code>internal/app/runtime.go:204</code> <code>func startRuntimeAgents</code></span></td><td>Started and stopped at any time, each with its own directory</td></tr>
+  <tr><td>MCP server</td><td>One tool, and tokens added per agent. <a class="src" href="../../../internal/server/mcp.go#L73"><code>internal/server/mcp.go:73</code> <code>mcp.AddTool(srv</code></a> <span class="src"><code>internal/app/runtime.go:216</code> <code>srv.AddConnectedAgent</code></span></td><td>Stays on loopback. Gains worker tools, and removes tokens as sessions end</td></tr>
+  <tr><td>Peer list</td><td>Taken at launch, already described to agents as possibly stale. <span class="src"><code>internal/app/runtime.go:215</code> <code>peersFor(directory</code></span></td><td>Same, with workers coming and going far more often. It may need a lookup</td></tr>
+  <tr><td>Gateway sessions</td><td>Registered and ended for a whole host. <a class="src" href="../../../internal/gateway/sessions.go#L87"><code>internal/gateway/sessions.go:87</code> <code>one host has one live run</code></a></td><td>Registered and ended per session, in protocol version 2</td></tr>
+  <tr><td>Gateway stream</td><td>One per host. <a class="src" href="../../../internal/gateway/hub.go#L68"><code>internal/gateway/hub.go:68</code> <code>attach installs a stream for a host</code></a></td><td>Unchanged, and now held by the daemon</td></tr>
+  <tr><td>Database</td><td>Held by the one process, under a lock. <a class="src" href="../../../internal/store/store.go#L77"><code>internal/store/store.go:77</code> <code>acquireLock(filepath.Join</code></a></td><td>Held by the daemon. Windows never open it</td></tr>
+  <tr><td>Session files</td><td>One directory, removed on exit. <span class="src"><code>internal/app/runtime.go:109</code> <code>os.RemoveAll(sessionDir)</code></span></td><td>One fixed path per session name, removed as each one ends</td></tr>
+</table></div>
+<div data-stepper><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+<ol class="steps">
+  <li><button class="step-h">The split, with no new features (written)</button><div class="step-d"><p>A daemon runs today's two agents, and one window attaches. If you close the window, the agents carry on. This alone delivers the first benefit, and it's the point to stop and test.</p></div></li>
+  <li><button class="step-h">Several windows (written)</button><div class="step-d"><p>Input ownership, viewers and reconnecting.</p></div></li>
+  <li><button class="step-h">Sessions per host (written)</button><div class="step-d"><p>Start and end sessions individually, with the gateway protocol change, and with a choice of directory.</p></div></li>
+  <li><button class="step-h">Local workers</button><div class="step-d"><p>Dispatch records, owner and outcomes, stopping workers with their owner, the tool, and the worker count limit. This needs the permissions mechanism, the budget and the worktree decision first. Each harness pairing becomes available once its mapping is reviewed, so they needn't all arrive together.</p></div></li>
+  <li><button class="step-h">Remote dispatch, deferred</button><div class="step-d"><p>Not planned. You'll come back to it. If built, it comes last, because it has the highest risk, and it depends on all of the above.</p></div></li>
+</ol></div>
+
+<h2 id="sources">13. Sources</h2>
+<ul class="prose small">
+  <li><b>Code:</b> the files cited above, at commit <code>65aa2bf</code>, and the daemon candidate as committed after it. Read, not run.</li>
+  <li><b>Decisions:</b> <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, <a href="../0001-mcp-agent-messaging/index.html">ADR-0001</a>, the <a href="../../implementation/cross-machine-contract.md">cross-machine contract</a>, the <a href="../../design/ground-rules.md">ground rules</a>.</li>
+  <li><b>Benefits, direction and decisions:</b> the user's request and answers, relayed by the operator on 2026-11-06. Only the words in quotes are the user's own.</li>
+  <li><b>Not consulted:</b> vendor documentation for <code>launchd</code>, <code>systemd</code> or harness resume features. Claims about them are marked <span class="tag t-unv">UNVERIFIED</span>.</li>
+</ul>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+  (function setupEvents() {
+    var sel = document.getElementById('ev');
+    var out = document.getElementById('ev-out');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#ev-table tr')).slice(1);
+    var heads = Array.prototype.slice.call(document.querySelectorAll('#ev-table th'));
+    rows.forEach(function (r, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = r.cells[0].textContent;
+      sel.appendChild(o);
+    });
+    function show() {
+      var n = Number(sel.value);
+      out.textContent = '';
+      rows.forEach(function (r, i) { r.classList.toggle('lit', i === n); });
+      for (var c = 1; c < rows[n].cells.length; c++) {
+        var line = document.createElement('span');
+        var b = document.createElement('b');
+        b.textContent = heads[c].textContent + ': ';
+        line.appendChild(b);
+        line.appendChild(document.createTextNode(rows[n].cells[c].textContent));
+        out.appendChild(line);
+      }
+    }
+    sel.addEventListener('change', show);
+    show();
+  }());
+}());
+</script>
+</body>
+</html>
