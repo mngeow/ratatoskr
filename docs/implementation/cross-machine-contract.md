@@ -2,7 +2,7 @@
 
 Owner: architect. Design source: [ADR-0002](../adr/0002-cross-machine-messaging/index.html). Authorized by the user on 2026-11-05: "Ok please begin implementation now, remember to update the main readme with testing instructions".
 
-This is the contract the current candidate was built to. **That candidate is written and compile-checked, but has never been run.** Engineers own the code structure. If something here is wrong or doesn't fit the code, raise it through lead to architect instead of quietly diverging.
+This is the contract the current code was built to, at commit `12417f5`. **The user reports successful testing by hand on 2026-11-06:** "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." The report doesn't confirm a setup, transport or failure case, and the team hasn't run anything. Engineers own the code structure. If something here is wrong or doesn't fit the code, raise it through lead to architect instead of quietly diverging.
 
 ## Rules
 
@@ -217,4 +217,4 @@ PTY streaming, attaching to a harness started separately, multi-user, public gat
 
 ## Done means
 
-Reviewed, integrated code that builds on darwin and linux, passes `gofmt` and `go vet`, has tests written but not run, and preserves local mode by review. A report separates what's implemented from what's untested, and gives architect the actual commands and flags, so that the README can be finalized. **Nothing is verified until the user runs it.**
+Reviewed, integrated code that builds on darwin and linux, passes `gofmt` and `go vet`, has tests written but not run, and preserves local mode by review. A report separates what's implemented from what's untested, and gives architect the actual commands and flags, so that the README can be finalized. The user's report of 2026-11-06 is the only run recorded so far.

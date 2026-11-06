@@ -252,7 +252,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <h1>How agents on different machines should message each other</h1>
   <p class="prose">The options for connecting Claude Code on a Mac to Codex on a server, what each one costs, and the choices that only the user can make.</p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Accepted for implementation, 2026-11-05. Direct LAN opt-ins added 2026-11-06. Written and compile-checked, never run.</b> <span class="tag t-user">USER</span> "Ok please begin implementation now, remember to update the main readme with testing instructions". The <a href="../../implementation/cross-machine-contract.md">implementation contract</a> sets defaults for the open items below, which the user can overrule.</dd></div>
+    <div><dt>Status</dt><dd><b>Accepted for implementation, 2026-11-05. Direct LAN opt-ins added 2026-11-06. The user reports successful testing by hand, 2026-11-06.</b> <span class="tag t-user">USER</span> "Ok please begin implementation now, remember to update the main readme with testing instructions". The <a href="../../implementation/cross-machine-contract.md">implementation contract</a> sets defaults for the open items below, which the user can overrule.</dd></div>
     <div><dt>Written</dt><dd>2026-11-05, by the architect, at the user's request. Updated the same day as the user made decisions.</dd></div>
     <div><dt>Source inspected</dt><dd>Commit <code>79ee72a</code>. Line numbers refer to that commit.</dd></div>
     <div><dt>Tests</dt><dd><b>Nothing here has been run.</b> No link, tailnet or SSH connection was tried (<a href="../../design/ground-rules.md">GR-3</a>).</dd></div>
@@ -270,8 +270,12 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 
 <h2 id="summary">1. Where this stands</h2>
 <div class="note">
-  <p><b>The selected direction:</b> agents message through a central gateway on your tailnet, and a send fails straight away if the other host can't be reached. Each machine's runtime still decides when a message is safe to paste. The user authorized building it on 2026-11-05. It's now written, but it has never been run, so <b>this page describes the design, not proven software.</b> The <a href="../../../README.md#cross-machine-messaging">README</a> has the commands and test steps.</p>
+  <p><b>The selected direction:</b> agents message through a central gateway on your tailnet, and a send fails straight away if the other host can't be reached. Each machine's runtime still decides when a message is safe to paste. The user authorized building it on 2026-11-05. It's now built, and <b>the user reports that it works in their own testing.</b> The <a href="../../../README.md#cross-machine-messaging">README</a> has the commands and test steps.</p>
 </div>
+<div class="table-wrap"><table>
+  <tr><th>Evidence, 2026-11-06</th><th>What it doesn't establish</th></tr>
+  <tr><td><span class="tag t-user">USER</span> "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." This is the user's own testing by hand. The team ran nothing.</td><td>Which setup, platforms or transport were used. Whether each <a href="#failures">failure result</a>, a certificate mismatch or a machine really sleeping was tried. That any automated test passes: none has run. So the failure results and timeouts below remain design until someone confirms them.</td></tr>
+</table></div>
 <div class="table-wrap"><table>
   <tr><th>The user's decision, 2026-11-05 unless dated</th><th>What it selects</th><th>What it doesn't mean</th></tr>
   <tr><td><span class="tag t-user">USER</span> "Central view of all messages required, yes."</td><td>Every Ratatoskr-routed message goes through the gateway in a connected deployment, including messages between two agents on one host. No hidden local bypass.</td><td>Visibility into reasoning, file access, other tools or channels outside Ratatoskr.</td></tr>
@@ -280,7 +284,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <tr><td><span class="tag t-user">USER</span> "If other host is unreachable, fail immediately."</td><td>No waiting for reconnect, no retry window and no store-and-forward delivery. No queued message is kept for a later session.</td><td>That an online agent never waits. A busy, drafting or approval-blocked agent on a reachable host still uses its local hold.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "Full message bodies please, I will work on optimising space storage later."</td><td>The gateway stores full bodies with routing and delivery details, for each request that reaches it.</td><td>A retention period or deletion policy. Those are undecided, and the hosts' local 30-day limit doesn't carry over.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "for this ADR, I think it is worthwhile to propose the runtime and gateway be different."</td><td>Gateway and runtime are proposed as separately deployable components.</td><td>A rule that they're always on separate machines or in separate OS processes.</td></tr>
-  <tr><td><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands"</td><td>Ratatoskr ships one Go binary, <code>rtk</code>, with separate gateway and runtime startup commands. The two can run on different machines. The intended forms are <code>rtk gateway</code> and <code>rtk runtime</code>.</td><td>That the commands have been proven to work. They've been written, but never run.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands"</td><td>Ratatoskr ships one Go binary, <code>rtk</code>, with separate gateway and runtime startup commands. The two can run on different machines. The intended forms are <code>rtk gateway</code> and <code>rtk runtime</code>.</td><td>That every command and failure case has been checked. See the evidence above for what the user's testing does and doesn't establish.</td></tr>
 </table></div>
 <div class="two">
   <div class="card does"><h3>What this gives you</h3>
@@ -477,7 +481,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <p class="prose"><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands". Install the same <code>rtk</code> on each machine, and the command decides its role:</p>
     <pre>rtk gateway    # intended form: directory, routing, ledger
 rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
-    <p class="prose"><b>Written since this record's inspected commit, and never run.</b> <span class="tag t-code">CODE</span> At that commit, <code>rtk</code> only started the two-agent TUI, or printed its version or help. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a> <a class="src" href="../../../cmd/rtk/main.go#L43"><code>cmd/rtk/main.go:43</code> <code>app.Run</code></a></p>
+    <p class="prose"><b>Written since this record's inspected commit.</b> The user has since reported successful testing by hand. <span class="tag t-code">CODE</span> At that commit, <code>rtk</code> only started the two-agent TUI, or printed its version or help. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a> <a class="src" href="../../../cmd/rtk/main.go#L43"><code>cmd/rtk/main.go:43</code> <code>app.Run</code></a></p>
     <p class="prose"><b>Drawbacks:</b> a gateway-only machine carries TUI and harness code it never runs. One binary reduces version mixes but doesn't remove them, because machines can still be upgraded at different times, so the version check stays necessary.</p>
     <p class="prose"><b>The comparison, kept as history:</b></p>
     <div class="table-wrap"><table>
@@ -855,7 +859,7 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
 </div>
 
 <h3 id="direct-lan">Direct LAN: two opt-ins, added 2026-11-06</h3>
-<p class="prose"><span class="tag t-user">USER</span> "Ok please add the opt-in option, add an additional opt-in to use only in http". Everything above assumes Tailscale carries the traffic and encrypts it. On a LAN nothing does that for you, so <b>allowing a LAN listener and giving up encryption are separate choices.</b> Written and compile-checked, never run.</p>
+<p class="prose"><span class="tag t-user">USER</span> "Ok please add the opt-in option, add an additional opt-in to use only in http". Everything above assumes Tailscale carries the traffic and encrypts it. On a LAN nothing does that for you, so <b>allowing a LAN listener and giving up encryption are separate choices.</b> The user's report of 2026-11-06 doesn't say whether either LAN mode was used, so this section isn't confirmed separately.</p>
 <div class="table-wrap"><table>
   <tr><th>Gateway command</th><th>Runtime pairs with</th><th>Transport</th></tr>
   <tr><td><code>--listen 100.x.y.z:7777</code> or loopback</td><td>No extra flag</td><td>Plain HTTP, as before. Encrypted only if that address really is Tailscale, which the address check can't prove. Both new flags are refused here.</td></tr>
@@ -882,7 +886,7 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
 <p class="prose"><b>Both modes</b> expose the port to every device on the LAN, including the unauthenticated <code>/v1/pair</code> route. A device can't do anything without pairing. <span class="tag t-unv">KNOWN GAP</span> A device can hold a connection open by sending a slow body to that route. It gains no access, and it isn't fixed. rtk configures no firewall. Public, link-local and unspecified addresses stay refused, so there's still no public gateway mode.</p>
 
 <h2 id="changes">9. What would change in the current code</h2>
-<p class="prose small muted">For the selected direction. "Today" is commit <code>79ee72a</code>. The work is under way, and the contract is the current detail.</p>
+<p class="prose small muted">For the selected direction. "Today" is commit <code>79ee72a</code>. This work has since been built, and the contract is the current detail.</p>
 <div class="table-wrap"><table>
   <tr><th>Area</th><th>Today</th><th>Proposed change</th></tr>
   <tr><td>Which agents start</td><td>Always Claude and Codex. <a class="src" href="../../../internal/app/app.go#L42"><code>internal/app/app.go:42</code> <code>"claude"</code></a></td><td>Choose per runtime, for example Claude only on the Mac.</td></tr>

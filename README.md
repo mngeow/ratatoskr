@@ -5,7 +5,7 @@
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
-> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is newly written and has never been run.
+> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is new, and the owner reports that it worked in their own testing on 2026-11-06.
 
 ## Why
 
@@ -133,12 +133,12 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 
 ### Known limitations
 
-- **Barely tested:** the project's owner checked mouse click focus and Ctrl+C by hand on macOS. No automated test has been run, and nothing has been verified on Linux or over SSH. The full list is in [outstanding issues](docs/implementation/outstanding-issues.md).
+- **Lightly tested:** the project's owner has checked mouse click focus, Ctrl+C, Codex's automatic startup and messaging in both directions by hand on macOS. No automated test has been run, and plain `rtk` hasn't been confirmed on Linux or over SSH. The full list is in [outstanding issues](docs/implementation/outstanding-issues.md).
 - **Embedded panes are the biggest risk.** They use a young terminal emulator (`x/vt` v0.1.0) that has no Kitty or CSI-u keyboard support, so harnesses see a legacy terminal. Colours, wide characters, redraw speed and modified keys may misbehave. Shift+Enter is mapped to a newline fallback.
 - **No scrollback in panes,** beyond what the harness itself redraws. Pane contents aren't saved.
 - **`/clear` or `/compact` may leave an agent needing F4** for the rest of that run, if those commands change the harness's session ID. Unverified.
 - **`rtk` can't see a harness's input box.** Any key except a plain Enter, and any click passed to the harness, counts as a draft, so messages can wait when nothing is typed. F4 delivers them, but it pastes after any text in the box and submits both.
-- **Messaging between the agents isn't working reliably yet.** In the one recorded attempt, messages reached Codex late and its reply never reached Claude. See [outstanding issues](docs/implementation/outstanding-issues.md).
+- **Messaging has only been checked by hand.** An early run on 2026-11-04 failed, with messages reaching Codex late and no reply reaching Claude. The owner reports that it worked in later runs on macOS. See [outstanding issues](docs/implementation/outstanding-issues.md).
 - **Pastes have limits.** A paste over 1 MiB is refused with a message. A slow paste can stop after 3 seconds with only part of it delivered.
 - **Pasting is how messages arrive,** so they look like user turns. The message frame says they came from a peer.
 - **No resume or resend.** Agent sessions end with `rtk` and a new run knows nothing about the last one. Unfinished messages are marked `interrupted` and never resent; read them in the log (F3) and pass them on yourself.
@@ -148,11 +148,11 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 ## Cross-machine messaging
 
 > [!WARNING]
-> **This has been written and compile-checked, but never run.** The team isn't allowed to run it, so your first run is its first test, and these instructions may need correcting. Plain `rtk` still has its own limits, described under [Setup](#setup).
+> **The project's owner tested this by hand on 2026-11-06, and reports:** "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." That's the only run so far, and the report doesn't say which setup, transport or failure cases it covered, so don't assume any particular one has been checked. No automated test has run, and the team hasn't run it. Plain `rtk` still has its own limits, described under [Setup](#setup).
 
 Claude Code and Codex can run on different machines and message each other through a central gateway. The gateway keeps every message that reaches it, with its full text, so you can read them in one place. [ADR-0002](docs/adr/0002-cross-machine-messaging/index.html) explains why it works this way.
 
-| Implemented, never run | Not implemented |
+| Implemented | Not implemented |
 | --- | --- |
 | `rtk gateway` and `rtk runtime`, pairing, routing, the message ledger | One window for several machines: each machine has its own terminal |
 | Immediate failure when a machine can't be reached | Retries, or holding messages for a machine that's away |
@@ -281,7 +281,7 @@ Nothing is resent automatically. If an agent sends again after an uncertain resu
 
 ### Test it
 
-Please run these in order, because each one relies on the one before. Tell the team what you see, especially anything that differs. **Expected results come from reading the code.**
+Please run these in order, because each one relies on the one before. Tell the team what you see, especially anything that differs. **Expected results come from reading the code,** not from a record of each check passing.
 
 **Before you start:** the first run of this build updates your existing message database, and an older `rtk` then refuses it. It leaves a backup beside the database, named `ratatoskr.db.bak-v1-<time>`. Keep your old binary and that backup if you want to be able to go back.
 
@@ -384,7 +384,7 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
-| [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. Written and compile-checked, never run | Accepted |
+| [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. The owner reports that it works in their testing on 2026-11-06 | Accepted |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 
