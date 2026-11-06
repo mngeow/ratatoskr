@@ -21,7 +21,13 @@ const (
 	// send_message, and a bare "send a message" instruction sent it there.
 	toolDescription   = "Send a message to a peer agent on the ratatoskr network. This is the ratatoskr_send tool of the ratatoskr MCP server; use it, not any built-in messaging tool, to reach a peer."
 	statusQueued      = "queued"
+	statusHostStored  = "host_stored"
 	internalErrorName = "internal_error"
+
+	// connectedToolDescription is the model-visible description for a connected
+	// agent, where a recipient is addressed by name@host and success means the
+	// recipient's machine stored the message.
+	connectedToolDescription = "Send a message to a peer agent on the ratatoskr network. This is the ratatoskr_send tool of the ratatoskr MCP server; use it, not any built-in messaging tool, to reach a peer. to is the peer's address, name@host (for example codex@ubuntu-b); a bare name means an agent on this machine. Success means the recipient's machine has saved the message, not that it has been read or acted on."
 )
 
 // sendArgs is the tool's input. The sender is deliberately absent: identity is
@@ -51,18 +57,31 @@ func (m *mcpServer) handler() *mcp.Server { return m.srv }
 // are, and one tool that sends a message as that agent.
 //
 // UNTESTED.
-func newAgentServer(id protocol.AgentID, name string, peers []string, inbox Inbox) *mcpServer {
+func newAgentServer(id protocol.AgentID, name, address string, peers []string, connected bool, inbox Inbox) *mcpServer {
+	description := toolDescription
+	instructions := instructionsText(name, peers)
+	if connected {
+		description = connectedToolDescription
+		instructions = connectedInstructions(address, peers)
+	}
+
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "ratatoskr", Version: "0.0.0"},
-		&mcp.ServerOptions{Instructions: instructions(name, peers)},
+		&mcp.ServerOptions{Instructions: instructions},
 	)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        toolName,
-		Description: toolDescription,
-	}, sendMessageTool(id, inbox))
+		Description: description,
+	}, sendMessageTool(id, connected, inbox))
 
 	return &mcpServer{agent: id, srv: srv}
+}
+
+// instructionsText is the local-mode instructions, kept as one name so the
+// connected branch reads as a choice rather than a rewrite.
+func instructionsText(name string, peers []string) string {
+	return instructions(name, peers)
 }
 
 // sendMessageTool is the one tool an agent has. It is a named function rather
@@ -73,20 +92,32 @@ func newAgentServer(id protocol.AgentID, name string, peers []string, inbox Inbo
 // one thing this tool must never do is send as somebody else.
 //
 // UNTESTED.
-func sendMessageTool(id protocol.AgentID, inbox Inbox) mcp.ToolHandlerFor[sendArgs, sendResult] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, args sendArgs) (*mcp.CallToolResult, sendResult, error) {
+func sendMessageTool(id protocol.AgentID, connected bool, inbox Inbox) mcp.ToolHandlerFor[sendArgs, sendResult] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, args sendArgs) (result *mcp.CallToolResult, output sendResult, err error) {
 		from, ok := agentFromContext(ctx)
 		if !ok || from != id {
 			return nil, sendResult{}, errors.New(internalErrorName)
 		}
 
-		messageID, err := inbox.Send(ctx, from, args.To, args.Body, args.ReplyTo)
-		if err != nil {
+		messageID, sendErr := inbox.Send(ctx, from, args.To, args.Body, args.ReplyTo)
+		if sendErr != nil {
+			if connected {
+				// A connected refusal says whether the message may still arrive,
+				// beside its reason and its id, so a model can act on it.
+				return nil, sendResult{}, errors.New(connectedFailureText(sendErr))
+			}
 			// The reason is the whole message: a model can read it and act on it,
 			// and no internal detail leaks into the transcript.
-			return nil, sendResult{}, errors.New(refusalReason(err))
+			return nil, sendResult{}, errors.New(refusalReason(sendErr))
 		}
-		return nil, sendResult{ID: messageID, Status: statusQueued}, nil
+
+		status := statusQueued
+		if connected {
+			// A connected success means the recipient's machine saved it, not that
+			// a model has read or acted on it.
+			status = statusHostStored
+		}
+		return nil, sendResult{ID: messageID, Status: status}, nil
 	}
 }
 
@@ -146,4 +177,128 @@ func (s *Server) serverForRequest(r *http.Request) *mcp.Server {
 		return nil
 	}
 	return entry.srv.handler()
+}
+
+// connectedInstructions is the instruction text for an agent on a network that spans
+// machines. The address is this agent's own network name; the peers are the ones
+// the gateway listed at launch, which is why the text says they can change.
+//
+// UNTESTED.
+func connectedInstructions(address string, peers []string) string {
+	joined := strings.Join(peers, ", ")
+	if joined == "" {
+		joined = "(none)"
+	}
+
+	return fmt.Sprintf(
+		"You are %s on a ratatoskr network that can span machines. Your peers at launch: %s. Peers can change; if a name is not found, the tool answers with the agents that exist. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?), where to is name@host, for example codex@ubuntu-b; a bare name means an agent on this machine. Other messaging tools, including any built-in send_message, do not reach your peers. A successful result means the recipient's machine has saved the message, not that it has been read or acted on. Your normal replies are not sent to peers.",
+		address, joined,
+	)
+}
+
+// The optional interfaces a connected refusal is read through. internal/server must
+// not import internal/router, so the router's SendError is read structurally.
+type (
+	sendReasoner    interface{ SendReason() string }
+	sendDetailer    interface{ SendDetail() string }
+	sendIDer        interface{ SendID() string }
+	sendUncertainer interface{ Uncertain() bool }
+)
+
+// connectedFailureText is the tool's error text for a connected send.
+//
+// The one rule that matters: an uncertain result is never worded as a failure. It
+// says the message may still arrive, carries the message id so a later reply can
+// refer to it, and warns that sending again would create a second message. A
+// definite failure says plainly that it was not delivered. Anything unrecognised
+// stays the same opaque word local mode uses.
+//
+// UNTESTED.
+func connectedFailureText(err error) string {
+	if err == nil {
+		return internalErrorName
+	}
+
+	// errors.As, like refusalReason: a wrapped error is read the same way, and an
+	// error that implements none of these cannot panic.
+	reason := ""
+	var reasoner sendReasoner
+	if errors.As(err, &reasoner) {
+		reason = strings.TrimSpace(reasoner.SendReason())
+	}
+	if reason == "" {
+		// An unknown failure must not describe itself.
+		return internalErrorName
+	}
+
+	detail := ""
+	var detailer sendDetailer
+	if errors.As(err, &detailer) {
+		detail = strings.TrimSpace(detailer.SendDetail())
+	}
+	id := ""
+	var ider sendIDer
+	if errors.As(err, &ider) {
+		id = strings.TrimSpace(ider.SendID())
+	}
+	uncertain := false
+	var uncertainer sendUncertainer
+	if errors.As(err, &uncertainer) {
+		uncertain = uncertainer.Uncertain()
+	}
+
+	switch {
+	case uncertain:
+		parts := []string{
+			reason + ": it is not known whether the message arrived. It may still arrive; do not treat it as failed.",
+		}
+		if id != "" {
+			parts = append(parts, "Message id: "+id+".")
+		}
+		parts = append(parts, detail)
+		parts = append(parts, "Sending it again would be a NEW message and the recipient could receive both.")
+		return joinText(parts...)
+
+	case reason == "gateway_unreachable":
+		return joinText(reason+": not sent.", detail,
+			"The message was not stored anywhere and will not be delivered later.")
+
+	case reason == "destination_unreachable":
+		return joinText(reason+": not delivered. The recipient's machine is not connected.", detail,
+			"It will not be delivered later; you can send it again when it is back.")
+
+	case reason == "unknown_recipient":
+		// The detail, when present, is the list of agents that do exist.
+		return joinText(reason+": no such agent.", detail)
+
+	case reason == "session_gone":
+		// session_gone also carries a recipient host's refusal (for example its
+		// storage being down). Then the host's own reason is the whole story, and
+		// saying "no current session" would mislead.
+		if strings.Contains(detail, refusalMarker) {
+			return joinText(reason+": not delivered.", detail)
+		}
+		return joinText(reason+": not delivered.", detail,
+			"That agent has no current session, and a reply to a session that ended does not carry over.")
+
+	default:
+		// Every local refusal keeps exactly the text it had before.
+		return refusalReason(err)
+	}
+}
+
+// refusalMarker is the start of the detail the router builds when the recipient's
+// host refused an offer: "the recipient host refused it: <reason>".
+const refusalMarker = "the recipient host refused it"
+
+// joinText joins the non-empty parts with single spaces, so no double space or
+// trailing space can appear.
+func joinText(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			kept = append(kept, trimmed)
+		}
+	}
+	return strings.Join(kept, " ")
 }

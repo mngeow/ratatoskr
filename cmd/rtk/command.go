@@ -1,0 +1,173 @@
+package main
+
+// Argument parsing for rtk. main calls this after the hook branch, which keeps its
+// old byte-for-byte behaviour and is not parsed here.
+//
+// UNTESTED. Under GR-3 (docs/design/ground-rules.md) nothing here has been run:
+// only gofmt, go vet and go build have been applied.
+
+import (
+	"flag"
+	"fmt"
+	"io"
+)
+
+type commandKind int
+
+const (
+	// kindLocal is plain `rtk`: open the local panes.
+	kindLocal commandKind = iota
+	kindVersion
+	kindHelp
+	kindGatewayServe
+	kindGatewayAdmin
+	kindRuntimePair
+	kindRuntimeRun
+)
+
+// command is one parsed invocation. Only the fields its kind uses are set.
+type command struct {
+	kind        commandKind
+	listen      string   // kindGatewayServe
+	gatewayAddr string   // kindRuntimePair
+	code        string   // kindRuntimePair
+	agents      string   // kindRuntimeRun, raw; validated by tui.ParseAgents
+	admin       []string // kindGatewayAdmin, the command word first
+
+	// allowLAN and insecureHTTP are the gateway's two opt-ins; fingerprint and
+	// insecureHTTP are the runtime's transport choice. insecureHTTP is shared because a
+	// command is only ever one of the two kinds, and the semantic refusals (which flag
+	// goes with which address) stay in gateway.PlanListen and link.planTransport, so
+	// there is one table per side.
+	allowLAN     bool
+	insecureHTTP bool
+	fingerprint  string
+}
+
+const (
+	gatewayNeedsListen = "rtk: gateway needs --listen ADDR to run (or one of: pair HOST, unpair HOST, hosts, log, show ID)"
+	runtimePairUsage   = "rtk: runtime pair needs --gateway ADDR and --code CODE"
+)
+
+// adminCommands are the gateway subcommands RunAdmin dispatches on. When one leads,
+// the remaining arguments are passed through untouched so RunAdmin's own parsing and
+// usage errors stay the single source of truth.
+var adminCommands = map[string]bool{
+	"pair":   true,
+	"unpair": true,
+	"hosts":  true,
+	"log":    true,
+	"show":   true,
+}
+
+// parseCommand turns the command line into one command.
+//
+// A parse error's text is the message alone; main appends the usage, which is how an
+// unknown argument reads today.
+func parseCommand(args []string) (command, error) {
+	if len(args) == 0 {
+		return command{kind: kindLocal}, nil
+	}
+
+	switch args[0] {
+	case "--version":
+		if len(args) > 1 {
+			return command{}, fmt.Errorf("rtk: %q takes no arguments", args[0])
+		}
+		return command{kind: kindVersion}, nil
+	case "--help", "-h":
+		if len(args) > 1 {
+			return command{}, fmt.Errorf("rtk: %q takes no arguments", args[0])
+		}
+		return command{kind: kindHelp}, nil
+	case "gateway":
+		return parseGateway(args[1:])
+	case "runtime":
+		return parseRuntime(args[1:])
+	}
+	return command{}, fmt.Errorf("rtk: unknown argument %q", args[0])
+}
+
+// parseGateway handles `rtk gateway ...`.
+func parseGateway(args []string) (command, error) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--help", "-h":
+			return command{kind: kindHelp}, nil
+		}
+		if adminCommands[args[0]] {
+			return command{kind: kindGatewayAdmin, admin: args}, nil
+		}
+	}
+
+	fs := flag.NewFlagSet("gateway", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	listen := fs.String("listen", "", "")
+	allowLAN := fs.Bool("allow-lan", false, "")
+	insecureHTTP := fs.Bool("insecure-http", false, "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("%s (%v)", gatewayNeedsListen, err)
+	}
+	if *listen == "" {
+		return command{}, fmt.Errorf("%s", gatewayNeedsListen)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: gateway: unexpected argument %q", rest[0])
+	}
+	return command{
+		kind: kindGatewayServe, listen: *listen,
+		allowLAN: *allowLAN, insecureHTTP: *insecureHTTP,
+	}, nil
+}
+
+// parseRuntime handles `rtk runtime ...`.
+func parseRuntime(args []string) (command, error) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "--help", "-h":
+			return command{kind: kindHelp}, nil
+		case "pair":
+			return parseRuntimePair(args[1:])
+		}
+	}
+
+	fs := flag.NewFlagSet("runtime", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	agents := fs.String("agents", "", "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("rtk: runtime: %v", err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: runtime: unexpected argument %q", rest[0])
+	}
+	return command{kind: kindRuntimeRun, agents: *agents}, nil
+}
+
+// parseRuntimePair handles `rtk runtime pair --gateway ADDR --code CODE`. Both flags
+// are required, and the error names whichever is missing.
+func parseRuntimePair(args []string) (command, error) {
+	fs := flag.NewFlagSet("runtime pair", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	gateway := fs.String("gateway", "", "")
+	code := fs.String("code", "", "")
+	fingerprint := fs.String("fingerprint", "", "")
+	insecureHTTP := fs.Bool("insecure-http", false, "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("%s (%v)", runtimePairUsage, err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: runtime pair: unexpected argument %q", rest[0])
+	}
+	switch {
+	case *gateway == "" && *code == "":
+		return command{}, fmt.Errorf("%s", runtimePairUsage)
+	case *gateway == "":
+		return command{}, fmt.Errorf("rtk: runtime pair needs --gateway ADDR")
+	case *code == "":
+		return command{}, fmt.Errorf("rtk: runtime pair needs --code CODE")
+	}
+	return command{
+		kind: kindRuntimePair, gatewayAddr: *gateway, code: *code,
+		fingerprint: *fingerprint, insecureHTTP: *insecureHTTP,
+	}, nil
+}

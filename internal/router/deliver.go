@@ -154,7 +154,7 @@ func (r *Router) startWrite(a *agent, m *msg) {
 		return
 	}
 
-	frame := buildFrame(m.from.name, m.id, m.replyTo, m.body)
+	frame := buildFrame(senderName(m), m.id, m.replyTo, m.body)
 	go func() {
 		ctx, cancel := context.WithTimeout(r.ctx, r.cfg.WriteTimeout)
 		err := w.PasteSubmit(ctx, frame)

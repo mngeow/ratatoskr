@@ -33,40 +33,24 @@ type mouseTarget struct {
 	x, y   int // pane-relative, when body is true
 }
 
-// mouseTargetAt maps a screen cell to a pane region. It reuses the layout
-// helpers, so a click can never disagree with what is drawn.
+// mouseTargetAt maps a screen cell to a pane region, using the active layout.
+//
+// It keeps the shape the existing tests use. With two panes it is the split those
+// tests describe; with one pane it is the full-width rectangle, because the
+// geometry comes from the model's active count rather than a global rule.
 func (m *Model) mouseTargetAt(x, y int) mouseTarget {
 	target := mouseTarget{pane: -1}
 
-	left, right := paneWidths(m.width)
-	rows := m.screenRows()
-	if left < 1 || right < 1 || rows < 1 {
+	box, ok := m.boxAt(x, y)
+	if !ok {
 		return target
 	}
 
-	headerRow := screenTop() - 1
-	inHeader := y == headerRow
-	inBody := y >= screenTop() && y < screenTop()+rows
-	if !inHeader && !inBody {
-		return target
-	}
-
-	switch {
-	case x >= 0 && x < left:
-		target.pane = 0
-		target.x = x
-	case x > left && x < left+1+right:
-		target.pane = 1
-		target.x = x - (left + 1)
-	default:
-		// The separator column belongs to no pane.
-		return target
-	}
-
-	target.header = inHeader
-	target.body = inBody
-	if inBody {
-		target.y = y - screenTop()
+	target.pane = box.index
+	target.header = box.inHeader(x, y)
+	target.body = box.inBody(x, y)
+	if target.body {
+		target.x, target.y = box.relative(x, y)
 	}
 	return target
 }
@@ -264,29 +248,24 @@ func (m *Model) wheelMouse(event uv.MouseEvent) tea.Cmd {
 
 // clampToPane keeps a drag inside its owner's body, whatever the pointer does.
 func (m *Model) clampToPane(index int, event uv.MouseEvent) uv.MouseEvent {
-	left, right := paneWidths(m.width)
-	width := left
-	offset := 0
-	if index == 1 {
-		width = right
-		offset = left + 1
+	box, ok := m.boxFor(index)
+	if !ok {
+		return event
 	}
-	rows := m.screenRows()
 
 	point := event.Mouse()
-	x := point.X - offset
-	y := point.Y - screenTop()
+	x, y := box.relative(point.X, point.Y)
 	if x < 0 {
 		x = 0
 	}
 	if y < 0 {
 		y = 0
 	}
-	if x > width-1 {
-		x = width - 1
+	if box.width > 0 && x > box.width-1 {
+		x = box.width - 1
 	}
-	if rows > 0 && y > rows-1 {
-		y = rows - 1
+	if box.rows > 0 && y > box.rows-1 {
+		y = box.rows - 1
 	}
 	return withMousePosition(event, x, y)
 }
@@ -313,7 +292,7 @@ func withMousePosition(event uv.MouseEvent, x, y int) uv.MouseEvent {
 // setFocus moves focus and disarms the Ctrl+C sequence: a focus change means the
 // user is somewhere else now.
 func (m *Model) setFocus(index int) {
-	if index < 0 || index >= len(m.slots) {
+	if index < 0 || index >= m.activeCount() {
 		return
 	}
 	if m.focus == index {

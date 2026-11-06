@@ -75,6 +75,11 @@ type Model struct {
 	events <-chan protocol.Event
 	slots  [2]Slot
 
+	// active is how many panes exist: 1 for a single-agent runtime run, 2
+	// otherwise. It comes from the constructor and never from the layout or from
+	// Snapshot.Runtime.
+	active int
+
 	focus     int
 	logMode   bool
 	logLoaded bool
@@ -90,6 +95,15 @@ type Model struct {
 	snap     protocol.Snapshot
 	messages []protocol.MessageView
 	drafts   map[protocol.AgentID]bool
+
+	// Connected mode only, and all inert in local mode: the connection the router
+	// last reported, its peers, and the outbound records for the recent rows.
+	conn  *protocol.ConnectionView
+	peers []string
+	sends []protocol.SendView
+
+	// outbound is the F3 outbound source, which lives inside the log view.
+	outbound outboundState
 
 	eventsClosed      bool
 	eventWaiting      bool
@@ -161,34 +175,10 @@ var (
 //
 // UNTESTED.
 func New(router Router, events <-chan protocol.Event, slots []Slot) (*Model, error) {
-	if router == nil {
-		return nil, errors.New("tui: New: nil router")
-	}
 	if len(slots) != 2 {
 		return nil, fmt.Errorf("tui: New: need exactly two slots, got %d", len(slots))
 	}
-
-	seen := make(map[protocol.AgentID]struct{}, len(slots))
-	for i, slot := range slots {
-		if slot.ID == "" {
-			return nil, fmt.Errorf("tui: New: slot %d has an empty agent ID", i+1)
-		}
-		if _, duplicate := seen[slot.ID]; duplicate {
-			return nil, fmt.Errorf("tui: New: duplicate agent ID %q", slot.ID)
-		}
-		seen[slot.ID] = struct{}{}
-	}
-
-	return &Model{
-		router: router,
-		events: events,
-		slots:  [2]Slot{slots[0], slots[1]},
-		drafts: make(map[protocol.AgentID]bool, 2),
-		// The clock is injectable so the Ctrl+C window can be tested without a
-		// sleep; production always uses time.Now.
-		now:   time.Now,
-		mouse: mouseState{owner: -1},
-	}, nil
+	return buildModel("New", router, events, slots, false)
 }
 
 // Init takes the first snapshot and starts the two ongoing loops: waiting for
@@ -233,13 +223,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		// The outbound source refreshes on its own coalesced clock, and only while
+		// it is the source on show with its list, not a detail, in front.
+		if m.logMode && m.outbound.source && m.outbound.dirty && !m.outbound.pending && m.outbound.detailID == "" &&
+			m.now().Sub(m.outbound.last) >= 250*time.Millisecond {
+			return m, tea.Batch(m.tick(), m.fetchOutboundSends())
+		}
 		// A live refresh must never replace an older run or a message detail, so
 		// it only runs while the current run is on screen.
-		if m.logMode && m.historyDirty && !m.historyPending && !m.history.runsPending && m.history.detailID == "" &&
-			m.viewingCurrentRun() && time.Since(m.historyLast) >= 250*time.Millisecond {
+		if m.logMode && !m.outbound.source && m.historyDirty && !m.historyPending && !m.history.runsPending &&
+			m.history.detailID == "" && m.viewingCurrentRun() && time.Since(m.historyLast) >= 250*time.Millisecond {
 			return m, tea.Batch(m.tick(), m.fetchHistoryFor(m.currentRunID()))
 		}
 		return m, m.tick()
+
+	case outboundSendsMsg:
+		m.installOutboundSends(msg)
+		return m, nil
+
+	case outboundDetailMsg:
+		m.installOutboundDetail(msg)
+		return m, nil
 
 	case historyMsg:
 		if !m.logMode || msg.generation != m.historyGeneration || msg.runID != m.currentRunID() {
@@ -308,8 +312,8 @@ func (m *Model) View() tea.View {
 		view.MouseMode = tea.MouseModeCellMotion
 		return view
 	}
-	for i, slot := range m.slots {
-		if slot.Pane != nil {
+	for _, i := range m.activeSlots() {
+		if slot := m.slots[i]; slot.Pane != nil {
 			m.frames[i] = slot.Pane.Snapshot()
 		}
 	}
@@ -366,6 +370,11 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		m.setFocus(0)
 		return nil
 	case isKey(k, tea.KeyF2):
+		// With one pane there is nowhere to go; the key is spent, not forwarded,
+		// so a child never sees an F2 that was meant for the layout.
+		if m.single() {
+			return nil
+		}
 		m.setFocus(1)
 		return nil
 	case isKey(k, tea.KeyF3):
@@ -461,7 +470,7 @@ func (m *Model) enqueueInput(action inputAction) tea.Cmd {
 // typing, and whether a full queue should complain. A wheel turn is neither
 // typing nor worth complaining about, so it must not bump the draft epoch.
 func (m *Model) enqueueInputFor(i int, action inputAction, silentOverflow bool) tea.Cmd {
-	if i < 0 || i >= len(m.slots) {
+	if i < 0 || i >= m.activeCount() {
 		return nil
 	}
 
@@ -535,7 +544,7 @@ func (m *Model) startInput(i int) tea.Cmd {
 
 func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 	i := done.index
-	if i < 0 || i >= len(m.slots) || len(m.input[i]) == 0 || m.input[i][0].seq != done.seq {
+	if i < 0 || i >= m.activeCount() || len(m.input[i]) == 0 || m.input[i][0].seq != done.seq {
 		return nil
 	}
 	a := m.input[i][0]
@@ -653,25 +662,19 @@ func (m *Model) resize(width, height int) tea.Cmd {
 		m.mouse = mouseState{owner: -1}
 		return nil
 	}
-	left, right := paneWidths(width)
-	rows := m.screenRows()
-	if left < 1 || right < 1 || rows < 1 {
-		return nil
-	}
-	for i := range m.slots {
-		p := m.slots[i].Pane
-		if p == nil {
+	for _, box := range m.boxes() {
+		if box.width < 1 || box.rows < 1 {
 			continue
 		}
-		paneWidth := left
-		if i == 1 {
-			paneWidth = right
+		p := m.slots[box.index].Pane
+		if p == nil {
+			continue
 		}
 		// Non-blocking: the pane coalesces the request and applies the newest size
 		// from its own lifecycle worker, so a dragged window edge cannot stall the
 		// UI behind a PTY write.
-		if err := p.RequestResize(paneWidth, rows); err != nil {
-			m.feedback = fmt.Sprintf("resize %s failed: %s", m.slotName(i), sanitize(err.Error()))
+		if err := p.RequestResize(box.width, box.rows); err != nil {
+			m.feedback = fmt.Sprintf("resize %s failed: %s", m.slotName(box.index), sanitize(err.Error()))
 		}
 	}
 	return nil
@@ -785,13 +788,29 @@ func (m *Model) titleLine() string {
 	if m.logMode {
 		mode = "log"
 	}
-	return fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
+	title := fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
+	if m.runtimeMode() {
+		// The label leads so truncation cannot hide the gateway state.
+		return connectionLabel(m.conn) + "  " + title
+	}
+	return title
 }
 
 // headerLine puts one header over each pane, matching the pane widths.
 func (m *Model) headerLine() string {
-	left, right := paneWidths(m.width)
-	return m.styledHeader(0, left) + separatorColumn + m.styledHeader(1, right)
+	boxes := m.boxes()
+	if len(boxes) == 0 {
+		return strings.Repeat(" ", m.width)
+	}
+
+	var builder strings.Builder
+	for i, box := range boxes {
+		if i > 0 {
+			builder.WriteString(separatorColumn)
+		}
+		builder.WriteString(m.styledHeader(box.index, box.width))
+	}
+	return builder.String()
 }
 
 func (m *Model) styledHeader(i, width int) string {
@@ -820,6 +839,11 @@ func (m *Model) headerText(index int) string {
 	state := "unknown"
 	held := 0
 	if agent, ok := m.agent(slot.ID); ok {
+		// In a runtime run the agent's network name is what its peers see, so the
+		// header shows that when the router supplied one.
+		if m.runtimeMode() && agent.Address != "" {
+			name = sanitize(agent.Address)
+		}
 		state = string(agent.State)
 		if agent.State == protocol.AgentNeedsYou {
 			state = "needs you"
@@ -848,16 +872,29 @@ func (m *Model) headerText(index int) string {
 }
 
 func (m *Model) screenLines(width, rows int) []string {
-	left, right := paneWidths(width)
-	if left < 1 || right < 1 || rows < 1 {
+	boxes := m.boxes()
+	if rows < 1 || len(boxes) == 0 {
 		return nil
 	}
-	leftLines := m.paneLines(0, left, rows)
-	rightLines := m.paneLines(1, right, rows)
+
+	rendered := make([][]string, 0, len(boxes))
+	for _, box := range boxes {
+		if box.width < 1 {
+			return nil
+		}
+		rendered = append(rendered, m.paneLines(box.index, box.width, rows))
+	}
 
 	lines := make([]string, 0, rows)
-	for i := 0; i < rows; i++ {
-		lines = append(lines, leftLines[i]+separatorColumn+rightLines[i])
+	for row := 0; row < rows; row++ {
+		var builder strings.Builder
+		for i := range rendered {
+			if i > 0 {
+				builder.WriteString(separatorColumn)
+			}
+			builder.WriteString(rendered[i][row])
+		}
+		lines = append(lines, builder.String())
 	}
 	return lines
 }
@@ -903,6 +940,19 @@ func logLine(msg protocol.MessageView) string {
 
 // messageLines shows the most recent messages, newest first.
 func (m *Model) messageLines(width, rows int) []string {
+	if m.runtimeMode() {
+		rows2 := append([]recentRow{}, m.recentRows()...)
+		lines := make([]string, 0, rows)
+		for i := 0; i < rows; i++ {
+			if i >= len(rows2) {
+				lines = append(lines, strings.Repeat(" ", width))
+				continue
+			}
+			lines = append(lines, fitPlain(rows2[i].text, width))
+		}
+		return lines
+	}
+
 	lines := make([]string, 0, rows)
 	for i := 0; i < rows; i++ {
 		index := len(m.messages) - 1 - i
@@ -952,6 +1002,9 @@ func (m *Model) feedbackLine() string {
 		}
 		return m.feedback
 	}
+	if line := m.connectionErrLine(); line != "" {
+		return line
+	}
 	if m.banner != "" {
 		return m.banner
 	}
@@ -963,7 +1016,7 @@ func (m *Model) feedbackLine() string {
 			return holdReason(msg.Reason)
 		}
 	}
-	for i := range m.slots {
+	for _, i := range m.activeSlots() {
 		if m.slots[i].Pane == nil {
 			continue
 		}
@@ -986,12 +1039,21 @@ func (m *Model) hintsLine() string {
 	case m.quitArmed:
 		return "F10 or Ctrl+C quits anyway   Esc cancels"
 	case m.tooSmall():
-		return "F1/F2 focus   F3 log   F10 or Ctrl+C quits (child input paused)"
+		return m.focusHints() + "   F3 log   F10 or Ctrl+C quits (child input paused)"
 	case m.logMode:
 		return m.historyHelpLines()[recentMessageRows]
 	default:
-		return "F10 quit   Ctrl+C interrupt; again quit   F1/F2 focus   F3 log   F4 deliver held"
+		return "F10 quit   Ctrl+C interrupt; again quit   " + m.focusHints() + "   F3 log   F4 deliver held"
 	}
+}
+
+// focusHints names only the focus keys that exist: a single-pane run has no F2
+// and should not advertise one.
+func (m *Model) focusHints() string {
+	if m.single() {
+		return "F1 focus"
+	}
+	return "F1/F2 focus"
 }
 
 // cursor places the terminal cursor on the focused child's cursor, offset by the
@@ -1009,25 +1071,15 @@ func (m *Model) cursor() *tea.Cursor {
 		return nil
 	}
 
-	left, right := paneWidths(m.width)
-	rows := m.screenRows()
+	box, ok := m.boxFor(m.focus)
+	if !ok || box.rows < 1 {
+		return nil
+	}
 	x, y := frame.X, frame.Y
-	if x < 0 || y < 0 {
+	if x < 0 || y < 0 || x >= box.width || y >= box.rows {
 		return nil
 	}
-	if m.focus == 1 {
-		x += left + 1
-		if x >= left+1+right {
-			return nil
-		}
-	}
-	if x < 0 || y < 0 || y >= rows {
-		return nil
-	}
-	if m.focus == 0 && x >= left {
-		return nil
-	}
-	return &tea.Cursor{Position: tea.Position{X: x, Y: screenTop() + y}}
+	return &tea.Cursor{Position: tea.Position{X: box.x + x, Y: box.top + y}}
 }
 
 // screenTop is the first screen row: the title and the pane headers sit above it.
@@ -1055,6 +1107,12 @@ func (m *Model) applySnapshot(snapshot protocol.Snapshot) {
 	m.snap.Agents = append([]protocol.AgentView(nil), snapshot.Agents...)
 	m.banner = snapshot.Banner
 	m.messages = trimMessages(snapshot.Messages)
+	// A snapshot replaces the connected cache outright; Resync therefore heals it.
+	m.applyConnection(snapshot.Connection)
+	m.sends = trimSends(snapshot.Sends)
+	if m.logMode && m.outbound.source {
+		m.outbound.dirty = true
+	}
 }
 
 func (m *Model) applyEvent(event protocol.Event) {
@@ -1066,6 +1124,17 @@ func (m *Model) applyEvent(event protocol.Event) {
 	}
 	if event.Message != nil {
 		m.upsertMessage(*event.Message)
+	}
+	if event.Connection != nil {
+		m.applyConnection(event.Connection)
+	}
+	if event.Send != nil {
+		// The recent rows follow every send; only the outbound screen, when it is
+		// the source on show, needs a coalesced refresh.
+		m.upsertSend(*event.Send)
+		if m.logMode && m.outbound.source {
+			m.outbound.dirty = true
+		}
 	}
 	if event.Budget != nil {
 		m.snap.Budget = *event.Budget

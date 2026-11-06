@@ -25,9 +25,22 @@ const (
 // wiring failure, so callers can type-assert it and show Reason.
 type SendError struct {
 	Reason string
+	// Detail carries the gateway's own wording beside the reason, for a connected
+	// refusal whose reason alone is too coarse. Empty in local mode, so the text of
+	// a local refusal is unchanged.
+	Detail string
+	// ID is the message id the refusal belongs to, once a record exists. Empty for
+	// every refusal that happened before anything was recorded, and never part of
+	// Error()'s text.
+	ID string
 }
 
-func (e *SendError) Error() string { return "router: message rejected: " + e.Reason }
+func (e *SendError) Error() string {
+	if e.Detail == "" {
+		return "router: message rejected: " + e.Reason
+	}
+	return "router: message rejected: " + e.Reason + ": " + e.Detail
+}
 
 // SendReason lets the server map a refusal to its tool error without importing
 // this package: it looks for an error with this method.
@@ -37,10 +50,15 @@ func (e *SendError) SendReason() string { return e.Reason }
 //
 // It returns only after the message is committed to the store, so a caller that
 // has an id knows the row exists. Delivery happens afterwards, from the actor:
-// the sender never waits for the recipient.
+// the sender never waits for the recipient. With a Link (a connected run) the
+// send goes to the gateway instead; see sendConnected.
 //
 // UNTESTED.
 func (r *Router) Send(ctx context.Context, from protocol.AgentID, to, body, replyTo string) (string, error) {
+	if r.cfg.Link != nil {
+		return r.sendConnected(ctx, from, to, body, replyTo)
+	}
+
 	type result struct {
 		id  string
 		err error

@@ -230,3 +230,56 @@ func envValue(env []string, name string) (string, bool) {
 	}
 	return "", false
 }
+
+// TestValidatePeerAddresses: a peer entry may be a bare display name or a network
+// name, and nothing else. UNTESTED: written, not run.
+func TestValidatePeerAddresses(t *testing.T) {
+	valid := []string{
+		"claude",
+		"codex",
+		"codex@ubuntu-b",
+		"claude@mac",
+		"a",
+		"a_b@h-1",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 32, the name limit
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 63 hosts, the limit
+	}
+	invalid := []string{
+		"",
+		"bad name",
+		"A",
+		"../peer",
+		"peer/name",
+		"a@",
+		"@b",
+		"a@B",
+		"a@b@c",
+		"a@b.c",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 33 letters
+		"a@" + strings.Repeat("a", 64),
+	}
+
+	for _, peer := range valid {
+		t.Run("valid "+peer, func(t *testing.T) {
+			params := baseParams(t, harnessCodex)
+			params.Peers = []string{peer}
+			if _, err := Build(params); err != nil {
+				t.Fatalf("Build rejected the peer %q: %v", peer, err)
+			}
+		})
+	}
+
+	for _, peer := range invalid {
+		t.Run("invalid "+peer, func(t *testing.T) {
+			params := baseParams(t, harnessCodex)
+			params.Peers = []string{peer}
+			_, err := Build(params)
+			if err == nil {
+				t.Fatalf("Build accepted the peer %q", peer)
+			}
+			if !strings.Contains(err.Error(), "agent: peer name") {
+				t.Fatalf("error = %q, want the peer-name text", err)
+			}
+		})
+	}
+}

@@ -22,6 +22,11 @@ type fakeRouter struct {
 	delivered []protocol.AgentID
 	pending   int
 	snapshots int
+
+	// Connected read seam seeds.
+	sendViews   []protocol.SendView
+	sendsErr    error
+	sendDetails map[string]protocol.SendDetail
 }
 
 func (r *fakeRouter) UserDraft(_ protocol.AgentID, b bool) { r.drafts = append(r.drafts, b) }
@@ -40,6 +45,20 @@ func (r *fakeRouter) MessageDetail(string) (protocol.MessageDetail, error) {
 	return protocol.MessageDetail{}, nil
 }
 func (r *fakeRouter) PendingOnQuit() int { return r.pending }
+
+// The optional connected read seam. The default is an empty list and an unknown
+// send, so a local-mode test needs no setup and a connected test can seed them.
+func (r *fakeRouter) Sends(int) ([]protocol.SendView, error) {
+	return r.sendViews, r.sendsErr
+}
+
+func (r *fakeRouter) SendDetail(id string) (protocol.SendDetail, error) {
+	detail, ok := r.sendDetails[id]
+	if !ok {
+		return protocol.SendDetail{}, errors.New("fakeRouter: no such send")
+	}
+	return detail, nil
+}
 
 type fakePane struct {
 	keys      []uv.KeyPressEvent

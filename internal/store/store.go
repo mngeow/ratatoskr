@@ -196,9 +196,10 @@ func (s *Store) do(ctx context.Context, fn func(tx *sql.Tx) error) error {
 }
 
 // exec runs on the writer goroutine only. A domain error (the message was not
-// in the expected state) rolls back and leaves the store usable. Any other
-// failure marks the store unavailable for good: stopping delivery is the safe
-// side when a record may be missing.
+// in the expected state, or the row a connected-mode write named does not exist)
+// rolls back and leaves the store usable. Any other failure marks the store
+// unavailable for good: stopping delivery is the safe side when a record may be
+// missing.
 func (s *Store) exec(fn func(tx *sql.Tx) error) error {
 	tx, err := s.wdb.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -206,7 +207,7 @@ func (s *Store) exec(fn func(tx *sql.Tx) error) error {
 	}
 	if err := fn(tx); err != nil {
 		_ = tx.Rollback()
-		if err == ErrStateChanged {
+		if err == ErrStateChanged || err == ErrNotFound {
 			return err
 		}
 		return s.fail(err)

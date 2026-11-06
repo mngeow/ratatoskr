@@ -5,7 +5,7 @@
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
-> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version only.
+> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is newly written and has never been run.
 
 ## Why
 
@@ -36,7 +36,7 @@ This is where the project is heading. The first version covers only what is unde
 > [!WARNING]
 > The project's owner has checked mouse click focus and Ctrl+C by hand on macOS, and has checked Codex's automatic startup and messaging between Claude Code and Codex in both directions, also by hand on macOS. No automated test has run. Every other command and behaviour in this section is **unverified**: it is written from the design and from each harness's docs and `--help`. Expect corrections once testing starts.
 
-The first version is one command, `rtk`. It is meant to open one terminal window with Claude Code and Codex side by side, so that they can message each other while you stay in control. It doesn't include discovery, teams, other harnesses or cross-machine messaging.
+The first version is one command, `rtk`. It is meant to open one terminal window with Claude Code and Codex side by side, so that they can message each other while you stay in control. It doesn't include discovery, teams or other harnesses. For agents on different machines, see [Cross-machine messaging](#cross-machine-messaging).
 
 ### Prerequisites
 
@@ -145,6 +145,238 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 - **If an SSH connection drops,** `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap.
 - **Not a security boundary.** Both agents run as you and could read each other's files or tokens. A message can't approve anything for the recipient, but it can still persuade its model, so its permission prompts remain the real check.
 
+## Cross-machine messaging
+
+> [!WARNING]
+> **This has been written and compile-checked, but never run.** The team isn't allowed to run it, so your first run is its first test, and these instructions may need correcting. Plain `rtk` still has its own limits, described under [Setup](#setup).
+
+Claude Code and Codex can run on different machines and message each other through a central gateway. The gateway keeps every message that reaches it, with its full text, so you can read them in one place. [ADR-0002](docs/adr/0002-cross-machine-messaging/index.html) explains why it works this way.
+
+| Implemented, never run | Not implemented |
+| --- | --- |
+| `rtk gateway` and `rtk runtime`, pairing, routing, the message ledger | One window for several machines: each machine has its own terminal |
+| Immediate failure when a machine can't be reached | Retries, or holding messages for a machine that's away |
+| Choosing which agents a machine runs | Attaching to a Claude Code or Codex you started separately |
+| A command-line view of the ledger | A web view, automatic deletion or multiple users |
+
+### What runs where
+
+| Command | Where | What it does |
+| --- | --- | --- |
+| `rtk gateway --listen ADDR` | Any one machine on your tailnet or, with [Direct LAN](#direct-lan-without-tailscale), your LAN. It can run without agents | Pairs machines, routes messages and stores them |
+| `rtk runtime [--agents claude,codex]` | Each machine with agents, in a terminal you keep open | Runs the agents and pastes their messages, as `rtk` does. Default: both agents |
+
+Every message goes through the gateway, including between two agents on one machine. Runtimes dial out to the gateway, so only the gateway needs a listening port. Permission prompts stay in the window of the machine running that agent, and the gateway can't answer them.
+
+Plain `rtk` doesn't use the gateway, and its messages aren't in the ledger.
+
+### Prerequisites
+
+- Everything under [Prerequisites](#prerequisites), on each machine with agents, with each harness logged in.
+- The same build of `rtk` on every machine. A gateway-only machine needs `rtk` but no harness.
+- [Tailscale](https://tailscale.com/) on each machine, using a normal network interface, unless you use [Direct LAN](#direct-lan-without-tailscale). Userspace-networking mode isn't supported. Find the gateway's address with `tailscale ip -4`.
+- Tailscale access between the machines on the port you choose. `rtk` doesn't change your tailnet's policy. Any device your policy allows can reach the port, though it can't do anything without pairing.
+- For a server, run `rtk runtime` inside `tmux` or `screen`, because `rtk` and its agents may end if SSH drops.
+
+### Set up
+
+**1. On the gateway machine**, start the gateway and leave it running. Use its Tailscale address and a port you choose:
+
+```sh
+rtk gateway --listen 100.x.y.z:7777
+```
+
+**2. Still on the gateway machine, in another terminal,** create a one-time code for each machine with agents. The name you give becomes that machine's address. Use lowercase letters, digits and hyphens:
+
+```sh
+rtk gateway pair mac
+rtk gateway pair ubuntu-b
+```
+
+Each code works once and expires after 10 minutes.
+
+**3. On each machine with agents,** use its code:
+
+```sh
+rtk runtime pair --gateway 100.x.y.z:7777 --code XXXX-XXXX-XXXX
+```
+
+**4. In your project on each of those machines,** start the runtime:
+
+```sh
+rtk runtime --agents claude   # on the Mac
+rtk runtime --agents codex    # on the server
+```
+
+A runtime exits without starting any agent if it isn't paired, or if it can't reach the gateway.
+
+**5. Ask one agent to message the other.** Other machines' agents need the full address, and a bare name such as `codex` only means an agent on the same machine:
+
+```text
+Ask codex@ubuntu-b what files are in its directory, using ratatoskr_send.
+```
+
+### Direct LAN, without Tailscale
+
+If your machines share a private network, a gateway can listen on its LAN address instead. This takes an explicit opt-in, and plain HTTP takes a second one. These examples use a gateway at `192.168.50.217`, so replace the port if you prefer another.
+
+| You want | On the gateway machine | On each machine with agents |
+| --- | --- | --- |
+| **HTTPS** (recommended) | `rtk gateway --listen 192.168.50.217:7777 --allow-lan` | `rtk runtime pair --gateway 192.168.50.217:7777 --code CODE --fingerprint sha256:...` |
+| **Plain HTTP** | `rtk gateway --listen 192.168.50.217:7777 --allow-lan --insecure-http` | `rtk runtime pair --gateway 192.168.50.217:7777 --code CODE --insecure-http` |
+
+Install the same new build on every machine first, then:
+
+1. Start the gateway with one of the commands above. With HTTPS, its first start creates a self-signed certificate in `gateway/tls/` and prints its fingerprint.
+2. In another terminal on the gateway machine, run `rtk gateway pair mac`, using a name you choose for each machine. Its last line is the complete pairing command, with the address, code and right flags.
+3. Run that line on the machine with agents. Then start `rtk runtime` as in [Set up](#set-up).
+
+A machine that will also run agents alongside the gateway pairs the same way, with the same LAN address.
+
+**What's allowed:** private addresses only: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. Public addresses and `0.0.0.0` are always refused. `--allow-lan`, `--insecure-http` and `--fingerprint` are refused on Tailscale and loopback addresses, which work as they did before.
+
+**Each machine has to choose HTTPS or plain HTTP itself,** because an attacker could fake an announcement from the gateway. The choice is saved in `pairing.json`, and nothing falls back from one to the other. To change it, quit the runtimes, restart the gateway with the new flags, then create a new code and pair each machine again before starting its runtime. A machine still paired for plain HTTP sends its credential unencrypted when it contacts a gateway that has moved to HTTPS, and the gateway only refuses it afterwards.
+
+**What plain HTTP costs you:**
+
+- **Anyone who can see the traffic can read it,** including every message, the pairing code and the credential. A stolen credential works until you run `rtk gateway unpair HOST`. Wi-Fi security such as WPA2 doesn't protect against other devices that know the network password.
+- **Anyone who can redirect the traffic can pose as the gateway,** and inject messages that get pasted into your agents. Permission prompts still appear only on the agent's own machine, but anything that agent is already allowed to do is exposed.
+- **A laptop keeps trying to reconnect.** On another network, it sends its credential to whatever answers at that address, so quit the runtime before you leave. Pinned HTTPS doesn't have this problem, because the certificate check fails first.
+
+**In both modes:**
+
+- **Every device on the LAN can reach the port.** It can't do anything without pairing, but a device could hold a connection open with a slow request. `rtk` doesn't configure a firewall, so if a runtime can't connect, check that the gateway machine allows incoming TCP on your port.
+- **Hostnames aren't accepted,** so give the gateway a fixed address with a router DHCP reservation. If its address changes, start it on the new address and pair each machine again. The fingerprint stays the same, so don't regenerate the certificate.
+- **If the certificate doesn't match,** the runtime refuses to connect. Check the fingerprint printed by the gateway before pairing again, because the certificate may have been regenerated, or another machine may have answered at that address.
+- **If a first start is interrupted,** the gateway may refuse to start and name a leftover key file to remove. Remove that file and start again.
+
+### Read the messages
+
+Run these on the gateway machine. They read its ledger directly, and they print message text, which may include secrets.
+
+| Command | Shows |
+| --- | --- |
+| `rtk gateway log [--follow] [--limit N]` | Recent messages, and new ones with `--follow` |
+| `rtk gateway show ID` | One message in full, with its history |
+| `rtk gateway hosts` | Paired machines and their state, up to 15 seconds out of date |
+| `rtk gateway unpair HOST` | Removes a machine. Requests are refused at once, and its open connection closes within about 5 seconds |
+
+In a runtime's TUI, F3 opens received messages, and Tab switches to what this machine sent in the current run. The title shows the gateway state, such as `Gateway connected`.
+
+### What each result means
+
+The agent sees this result when it sends, and you see it in the TUI and the ledger.
+
+| Result | Meaning | Could it still arrive? | In the ledger? |
+| --- | --- | --- | --- |
+| `host_stored` | The recipient's machine has it. It may wait there until the agent can take it | Normal path | Yes |
+| `gateway_unreachable` | There was no connection to the gateway, or it refused the request | No | No, this machine only |
+| `gateway_uncertain` | Sent, but the gateway didn't answer in time | **Yes** | Possibly |
+| `unknown_recipient` | No agent by that name has been seen. The result lists who is known | No | Yes |
+| `destination_unreachable` | That machine isn't connected. It won't be delivered when the machine returns | No | Yes, with the text |
+| `session_gone` | That agent's session has ended, or its machine refused the message. A new session doesn't get old messages | No | Yes, with the text |
+| `delivery_uncertain` | Offered, with no confirmation in time. A later report can correct this | **Yes** | Yes |
+
+Nothing is resent automatically. If an agent sends again after an uncertain result, that's a new message, and the recipient can get both. `accepted` still means only that the harness took the input, not that the model read it or acted on it.
+
+### Test it
+
+Please run these in order, because each one relies on the one before. Tell the team what you see, especially anything that differs. **Expected results come from reading the code.**
+
+**Before you start:** the first run of this build updates your existing message database, and an older `rtk` then refuses it. It leaves a backup beside the database, named `ratatoskr.db.bak-v1-<time>`. Keep your old binary and that backup if you want to be able to go back.
+
+#### A. Plain `rtk` hasn't changed
+
+1. Build and install, then run `rtk` in a project. Claude Code and Codex should open side by side, with no gateway label in the title.
+2. Run the [First use](#first-use) message and a reply. Check F3 and Ctrl+C.
+
+This is the most important check, because everything else is new, and this already worked for you.
+
+#### B. Everything on one machine
+
+Use this to separate `rtk` problems from network problems.
+
+1. Run `rtk gateway --listen 127.0.0.1:7777`.
+2. In a second terminal, run `rtk gateway pair local`. Then run `rtk runtime pair --gateway 127.0.0.1:7777 --code ...`.
+3. Run `rtk runtime` in a project. The title should say `Gateway connected`, and the agents should appear as `claude@local` and `codex@local`.
+4. Have the agents message each other. Each message should appear in `rtk gateway log`, with its full text in `rtk gateway show ID`.
+5. Stop the gateway with Ctrl+C. The title should say `Gateway reconnecting — sends unavailable`, and a send should return `gateway_unreachable`, even between these two agents. Nothing appears in the log for it.
+6. Start the gateway again. The title should return to `Gateway connected`, and the failed message shouldn't arrive.
+
+#### C. Across machines
+
+Set up as above, with the gateway on any machine and an agent on two machines. A third machine for the gateway is the fullest test.
+
+1. Have Claude on one machine message `codex@<host>` on another, and ask it to reply. Check both TUIs and the gateway's log.
+2. Confirm that a permission prompt appears only on that agent's own machine.
+3. Run `rtk gateway hosts`. Both machines should show `live`.
+
+#### D. Failure cases
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| 1 | Quit the recipient's runtime with F10, then send to it | `destination_unreachable`, with the text in the gateway's log |
+| 2 | Start that runtime again | The earlier message doesn't arrive |
+| 3 | Restart the recipient with only the other agent, such as `--agents claude`, then send to `codex@<host>` | `session_gone` |
+| 4 | Send to a name that's never existed, such as `nobody@<host>` | `unknown_recipient`, and a list of known agents |
+| 5 | Close the recipient's laptop or cut its network, then send straight away | `delivery_uncertain` for up to about 20 seconds, as the gateway hasn't noticed yet |
+| 6 | Keep it away, wait 20 seconds and send again | `destination_unreachable` |
+| 7 | Bring it back | The runtime reconnects. Nothing from step 6 is delivered. See whether a message from step 5 turned up |
+| 8 | Send to an agent while it's busy, or while you're typing in its pane | `host_stored`, then `held` on its machine, then pasted when safe. This isn't a failure |
+| 9 | Run `rtk gateway unpair <host>` while that runtime is open | Within seconds its title says `Gateway refused — retrying`, and its sends fail with the reason |
+| 10 | Start `rtk runtime` with the gateway stopped | Exits with `cannot start`, with no agent started |
+| 11 | Run `rtk gateway --listen 0.0.0.0:7777`, then `--listen 100.x.y.z:0` | Both refused with a clear error |
+| 12 | Run `rtk` while `rtk runtime` is open under the same state directory | `another ratatoskr is already running` |
+
+Also worth watching in step C: whether agents actually use `ratatoskr_send` with `name@host`, and whether the timeouts feel right. All of them are guesses.
+
+#### E. Automated tests
+
+None of these have ever run, so expect some to fail on the tests themselves. From a checkout:
+
+```sh
+go test -race ./...
+go test -race -tags rtktest ./internal/router ./internal/store
+```
+
+Use `-race`, because some router tests read state that's owned by another goroutine, and a report there may be a bug in the test.
+
+#### F. Direct LAN
+
+Run this after C works, or instead of it if you aren't using Tailscale. Use your gateway's address in place of `192.168.50.217`.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| 1 | Run `rtk gateway --listen 192.168.50.217:7777` | Refused, naming `--allow-lan` |
+| 2 | Add only `--insecure-http` | Refused, saying it also needs `--allow-lan` |
+| 3 | Run `rtk gateway --listen 127.0.0.1:7777 --allow-lan` | Refused, because the flag applies only to a LAN address |
+| 4 | Run `rtk gateway --listen 192.168.50.217:7777 --allow-lan`, stop it, then start it again | Prints `transport: HTTPS...`, with the same fingerprint both times |
+| 5 | Run `rtk gateway pair mac`, then run its pairing command without `--fingerprint` | Refused, showing both forms |
+| 6 | Run it with a wrong fingerprint, changing one digit | Refused with `does not match the pinned fingerprint` |
+| 7 | Run it exactly as printed, with the same code | Paired, showing `certificate pinned`. Step 6 shouldn't have used up the code, because nothing is sent before the check |
+| 8 | Start `rtk runtime`, and have agents message each other across machines | Title says `Gateway connected`, and messages appear in `rtk gateway log` |
+| 9 | Leave it idle for several minutes, then send again | Still connected, and the message arrives. This tests the long-lived connection over TLS |
+| 10 | Stop the gateway, run `mv` on its `gateway/tls` directory to set it aside, and start it again | A new fingerprint, and the running runtime doesn't reconnect. Its title stays `Gateway reconnecting — sends unavailable`, with the mismatch reason, and a send returns `gateway_unreachable` |
+| 11 | Stop the gateway, delete the new `gateway/tls`, move the original back, and start it again | The original fingerprint, and the runtime reconnects without pairing again |
+| 12 | Stop the runtime, then restart the gateway with `--allow-lan --insecure-http`, and start the runtime | Exits with `cannot start`, saying the gateway didn't answer with TLS |
+| 13 | Run `rtk gateway pair mac`, and run its pairing command | It has `--insecure-http`, and pairing prints the warning |
+| 14 | Start `rtk runtime`, and have agents message each other | Title says `Gateway connected (plain HTTP)`, and messages arrive |
+
+Tell the team if a command or message differs from this, especially step 7, or any plain HTTP traffic in HTTPS mode.
+
+### Cross-machine data and limits
+
+- **Files:** the gateway keeps its ledger in `gateway/gateway.db` inside the state directory shown under [Data](#data). With HTTPS, its certificate and private key are in `gateway/tls/`. A paired machine keeps its credential in `pairing.json` there, readable only by you.
+- **The gateway never deletes messages automatically,** and full message text can include secrets. Its disk use grows until a retention policy exists. The 30-day limit applies only to each machine's local database. To erase the ledger, stop the gateway and delete its `gateway` directory.
+- **A message can be on three machines:** the sender, the gateway and the recipient.
+- **A compromised gateway** can read stored messages and inject prompts into connected agents. It can't answer permission prompts or bypass a machine's delivery gate.
+- **The address check is only an address check.** Without `--allow-lan`, `--listen` accepts Tailscale's address ranges and loopback, which doesn't prove that Tailscale is what's listening. On those addresses `rtk` uses plain HTTP, so encryption depends on that being Tailscale.
+- **Agents can read the credential.** It's never given to them, but they run as you, so one with file access could read `pairing.json`.
+- **`--code` appears in your shell history and process list** until the code is used or expires.
+- **A failure after a send returns** reaches you and the ledger, but not the sending model.
+- **The ledger may miss a final state.** If a runtime quits before reporting `interrupted`, its log entry stays at the last reported state, marked `(session ended)`.
+- **One runtime per state directory,** and plain `rtk` counts as one. The loop budget of 20 is per runtime, and resets when you press Enter on that machine.
+
 ## Architecture decisions
 
 Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Records (ADRs). Each one says what was chosen, why, what was rejected and what it costs.
@@ -152,7 +384,7 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
-| [0002](docs/adr/0002-cross-machine-messaging/index.html) | How agents on different machines should message each other: direction selected: one `rtk` binary with gateway and runtime commands, a central gateway on the tailnet with pairing, full message storage, and immediate failure when a host is unreachable; details open, not built | Proposed |
+| [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. Written and compile-checked, never run | Accepted |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 

@@ -136,6 +136,25 @@ func (s *Server) Addr() string { return s.addr }
 //
 // UNTESTED.
 func (s *Server) AddAgent(id protocol.AgentID, name string, peers []string) (token string) {
+	return s.addAgent(id, name, "", peers, false)
+}
+
+// AddConnectedAgent mints a token for one agent on a gateway-backed network.
+//
+// It differs from AddAgent in exactly one way: the agent's MCP server is built in
+// connected mode, so its instructions and results speak in network names. The token,
+// the maps, the duplicate refusal and the hook file stem still use the local name.
+//
+// UNTESTED.
+func (s *Server) AddConnectedAgent(id protocol.AgentID, name, address string, peers []string) (token string) {
+	if address == "" {
+		return ""
+	}
+	return s.addAgent(id, name, address, peers, true)
+}
+
+// addAgent is the one registration path: validate, mint, install, refuse a duplicate.
+func (s *Server) addAgent(id protocol.AgentID, name, address string, peers []string, connected bool) (token string) {
 	if id == "" || name == "" {
 		return ""
 	}
@@ -150,7 +169,7 @@ func (s *Server) AddAgent(id protocol.AgentID, name string, peers []string) (tok
 	entry := &agentEntry{
 		id:   id,
 		name: name,
-		srv:  newAgentServer(id, name, peers, s.inbox),
+		srv:  newAgentServer(id, name, address, peers, connected, s.inbox),
 	}
 
 	s.mu.Lock()

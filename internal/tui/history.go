@@ -109,12 +109,23 @@ func (m *Model) enterHistory() tea.Cmd {
 	m.log = nil
 	m.historyPending = false
 	m.history = historyState{runIndex: -1, selected: -1}
+	m.outbound = outboundState{generation: m.outbound.generation + 1}
 	return m.fetchRuns("")
 }
 
 // leaveHistory closes F3 and drops everything the view held.
 func (m *Model) leaveHistory() {
 	m.historyGeneration++
+	m.outbound.generation++
+	m.outbound.source = false
+	m.outbound.detailID = ""
+	m.outbound.detail = protocol.SendDetail{}
+	m.outbound.detailLoaded = false
+	m.outbound.detailErr = nil
+	m.outbound.pending = false
+	m.outbound.detailPending = false
+	m.outbound.list = nil
+	m.outbound.loaded = false
 	m.logMode = false
 	m.logLoaded = false
 	m.logErr = nil
@@ -407,6 +418,14 @@ func (m *Model) rerunList() tea.Cmd {
 // historyKey handles input while F3 is open. The log consumes everything: no
 // keystroke from here can reach a child.
 func (m *Model) historyKey(k tea.KeyPressMsg) tea.Cmd {
+	if isKey(k, tea.KeyTab) {
+		// In a runtime run Tab switches between the received history and outbound
+		// sends. In local mode it stays consumed, which is what it did before.
+		return m.toggleOutbound()
+	}
+	if m.outbound.source {
+		return m.outboundKey(k)
+	}
 	if m.history.detailID != "" {
 		return m.detailKey(k)
 	}
@@ -418,6 +437,11 @@ func (m *Model) historyKey(k tea.KeyPressMsg) tea.Cmd {
 		m.leaveHistory()
 		m.focus = 0
 	case isKey(k, tea.KeyF2):
+		// One pane: F2 is spent. It must not exit the log, because the key has no
+		// meaning here and losing the log would be a surprise.
+		if m.single() {
+			return nil
+		}
 		m.leaveHistory()
 		m.focus = 1
 	case isKey(k, tea.KeyLeft):
@@ -452,6 +476,11 @@ func (m *Model) detailKey(k tea.KeyPressMsg) tea.Cmd {
 		m.leaveHistory()
 		m.focus = 0
 	case isKey(k, tea.KeyF2):
+		// One pane: F2 is spent. It must not exit the log, because the key has no
+		// meaning here and losing the log would be a surprise.
+		if m.single() {
+			return nil
+		}
 		m.leaveHistory()
 		m.focus = 1
 	case isKey(k, tea.KeyLeft):
@@ -553,6 +582,9 @@ func (m *Model) historyLines(width, rows int) []string {
 		return nil
 	}
 
+	if m.outbound.source {
+		return m.outboundLines(width, rows)
+	}
 	if m.history.detailID != "" {
 		return m.detailScreen(width, rows)
 	}
@@ -798,10 +830,23 @@ func splitWrapped(text string, width int) []string {
 
 // historyHints is the hint row while F3 is open.
 func (m *Model) historyHints() string {
-	if m.history.detailID != "" {
-		return "↑/↓ scroll  PgUp/PgDn page  Home/End  R reload  ←/→ runs  Esc list  F3 exit  F1/F2 panes  F10 quit"
+	if m.outbound.source {
+		return m.outboundHints()
 	}
-	return "←/→ runs  ↑/↓ select  Enter detail  R refresh  PgUp/PgDn page  Esc/F3 back  F1/F2 panes  F10 quit"
+	focus := "F1/F2 panes"
+	if m.runtimeMode() {
+		focus = "Tab outbound  " + focus
+	}
+	if m.single() {
+		focus = "F1 pane"
+		if m.runtimeMode() {
+			focus = "Tab outbound  " + focus
+		}
+	}
+	if m.history.detailID != "" {
+		return "↑/↓ scroll  PgUp/PgDn page  Home/End  R reload  ←/→ runs  Esc list  F3 exit  " + focus + "  F10 quit"
+	}
+	return "←/→ runs  ↑/↓ select  Enter detail  R refresh  PgUp/PgDn page  Esc/F3 back  " + focus + "  F10 quit"
 }
 
 func isRefreshKey(k tea.KeyPressMsg) bool {

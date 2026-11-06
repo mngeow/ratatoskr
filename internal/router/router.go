@@ -39,6 +39,14 @@ type Store interface {
 	Runs(ctx context.Context, limit int) ([]store.RunRow, error)
 	Message(ctx context.Context, id string) (store.MessageRow, error)
 	MessageEvents(ctx context.Context, id string) ([]store.EventRow, error)
+	InsertSend(ctx context.Context, s store.Send) error
+	FinishSend(ctx context.Context, id string, from, to protocol.SendResult, reason string, at time.Time) error
+	ReportSend(ctx context.Context, id string, state protocol.MessageState, reason string, at time.Time) error
+	Sends(ctx context.Context, runID string, limit int) ([]store.SendRow, error)
+	Send(ctx context.Context, id string) (store.SendRow, []store.SendEventRow, error)
+	InsertInbound(ctx context.Context, m store.Message, origin string) (inserted bool, seq int64, err error)
+	MarkReported(ctx context.Context, id string, state protocol.MessageState) error
+	InboundUnreported(ctx context.Context, runID string) ([]store.InboundRow, error)
 }
 
 // Config is everything the router needs to be built. Zero fields are filled
@@ -64,6 +72,11 @@ type Config struct {
 	// next to any later storage banner. app composes the text, for example the
 	// "previous run did not exit cleanly" warning from Recover's result.
 	StartupBanner string
+
+	// Link is the gateway connection of a connected run. Nil means local mode,
+	// which is today's behaviour and the regression bar. Declared only so far:
+	// nothing reads it yet. UNTESTED.
+	Link Link
 }
 
 // Defaults. Every one is a guess that nothing has exercised: UNTESTED guess.
@@ -102,6 +115,10 @@ type agent struct {
 	name    string
 	harness string
 
+	// gatewaySession is the session id the gateway gave this agent when the run
+	// registered (connected runs only; empty in local mode and until it is set).
+	gatewaySession string
+
 	state    protocol.AgentState
 	drafting bool
 
@@ -137,6 +154,10 @@ type msg struct {
 	state  protocol.MessageState
 	reason string
 	at     time.Time
+
+	// origin is the sender's network name (name@host) for a message that arrived
+	// from another host; empty for every local message.
+	origin string
 }
 
 // Router is the delivery router. One actor goroutine owns every field marked
@@ -169,6 +190,14 @@ type Router struct {
 	banners       map[string]string
 	storageDown   bool
 	resyncPending bool
+	conn          *protocol.ConnectionView
+	sends         []*sendRec
+	peers         []string
+
+	// reports carries delivery reports off the actor. The goroutine is started
+	// lazily by the first report, so New and Start stay untouched.
+	reports    chan reportJob
+	reportOnce sync.Once
 
 	startOnce sync.Once
 	closeOnce sync.Once
@@ -429,6 +458,9 @@ func (r *Router) move(m *msg, to protocol.MessageState, reason string) error {
 	m.state = to
 	m.reason = reason
 	r.emit(protocol.Event{Message: r.messageViewPtr(m)})
+	if m.origin != "" {
+		r.queueReport(m)
+	}
 	return nil
 }
 

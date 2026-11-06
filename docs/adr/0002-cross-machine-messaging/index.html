@@ -252,7 +252,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <h1>How agents on different machines should message each other</h1>
   <p class="prose">The options for connecting Claude Code on a Mac to Codex on a server, what each one costs, and the choices that only the user can make.</p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Proposed, with its direction selected.</b> The user chose a central gateway view, a tailnet with pairing, and immediate failure when a host is unreachable (<a href="#summary">section 1</a>). The full design isn't accepted, built or authorized for implementation.</dd></div>
+    <div><dt>Status</dt><dd><b>Accepted for implementation, 2026-11-05. Direct LAN opt-ins added 2026-11-06. Written and compile-checked, never run.</b> <span class="tag t-user">USER</span> "Ok please begin implementation now, remember to update the main readme with testing instructions". The <a href="../../implementation/cross-machine-contract.md">implementation contract</a> sets defaults for the open items below, which the user can overrule.</dd></div>
     <div><dt>Written</dt><dd>2026-11-05, by the architect, at the user's request. Updated the same day as the user made decisions.</dd></div>
     <div><dt>Source inspected</dt><dd>Commit <code>79ee72a</code>. Line numbers refer to that commit.</dd></div>
     <div><dt>Tests</dt><dd><b>Nothing here has been run.</b> No link, tailnet or SSH connection was tried (<a href="../../design/ground-rules.md">GR-3</a>).</dd></div>
@@ -270,16 +270,17 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 
 <h2 id="summary">1. Where this stands</h2>
 <div class="note">
-  <p><b>The selected direction:</b> agents message through a central gateway on your tailnet, and a send fails straight away if the other host can't be reached. Each machine's runtime still decides when a message is safe to paste. This is still a proposal: its details aren't accepted, and nothing is authorized to build.</p>
+  <p><b>The selected direction:</b> agents message through a central gateway on your tailnet, and a send fails straight away if the other host can't be reached. Each machine's runtime still decides when a message is safe to paste. The user authorized building it on 2026-11-05. It's now written, but it has never been run, so <b>this page describes the design, not proven software.</b> The <a href="../../../README.md#cross-machine-messaging">README</a> has the commands and test steps.</p>
 </div>
 <div class="table-wrap"><table>
-  <tr><th>The user's decision, 2026-11-05</th><th>What it selects</th><th>What it doesn't mean</th></tr>
+  <tr><th>The user's decision, 2026-11-05 unless dated</th><th>What it selects</th><th>What it doesn't mean</th></tr>
   <tr><td><span class="tag t-user">USER</span> "Central view of all messages required, yes."</td><td>Every Ratatoskr-routed message goes through the gateway in a connected deployment, including messages between two agents on one host. No hidden local bypass.</td><td>Visibility into reasoning, file access, other tools or channels outside Ratatoskr.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "Tailnet and pairing is enough."</td><td>The network and trust approach for this phase. Pairing binds a runtime's identity. Being on the tailnet doesn't by itself authorize anything.</td><td>A public gateway, multi-user enrolment, a custom PKI or a separate identity service. It also doesn't change any tailnet policy or promise isolation between processes on a machine.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> 2026-11-06: "Ok please add the opt-in option, add an additional opt-in to use only in http"</td><td>Two separate opt-ins for reaching a gateway directly on a LAN, without Tailscale: <code>--allow-lan</code>, which uses HTTPS, and <code>--insecure-http</code> on top of it. See <a href="#direct-lan">Direct LAN</a>.</td><td>A public gateway, or plaintext by default. Tailscale stays the default path.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "If other host is unreachable, fail immediately."</td><td>No waiting for reconnect, no retry window and no store-and-forward delivery. No queued message is kept for a later session.</td><td>That an online agent never waits. A busy, drafting or approval-blocked agent on a reachable host still uses its local hold.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "Full message bodies please, I will work on optimising space storage later."</td><td>The gateway stores full bodies with routing and delivery details, for each request that reaches it.</td><td>A retention period or deletion policy. Those are undecided, and the hosts' local 30-day limit doesn't carry over.</td></tr>
   <tr><td><span class="tag t-user">USER</span> "for this ADR, I think it is worthwhile to propose the runtime and gateway be different."</td><td>Gateway and runtime are proposed as separately deployable components.</td><td>A rule that they're always on separate machines or in separate OS processes.</td></tr>
-  <tr><td><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands"</td><td>Ratatoskr ships one Go binary, <code>rtk</code>, with separate gateway and runtime startup commands. The two can run on different machines. The intended forms are <code>rtk gateway</code> and <code>rtk runtime</code>.</td><td>That these commands exist. Today's <code>rtk</code> has neither. Their flags and configuration aren't designed, and this doesn't authorize building them.</td></tr>
+  <tr><td><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands"</td><td>Ratatoskr ships one Go binary, <code>rtk</code>, with separate gateway and runtime startup commands. The two can run on different machines. The intended forms are <code>rtk gateway</code> and <code>rtk runtime</code>.</td><td>That the commands have been proven to work. They've been written, but never run.</td></tr>
 </table></div>
 <div class="two">
   <div class="card does"><h3>What this gives you</h3>
@@ -408,7 +409,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
   <ol class="steps">
     <li data-lit="rtm,gw,rtb"><button class="step-h">Pair each runtime, once</button><div class="step-d">
-      <p>All three machines are on your tailnet. You start <code>rtk gateway</code> on Ubuntu A and <code>rtk runtime</code> on the other two, using the same binary. These are intended command forms and don't exist yet. You create a one-time code on the gateway and use it on each machine. The gateway records <code>mac</code> and <code>ubuntu-b</code>, and each runtime keeps its credential outside the repo. Ubuntu A needs no harness, and neither harness needs a login there.</p>
+      <p>All three machines are on your tailnet. You start <code>rtk gateway</code> on Ubuntu A and <code>rtk runtime</code> on the other two, using the same binary. You create a one-time code on the gateway and use it on each machine. The gateway records <code>mac</code> and <code>ubuntu-b</code>, and each runtime keeps its credential outside the repo. Ubuntu A needs no harness, and neither harness needs a login there.</p>
     </div></li>
     <li data-lit="claude,rtm,rtb,codex"><button class="step-h">Each runtime starts its own agent</button><div class="step-d">
       <p>The runtime launches the harness in a PTY it owns, with a local MCP token and hooks.</p>
@@ -476,7 +477,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <p class="prose"><span class="tag t-user">USER</span> "Ok let's go with one binary with different startup commands". Install the same <code>rtk</code> on each machine, and the command decides its role:</p>
     <pre>rtk gateway    # intended form: directory, routing, ledger
 rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
-    <p class="prose"><b>Neither command exists today.</b> <span class="tag t-code">CODE</span> Today's <code>rtk</code> only starts the two-agent TUI, or prints its version or help. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a> <a class="src" href="../../../cmd/rtk/main.go#L43"><code>cmd/rtk/main.go:43</code> <code>app.Run</code></a></p>
+    <p class="prose"><b>Written since this record's inspected commit, and never run.</b> <span class="tag t-code">CODE</span> At that commit, <code>rtk</code> only started the two-agent TUI, or printed its version or help. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a> <a class="src" href="../../../cmd/rtk/main.go#L43"><code>cmd/rtk/main.go:43</code> <code>app.Run</code></a></p>
     <p class="prose"><b>Drawbacks:</b> a gateway-only machine carries TUI and harness code it never runs. One binary reduces version mixes but doesn't remove them, because machines can still be upgraded at different times, so the version check stays necessary.</p>
     <p class="prose"><b>The comparison, kept as history:</b></p>
     <div class="table-wrap"><table>
@@ -652,22 +653,21 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
   <div class="table-wrap"><table>
     <tr><th>Question</th><th>Answer</th><th>What follows</th></tr>
     <tr><td><b>Central view of all messages?</b></td><td><span class="tag t-user">SELECTED</span> Needed</td><td>A central gateway, including for same-host messages in a connected deployment.</td></tr>
-    <tr><td><b>Whose machines, and what's the trust model?</b></td><td><span class="tag t-user">SELECTED</span> Tailnet and pairing</td><td>No public gateway, multi-user enrolment, custom PKI or identity service in this phase.</td></tr>
+    <tr><td><b>Whose machines, and what's the trust model?</b></td><td><span class="tag t-user">SELECTED</span> Tailnet and pairing</td><td>No public gateway, multi-user enrolment, custom PKI or identity service in this phase. <a href="#direct-lan">Direct LAN</a> was added later as an opt-in.</td></tr>
     <tr><td><b>What if the other host is unreachable?</b></td><td><span class="tag t-user">SELECTED</span> Fail immediately</td><td>No retry window or later delivery. <a href="#failures">Section 7</a> defines the results.</td></tr>
     <tr><td rowspan="2"><b>One window or one per host?</b></td><td>A terminal per host</td><td><b>Open.</b> Smallest, and the link carries only messages.</td></tr>
     <tr><td>Both agents in one <code>rtk</code> window</td><td><b>Open.</b> Needs PTY streaming, a much larger and riskier build, because the link carries keystrokes.</td></tr>
   </table></div>
 </div>
 <h3 id="open">Still open</h3>
+<p class="prose">To let work continue, the architect set a default for several of these in the <a href="../../implementation/cross-machine-contract.md">implementation contract</a>. They aren't the user's decisions, and the user can overrule them.</p>
 <div class="table-wrap"><table>
   <tr><th>Question</th><th>Architect's suggestion, not decided</th></tr>
-  <tr><td>Selecting the full design</td><td>This record stays Proposed until the user accepts it.</td></tr>
-  <tr><td>One window or one per host</td><td>One per host first.</td></tr>
+    <tr><td>One window or one per host</td><td>One per host first.</td></tr>
   <tr><td>What plain <code>rtk</code> does once <code>rtk runtime</code> exists, and how connected and local modes are chosen</td><td>Plain <code>rtk</code> stays the local two-agent mode, outside the central view. <code>rtk runtime</code> is always connected. Nothing is ever mixed within a run.</td></tr>
   <tr><td>How long the gateway keeps messages, and when they're deleted</td><td><b>Deferred by the user.</b> Neither automatic deletion nor keeping everything forever is authorized. Today's 30-day limit applies only to each host's local database. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/app/app.go#L30"><code>internal/app/app.go:30</code> <code>retention</code></a></td></tr>
   <tr><td>Where the gateway runs</td><td>Any always-on machine on the tailnet. It needn't host a runtime. Whether the user's machines are always on hasn't been checked.</td></tr>
-  <tr><td>Flags and configuration for <code>rtk gateway</code> and <code>rtk runtime</code></td><td>Not designed yet. This includes how a runtime names its gateway and chooses which agents to start.</td></tr>
-  <tr><td>Whether attempts that never reached the gateway are uploaded later, as records only</td><td>Not at first. See "Gateway unreachable" in <a href="#failures">section 7</a>.</td></tr>
+    <tr><td>Whether attempts that never reached the gateway are uploaded later, as records only</td><td>Not at first. See "Gateway unreachable" in <a href="#failures">section 7</a>.</td></tr>
   <tr><td>Whether the gateway shows that an agent needs approval</td><td>A status only, if wanted. It can't answer the prompt.</td></tr>
   <tr><td>How long a send waits for its result, and how quickly a dead connection is noticed</td><td>Short and fixed. The values need real measurements, which GR-3 currently blocks.</td></tr>
   <tr><td>How a sending model learns of failures after its tool call returned</td><td>Show them in the central view and the TUI first.</td></tr>
@@ -854,8 +854,35 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
   </div>
 </div>
 
+<h3 id="direct-lan">Direct LAN: two opt-ins, added 2026-11-06</h3>
+<p class="prose"><span class="tag t-user">USER</span> "Ok please add the opt-in option, add an additional opt-in to use only in http". Everything above assumes Tailscale carries the traffic and encrypts it. On a LAN nothing does that for you, so <b>allowing a LAN listener and giving up encryption are separate choices.</b> Written and compile-checked, never run.</p>
+<div class="table-wrap"><table>
+  <tr><th>Gateway command</th><th>Runtime pairs with</th><th>Transport</th></tr>
+  <tr><td><code>--listen 100.x.y.z:7777</code> or loopback</td><td>No extra flag</td><td>Plain HTTP, as before. Encrypted only if that address really is Tailscale, which the address check can't prove. Both new flags are refused here.</td></tr>
+  <tr><td><code>--listen 192.168.50.217:7777 --allow-lan</code></td><td><code>--fingerprint sha256:...</code></td><td><b>HTTPS.</b> One self-signed certificate per gateway, pinned by each runtime and checked on every connection before the pairing code or credential is sent.</td></tr>
+  <tr><td><code>--listen 192.168.50.217:7777 --allow-lan --insecure-http</code></td><td><code>--insecure-http</code></td><td><b>Plain HTTP,</b> with a warning from both commands and <code>Gateway connected (plain HTTP)</code> in the TUI title.</td></tr>
+</table></div>
+<p class="prose"><b>Why the runtime has its own flag:</b> if a gateway announced its transport, an attacker on the network could announce plain HTTP. So each runtime uses only what the user typed, saved in its pairing, with no fallback between the two.</p>
+<p class="prose"><b>Why a pinned certificate and not a CA:</b> it needs no new dependency and no certificate authority, and it doesn't depend on the gateway's address. Its cost is a manual step: the fingerprint has to get from the gateway machine to each runtime, and regenerating the certificate means pairing every runtime again.</p>
+<div class="two">
+  <div class="card does"><h3>What pinned HTTPS protects</h3>
+    <ul>
+      <li>Messages, the pairing code and the credential, from anyone watching the LAN.</li>
+      <li>Against something else answering at that address: the handshake fails before anything is sent.</li>
+    </ul>
+  </div>
+  <div class="card doesnt"><h3>What plain HTTP gives up</h3>
+    <ul>
+      <li>Anyone who can read the traffic gets every message, the code and the credential. A stolen credential works until <code>rtk gateway unpair</code>.</li>
+      <li>Anyone who can redirect the traffic can pose as the gateway and inject messages that get pasted into an agent, which is prompt injection.</li>
+      <li>A laptop that changes networks keeps reconnecting, so it sends its credential to whatever answers at that address.</li>
+    </ul>
+  </div>
+</div>
+<p class="prose"><b>Both modes</b> expose the port to every device on the LAN, including the unauthenticated <code>/v1/pair</code> route. A device can't do anything without pairing. <span class="tag t-unv">KNOWN GAP</span> A device can hold a connection open by sending a slow body to that route. It gains no access, and it isn't fixed. rtk configures no firewall. Public, link-local and unspecified addresses stay refused, so there's still no public gateway mode.</p>
+
 <h2 id="changes">9. What would change in the current code</h2>
-<p class="prose small muted">For the selected direction. All of it is proposed, and none of it is authorized to build.</p>
+<p class="prose small muted">For the selected direction. "Today" is commit <code>79ee72a</code>. The work is under way, and the contract is the current detail.</p>
 <div class="table-wrap"><table>
   <tr><th>Area</th><th>Today</th><th>Proposed change</th></tr>
   <tr><td>Which agents start</td><td>Always Claude and Codex. <a class="src" href="../../../internal/app/app.go#L42"><code>internal/app/app.go:42</code> <code>"claude"</code></a></td><td>Choose per runtime, for example Claude only on the Mac.</td></tr>
@@ -866,19 +893,18 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
   <tr><td>Message states</td><td>Local only.</td><td>Add the section 7 states. Mirror other hosts' reports, labelled as reports.</td></tr>
   <tr><td>Loop budget</td><td>Default 20 per router, reset only by input on that host. <a class="src" href="../../../internal/router/router.go#L71"><code>internal/router/router.go:71</code> <code>defaultBudgetLimit</code></a> <a class="src" href="../../../internal/router/deliver.go#L45"><code>internal/router/deliver.go:45</code> <code>r.used = 0</code></a></td><td>Stays per host at first. A shared budget at the gateway is possible later, and how it resets needs care.</td></tr>
   <tr><td>Commands</td><td>Plain <code>rtk</code>, <code>--version</code> and <code>--help</code>. <a class="src" href="../../../cmd/rtk/main.go#L32"><code>cmd/rtk/main.go:32</code> <code>--version</code></a></td><td>Add <code>rtk gateway</code> and <code>rtk runtime</code> to the same binary (selected form, details undesigned).</td></tr>
-  <tr><td>Network</td><td>Runtime listens on loopback only.</td><td>That stays for MCP and hooks. Runtimes also dial the gateway, which listens on the tailnet only.</td></tr>
-  <tr><td>Pairing</td><td>None.</td><td><span class="tag t-arch">PROPOSAL</span> A one-time code gives each runtime a random credential. The gateway stores only a hash, as the MCP server does for its tokens, and tailnet encryption carries it. It can be removed at the gateway. No certificates or PKI. <b>Drawback:</b> it's a reusable secret if stolen, so a thief with tailnet access can use it until you remove it. This replaces the earlier mutual-TLS idea, which fitted a transport-independent design.</td></tr>
+  <tr><td>Network</td><td>Runtime listens on loopback only.</td><td>That stays for MCP and hooks. Runtimes also dial the gateway, which listens on a Tailscale or loopback address, or a private LAN address by <a href="#direct-lan">opt-in</a>.</td></tr>
+  <tr><td>Pairing</td><td>None.</td><td><span class="tag t-arch">PROPOSAL</span> A one-time code gives each runtime a random credential. The gateway stores only a hash, as the MCP server does for its tokens, and tailnet encryption carries it. It can be removed at the gateway. No certificates or PKI, apart from the one pinned certificate in <a href="#direct-lan">Direct LAN</a>. <b>Drawback:</b> it's a reusable secret if stolen, so a thief with tailnet access can use it until you remove it. This replaces the earlier mutual-TLS idea, which fitted a transport-independent design.</td></tr>
   <tr><td>Central view</td><td>None.</td><td>A way to read the ledger. Its form isn't designed yet.</td></tr>
   <tr><td>Reused unchanged</td><td colspan="2">The MCP tool name, the gate, the paste, hook handling and the "never re-paste" rule.</td></tr>
 </table></div>
 
 <h2 id="phases">10. Possible build order</h2>
-<p class="prose"><b>This is not authorization to build.</b> It applies if the user accepts this record, and each phase would need its own go-ahead. Testing and pushing remain under GR-3.</p>
+<p class="prose">The user authorized building on 2026-11-05. Testing and pushing remain under GR-3. The team's actual order is set by the lead.</p>
 <div data-stepper>
   <div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
   <ol class="steps">
-    <li><button class="step-h">Settle what's open</button><div class="step-d"><p>Whichever items in section 5 block the next phase, and then the user's acceptance of this record. <b>Done when:</b> the record says Accepted.</p></div></li>
-    <li><button class="step-h">Split the code, on one machine</button><div class="step-d"><p>Separate routing from delivery, and choose which agents start. <b>Done when:</b> local mode behaves as it does today.</p></div></li>
+        <li><button class="step-h">Split the code, on one machine</button><div class="step-d"><p>Separate routing from delivery, and choose which agents start. <b>Done when:</b> local mode behaves as it does today.</p></div></li>
     <li><button class="step-h">Gateway and pairing</button><div class="step-d"><p>The gateway, ledger, pairing and session directory. <b>Done when:</b> two agents on one machine message through a gateway, and each message appears in the ledger.</p></div></li>
     <li><button class="step-h">Across machines</button><div class="step-d"><p>Runtimes on separate machines. <b>Done when:</b> the round trip in section 1b runs by hand.</p></div></li>
     <li><button class="step-h">Failure results</button><div class="step-d"><p>Each result in section 7, and the timeouts behind them. <b>Done when:</b> each scenario has been forced and observed, not just reasoned about. This depends on the user lifting GR-3 for it.</p></div></li>

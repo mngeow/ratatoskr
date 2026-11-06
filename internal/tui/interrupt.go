@@ -75,7 +75,7 @@ func (m *Model) canReceiveInput() bool {
 // inputUnavailableLine is the one line that outranks every other message: a pane
 // that cannot receive input is the reason keystrokes appear to do nothing.
 func (m *Model) inputUnavailableLine() string {
-	for i := range m.slots {
+	for _, i := range m.activeSlots() {
 		slot := m.slots[i]
 		if slot.Pane == nil {
 			continue

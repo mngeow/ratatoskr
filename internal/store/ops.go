@@ -151,7 +151,11 @@ func (s *Store) Transition(ctx context.Context, id string, from, to protocol.Mes
 // to check reply_to (design section 9: a reply_to names a message in the same run).
 func (s *Store) MessageExists(ctx context.Context, runID, id string) (bool, error) {
 	var one int
-	err := s.rdb.QueryRowContext(ctx, `SELECT 1 FROM messages WHERE run_id=? AND id=?`, runID, id).Scan(&one)
+	// A reply_to may name either an inbound/outbound message in this run or an
+	// outbound attempt recorded here, so both tables are checked.
+	err := s.rdb.QueryRowContext(ctx, `SELECT 1 FROM messages WHERE run_id=? AND id=?
+		UNION ALL SELECT 1 FROM sends WHERE run_id=? AND id=? LIMIT 1`,
+		runID, id, runID, id).Scan(&one)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -162,13 +166,14 @@ func (s *Store) MessageExists(ctx context.Context, runID, id string) (bool, erro
 func (s *Store) History(ctx context.Context, runID string, limit int) ([]MessageRow, error) {
 	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT m.seq, m.id, m.run_id, m.from_agent_id, m.to_agent_id,
-		       COALESCE(f.display_name, ''), COALESCE(t.display_name, ''),
+		       COALESCE(f.display_name, i.origin, ''), COALESCE(t.display_name, ''),
 		       m.reply_to, m.body, m.state,
 		       COALESCE((SELECT e.reason FROM message_events e WHERE e.message_id=m.id ORDER BY e.id DESC LIMIT 1), ''),
 		       m.created_at, m.updated_at
 		FROM messages m
 		LEFT JOIN agents f ON f.id = m.from_agent_id
 		LEFT JOIN agents t ON t.id = m.to_agent_id
+		LEFT JOIN inbound i ON i.message_id = m.id
 		WHERE m.run_id=? ORDER BY m.seq DESC LIMIT ?`, runID, limit)
 	if err != nil {
 		return nil, err

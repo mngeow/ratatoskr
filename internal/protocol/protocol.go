@@ -80,10 +80,13 @@ type LaunchSpec struct {
 type AgentView struct {
 	ID          AgentID
 	DisplayName string
-	State       AgentState
-	Held        int
-	ExitCode    *int
-	Err         string
+	// Address is the network name (name@host) in a connected run, and empty in
+	// local mode. DisplayName stays the local name.
+	Address  string
+	State    AgentState
+	Held     int
+	ExitCode *int
+	Err      string
 }
 
 // MessageView is a message as the UI shows it. Preview is already sanitized.
@@ -105,11 +108,21 @@ type BudgetView struct {
 }
 
 // Snapshot is the full state for first paint and for resync.
+//
+// Connection and Sends exist only in a connected run (rtk runtime): in plain
+// local mode Connection is nil and Sends is empty, so the UI shows what it
+// always showed.
 type Snapshot struct {
 	Agents   []AgentView
 	Messages []MessageView
 	Budget   BudgetView
 	Banner   string
+
+	// Runtime marks a connected run (`rtk runtime`). It is false in plain local
+	// mode, and then Connection is nil and Sends is empty.
+	Runtime    bool
+	Connection *ConnectionView
+	Sends      []SendView
 }
 
 // Event is one router update for the UI. Resync means events were dropped and
@@ -120,6 +133,10 @@ type Event struct {
 	Budget  *BudgetView
 	Banner  string
 	Resync  bool
+
+	// Connected runs only; always nil in local mode.
+	Connection *ConnectionView
+	Send       *SendView
 }
 
 // RunView is one run as the F3 log lists it.
@@ -138,6 +155,12 @@ type MessageEventView struct {
 	To     MessageState
 	Reason string
 }
+
+// Messages here (MessageView, MessageDetail) are the ones this host observed and
+// decided: local sends in local mode, and in a connected run the messages
+// received from the gateway, whose states this host's own gate and hooks set.
+// What another host reports about a message this host sent is a SendView, never a
+// MessageView.
 
 // MessageDetail is one stored message in full: its whole body, sanitized for
 // display, and its state history. There is no resend, so this is how a user

@@ -91,6 +91,21 @@ func finishRun(tx *sql.Tx, runID, endReason string, at time.Time) (int, error) {
 	if _, err := tx.Exec(`UPDATE agents SET exited_at=? WHERE run_id=? AND exited_at IS NULL`, ms(at), runID); err != nil {
 		return 0, err
 	}
+	// Sends that never learned their outcome cannot learn one now. Events first,
+	// for the same reason as above: the SELECT must see the old result.
+	if _, err := tx.Exec(`
+		INSERT INTO send_events(send_id, at, kind, value, reason)
+		SELECT id, ?, 'result', 'gateway_uncertain',
+		       CASE WHEN ? = 'crashed' THEN 'crashed' ELSE 'run_ended' END
+		FROM sends WHERE run_id=? AND result='sending'`,
+		ms(at), endReason, runID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`UPDATE sends SET result='gateway_uncertain', updated_at=? WHERE run_id=? AND result='sending'`,
+		ms(at), runID); err != nil {
+		return 0, err
+	}
+
 	if _, err := tx.Exec(`UPDATE runs SET ended_at=?, end_reason=? WHERE id=?`, ms(at), endReason, runID); err != nil {
 		return 0, err
 	}

@@ -27,6 +27,11 @@ const (
 // name is also the hook-file stem, so the two must not be able to disagree.
 var agentNamePattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
+// peerAddressPattern is what a peer entry may be: a local display name, or a
+// network name of the form name@host. A connected run passes network names so the
+// harness can address a peer on another machine; a local run passes bare names.
+var peerAddressPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}(@[a-z0-9-]{1,63})?$`)
+
 // Params is everything App knows about the agent it is about to launch.
 type Params struct {
 	ID          protocol.AgentID
@@ -113,11 +118,12 @@ func validate(p Params) error {
 	if !filepath.IsAbs(p.SessionDir) {
 		return fmt.Errorf("agent: session directory %q must be absolute", p.SessionDir)
 	}
-	// A peer name becomes part of a model-visible prompt, so it gets the same
-	// treatment as our own display name rather than being trusted blindly.
+	// A peer entry becomes part of a model-visible prompt, so it gets the same
+	// treatment as our own display name rather than being trusted blindly. It may
+	// be a bare display name or a network name (name@host).
 	for _, peer := range p.Peers {
-		if !agentNamePattern.MatchString(peer) {
-			return fmt.Errorf("agent: peer name %q must match %s", peer, agentNamePattern)
+		if !peerAddressPattern.MatchString(peer) {
+			return fmt.Errorf("agent: peer name %q must match %s", peer, peerAddressPattern)
 		}
 	}
 

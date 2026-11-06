@@ -19,6 +19,7 @@ Owner: `delivery.lead`. This is the current list for the `rtk` first version. It
 **Has not run:**
 
 - All automated tests. They compile but have never been executed.
+- All of the cross-machine candidate (`rtk gateway`, `rtk runtime`). It is written, reviewed and compile-checked, and has never been run by anyone. See [Cross-machine candidate](#cross-machine-candidate) and [Direct LAN](#direct-lan).
 - Linux at runtime, and use over SSH.
 - Recovery after a crash, and storage failure handling. The runners for acceptance checks 10 and 12 aren't written.
 - The other acceptance checks in design section 12. Mouse focus and Ctrl+C aren't numbered checks.
@@ -113,12 +114,59 @@ Every value here is a guess, marked in code, and none has been measured. A wrong
 | A stuck parser, renderer or router call can't be interrupted | Its goroutine stays until `rtk` exits. It's isolated from the UI and shown as unavailable. | Accepted | None planned |
 | Linux and SSH | PTY and terminal behaviour may differ from macOS | Unverified | Run on Ubuntu, directly and over SSH |
 
+### Cross-machine candidate
+
+`rtk gateway` and `rtk runtime`, built from the [contract](cross-machine-contract.md) and [design](cross-machine-design.md) in the working tree. All of it is written and never run: `gofmt`, `go vet` and `go build` pass for macOS and Linux, tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`.
+
+| Risk or gap | If it's wrong, or what it means | Status | What would resolve it |
+| --- | --- | --- | --- |
+| Plain `rtk` is unchanged apart from its database migration | A regression in the mode that the user has checked by hand | Unverified. Argued from the diffs. | Plain `rtk`, one message round trip |
+| The first plain `rtk` run after this build migrates its database from schema 1 to 2, writing a backup beside it | An older `rtk` then refuses that database | Accepted, never run | Run it on a copy of an existing database |
+| Connected router and link tests read actor-owned fields from the test goroutine | Tests may report races | Known limitation of tests that have never run | `go test -race`, then read through `submit` or `Snapshot` where flagged |
+| `modernc.org/sqlite` pragmas, multi-statement `Exec` and `_txlock=immediate` for both databases, and two processes migrating at once | Gateway or runtime store may fail to start | Unverified | Start both, then concurrent admin commands |
+| Race between a late ack and the gateway's 5 s wait | The stored result could be wrong | Reasoned from a compare-and-set, never run | A slow-ack test |
+| "Written to the network" detection through `httptrace`, and the request transport without keep-alives | A send could be labelled not sent when it may have arrived, or the reverse. One TCP connection per request, including a heartbeat about every 5 s | Unverified | Requests against a stopped and a restarted gateway |
+| The stream: write deadlines and flushes through the HTTP wrapper, watchdog, heartbeat, reconnect | A stalled stream may not end, or a live one may be dropped | Unverified | A long idle stream, a gateway restart, a dropped network |
+| A silent drop (machine sleep, network loss) | For up to 15 s a send ends `delivery_uncertain`, as the contract specifies. After that, `destination_unreachable` | Designed, never run | Put a recipient machine to sleep and send |
+| A stopped host's stream can stay attached until TCP gives up | Routing treats the host as not live after 15 s, so results stay honest | Known gap, accepted | Observe after a silent drop |
+| `gateway_uncertain` with no record at the gateway stays uncertain | Some records may stay uncertain for good, on purpose | Decided, never run | None needed unless it misleads in practice |
+| Reports for messages that become `interrupted` at quit aren't sent | The gateway learns late or never. `gateway log` and `show` say "(session ended)" beside the last report | Known gap, accepted | Quit with a message held |
+| `gateway hosts` reads the last heartbeat | State can be up to 15 s stale | Accepted | None needed |
+| A gateway refusal of a send (3xx, 400, 401, 403, 404) reports as `gateway_unreachable` with the gateway's reason | The contract defines that result as no connection, and the reason text tells them apart | Accepted reading, never run | Send from an unpaired host |
+| `pairing.json` is `0600` and never passed to a harness, but harnesses run as the same user | An agent with file access can read the gateway credential | Known limit | None in this phase. `rtk` isn't a security boundary between agents |
+| `--code` is on the command line | The pairing code shows in the process list and shell history for its 10-minute single use | Known gap | Prompt for it if this matters |
+| Pairing codes have no attempt limit | 60 bits, 10 minutes. With `--allow-lan`, every device on the LAN can try, not just the tailnet | Accepted for now: guessing stays impractical | Add a limit if guessing becomes realistic |
+| The `--listen` check tests the address range, not Tailscale itself | `100.64.0.0/10` is shared address space, so an address in it isn't proof of Tailscale or its encryption. Userspace Tailscale isn't supported, because the bind is direct | Known limit | Document the OS-level Tailscale prerequisite |
+| Claude and Codex use `ratatoskr_send` with `name@host`, and Codex's startup prompt works with network names | Agents may address peers wrongly | Unverified | A run across machines |
+| One- and two-pane rendering, connection labels and the F3 outbound view | Layout or wording may be wrong, including local mode's look | Unverified, nothing rendered | Run `rtk runtime` with one and two agents, and plain `rtk` |
+| Linux at runtime, and two real machines | Everything above has only been compiled for Linux | Unverified | A run between macOS and Ubuntu over a tailnet |
+
+### Direct LAN
+
+`--allow-lan`, `--insecure-http` and `--fingerprint`, built on the cross-machine candidate from the contract's [Direct LAN](cross-machine-contract.md#direct-lan) section. Also written and never run. No handshake has been made, and no LAN address has been contacted. The same compile checks pass, and the tests are written and unrun.
+
+| Risk or gap | If it's wrong, or what it means | Status | What would resolve it |
+| --- | --- | --- | --- |
+| A real TLS handshake, with the pin check before any request byte | The pairing code or credential could be sent to the wrong machine, or a good gateway refused. Tests call `VerifyConnection` directly, with no listener | Reviewed against the Go source, never run | Pair with the right and a wrong fingerprint, watching for the code at the gateway |
+| The pin mismatch reason reaching the user through `net/http`'s error wrapping | The user would see a generic failure and not the advice to re-pair | Reviewed against the Go source, never run | Regenerate the certificate, then start a runtime |
+| Handshake failures count as not sent, so `gateway_unreachable` | A send could be labelled wrongly | Reviewed from the transport's ordering, never run | Send with a wrong pin while a runtime is running |
+| A pinned runtime meeting a plain HTTP gateway says "the gateway did not answer with TLS" | Only the message depends on this: no request bytes are sent | Reviewed against the Go source, never run | Restart a gateway with `--insecure-http` |
+| TLS server: handshake bounded by `ReadHeaderTimeout`, the long-lived stream over TLS, HTTP/1.1 only, `Shutdown` with a TLS listener | A stalled handshake, a stream that doesn't flush, or a slow exit | Reviewed against the Go source, never run | A long idle stream over HTTPS, then stop the gateway |
+| Certificate and key written, then reloaded through `tls.X509KeyPair` | The gateway might not restart on its own identity, and regenerating would force every runtime to re-pair | Never run | Start the gateway twice and compare fingerprints |
+| One TLS handshake per request, including a heartbeat about every 5 s | Cost on a LAN unmeasured. Handshake budget is 3 s, an `UNTESTED guess` | Unverified | Watch a long HTTPS run |
+| A plain HTTP pairing still sends its credential if the gateway later moves to HTTPS | The gateway answers 400, but the credential has already crossed the LAN in plaintext. The saved transport never changes by itself | Known gap, by design | Re-pair before or right after changing the gateway's mode |
+| Interrupted first start: a key with no certificate | The next start refuses by name and says what to remove, so it needs a manual step | Known gap, accepted | None needed unless it happens |
+| `/v1/pair` needs no credential and has no read deadline after the headers | Any LAN device can hold a connection open by sending a slow body. It gains no access, but it isn't bounded | Known gap | Add a read deadline on that route if it matters |
+| Both LAN modes expose the port to every device on the LAN | rtk configures no firewall and doesn't limit which devices connect. Pairing is still needed to do anything | Accepted in the contract | None in this phase |
+| The address comes from what was typed, and hostnames are refused | If the gateway's DHCP address changes, runtimes must re-pair at the new address. The fingerprint stays the same, so don't regenerate the certificate | Known limit | A router DHCP reservation |
+| `Gateway connected (plain HTTP)` title | Wording and fit have only been worked out: 30 cells against a minimum usable width of 40 | Unverified, nothing rendered | Run `rtk runtime` paired with `--insecure-http` |
+| Reaching a real LAN address on macOS and Linux | A firewall may block it. Apple's documentation exempts terminal tools from the Local Network prompt, but that hasn't been seen here | Unverified | A run between two machines on the LAN |
+
 ## Deferred features
 
 | Feature | Impact | Status | What would resolve it |
 | --- | --- | --- | --- |
 | Startup warning for untested harness versions | Users get no warning on a version that hasn't been tested | Not implemented, because no version list exists yet | Add it once testing gives a list |
-| Cross-machine messaging | Both agents must be on one machine | Designed in outline as the planned next step (design section 14), not built | Link design and implementation |
 | Automatic recovery of a dead pane's input | Restart `rtk` to recover | Not implemented | Decide if testing shows it matters |
 | Resume, resend, and scrollback in panes | Sessions end with `rtk`. Interrupted messages are passed on by hand from the log. | Out of scope for this version | Future design |
 | Discovery, teams and other harnesses | Two agents only, one Claude per run | Product direction in the README, not built | Future design |

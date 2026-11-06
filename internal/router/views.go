@@ -68,6 +68,11 @@ func (r *Router) refresh() {
 	for _, a := range r.order {
 		snapshot.Agents = append(snapshot.Agents, r.agentView(a))
 	}
+	if r.connected() {
+		snapshot.Runtime = true
+		snapshot.Connection = r.connectionCopy()
+		snapshot.Sends = r.recentSends()
+	}
 	r.snap.Store(&snapshot)
 	r.pending.Store(int32(r.pendingCount()))
 }
@@ -115,6 +120,9 @@ func (r *Router) agentView(a *agent) protocol.AgentView {
 		Held:        held,
 		Err:         a.err,
 	}
+	if r.connected() {
+		view.Address = stripControl(r.cfg.Link.Address(a.name))
+	}
 	if a.exitCode != nil {
 		code := *a.exitCode
 		view.ExitCode = &code
@@ -126,7 +134,7 @@ func (r *Router) messageView(m *msg) protocol.MessageView {
 	return protocol.MessageView{
 		ID:      m.id,
 		RunID:   r.cfg.RunID,
-		From:    stripControl(m.from.name),
+		From:    stripControl(senderName(m)),
 		To:      stripControl(m.to.name),
 		State:   m.state,
 		Reason:  m.reason,

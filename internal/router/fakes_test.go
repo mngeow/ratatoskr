@@ -40,6 +40,18 @@ type fakeStore struct {
 	runs      []store.RunRow
 	events    map[string][]store.EventRow
 	runsLimit int
+
+	// connected-mode seeds: outbound attempts, their events, and inbound origins.
+	sends      map[string]store.SendRow
+	sendEvents map[string][]store.SendEventRow
+	// sendReasons keeps the reason each attempt finished with: store.SendRow has no
+	// such column, and a test may want to assert what was written.
+	sendReasons map[string]string
+	inbound     map[string]string
+	// inboundRows is the richer inbound model InboundUnreported reads: state,
+	// reason and time, with reportedState holding what has been reported.
+	inboundRows   map[string]store.InboundRow
+	reportedState map[string]protocol.MessageState
 }
 
 func newFakeStore() *fakeStore {
@@ -370,4 +382,173 @@ func (s *fakeStore) MessageEvents(_ context.Context, id string) ([]store.EventRo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]store.EventRow(nil), s.events[id]...), nil
+}
+
+// The connected-mode store methods: outbound attempts, their events, and the
+// inbound bookkeeping. Writes honour the unavailable switch; reads ignore it, like
+// the other read methods here.
+var _ Store = (*fakeStore)(nil)
+
+func (s *fakeStore) InsertSend(_ context.Context, send store.Send) error {
+	s.record("InsertSend:" + send.ID)
+	if s.failing() {
+		return store.ErrUnavailable
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sends == nil {
+		s.sends = make(map[string]store.SendRow)
+	}
+	s.sends[send.ID] = store.SendRow{
+		Seq:       int64(len(s.sends) + 1),
+		ID:        send.ID,
+		RunID:     send.RunID,
+		FromID:    send.From,
+		To:        send.To,
+		ReplyTo:   send.ReplyTo,
+		Body:      send.Body,
+		Result:    protocol.SendSending,
+		CreatedAt: send.CreatedAt,
+		UpdatedAt: send.CreatedAt,
+	}
+	return nil
+}
+
+func (s *fakeStore) FinishSend(_ context.Context, id string, from, to protocol.SendResult, reason string, at time.Time) error {
+	s.record("FinishSend:" + id + ":" + string(from) + ">" + string(to))
+	if s.failing() {
+		return store.ErrUnavailable
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.sends[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if row.Result != from {
+		return store.ErrStateChanged
+	}
+	row.Result = to
+	row.UpdatedAt = at
+	s.sends[id] = row
+	if s.sendReasons == nil {
+		s.sendReasons = make(map[string]string)
+	}
+	s.sendReasons[id] = reason
+	return nil
+}
+
+func (s *fakeStore) ReportSend(_ context.Context, id string, state protocol.MessageState, reason string, _ time.Time) error {
+	s.record("ReportSend:" + id + ":" + string(state))
+	if s.failing() {
+		return store.ErrUnavailable
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.sends[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	row.Report = state
+	row.ReportReason = reason
+	s.sends[id] = row
+	return nil
+}
+
+func (s *fakeStore) Sends(_ context.Context, runID string, limit int) ([]store.SendRow, error) {
+	s.record("Sends:" + runID)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows := make([]store.SendRow, 0, len(s.sends))
+	for _, row := range s.sends {
+		if runID == "" || row.RunID == runID {
+			rows = append(rows, row)
+		}
+	}
+	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+		rows[i], rows[j] = rows[j], rows[i]
+	}
+	if limit > 0 && len(rows) > limit {
+		rows = rows[len(rows)-limit:]
+	}
+	return rows, nil
+}
+
+func (s *fakeStore) Send(_ context.Context, id string) (store.SendRow, []store.SendEventRow, error) {
+	s.record("Send:" + id)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row, ok := s.sends[id]
+	if !ok {
+		return store.SendRow{}, nil, store.ErrNotFound
+	}
+	return row, append([]store.SendEventRow(nil), s.sendEvents[id]...), nil
+}
+
+func (s *fakeStore) InsertInbound(_ context.Context, m store.Message, origin string) (bool, int64, error) {
+	s.record("InsertInbound:" + m.ID)
+	if s.failing() {
+		return false, 0, store.ErrUnavailable
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inbound == nil {
+		s.inbound = make(map[string]string)
+	}
+	if _, exists := s.inbound[m.ID]; exists {
+		return false, 0, nil
+	}
+	s.inbound[m.ID] = origin
+	if s.inboundRows == nil {
+		s.inboundRows = make(map[string]store.InboundRow)
+	}
+	s.inboundRows[m.ID] = store.InboundRow{
+		ID:    m.ID,
+		State: protocol.MessageQueued,
+		At:    m.CreatedAt,
+	}
+	return true, int64(len(s.inbound)), nil
+}
+
+func (s *fakeStore) MarkReported(_ context.Context, id string, state protocol.MessageState) error {
+	s.record("MarkReported:" + id + ":" + string(state))
+	if s.failing() {
+		return store.ErrUnavailable
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.inbound[id]; !exists {
+		return store.ErrNotFound
+	}
+	if s.reportedState == nil {
+		s.reportedState = make(map[string]protocol.MessageState)
+	}
+	s.reportedState[id] = state
+	return nil
+}
+
+func (s *fakeStore) InboundUnreported(_ context.Context, runID string) ([]store.InboundRow, error) {
+	s.record("InboundUnreported:" + runID)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows := make([]store.InboundRow, 0, len(s.inbound))
+	for id := range s.inbound {
+		row := s.inboundRows[id]
+		if row.ID == "" {
+			row.ID = id
+		}
+		if s.reportedState[id] == row.State {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }

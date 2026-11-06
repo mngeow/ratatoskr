@@ -25,15 +25,19 @@ type EventRow struct {
 // so the two must be kept in step by hand. The columns are, in order: seq, id,
 // run_id, from agent id, to agent id, from display name, to display name,
 // reply_to, body, state, latest event reason, created_at, updated_at.
+//
+// The inbound join is additive: a row that has no inbound entry (every local
+// message) falls back to the agents display name exactly as before.
 const messageSelect = `
 		SELECT m.seq, m.id, m.run_id, m.from_agent_id, m.to_agent_id,
-		       COALESCE(f.display_name, ''), COALESCE(t.display_name, ''),
+		       COALESCE(f.display_name, i.origin, ''), COALESCE(t.display_name, ''),
 		       m.reply_to, m.body, m.state,
 		       COALESCE((SELECT e.reason FROM message_events e WHERE e.message_id=m.id ORDER BY e.id DESC LIMIT 1), ''),
 		       m.created_at, m.updated_at
 		FROM messages m
 		LEFT JOIN agents f ON f.id = m.from_agent_id
-		LEFT JOIN agents t ON t.id = m.to_agent_id`
+		LEFT JOIN agents t ON t.id = m.to_agent_id
+		LEFT JOIN inbound i ON i.message_id = m.id`
 
 // MessageEvents returns the recorded state changes of one message, oldest first.
 //
