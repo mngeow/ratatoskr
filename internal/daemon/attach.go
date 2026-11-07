@@ -130,6 +130,12 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 		return false
 	}
 
+	// A successfully attached window is a network fetch consumer for its whole life: the daemon fetches
+	// the snapshot while a window exists (and while a control network request is in flight), so the
+	// Network view has data without the user having to open it first. Every refusal returned above
+	// never reaches this line.
+	w.acquireNetwork()
+
 	w.startWriter()
 	s.log.logf("window %s attached: %d slots, %d start errors", w.id, len(slots), len(startErrors))
 	return true

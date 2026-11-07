@@ -110,12 +110,13 @@ type takeInputDone struct {
 
 // NewDaemon builds the model for a window attached to a daemon.
 //
-// It validates the attach, wraps the client as the router and event source, marks the model as a
-// daemon window, seeds the local draft map from the daemon's authoritative drafting state, and
-// focuses the first slot that has not ended.
+// It validates the attach (at most two sessions), wraps the client as the router and event source,
+// marks the model as a daemon window, seeds the local draft map from the daemon's authoritative
+// drafting state, and focuses the first slot that has not ended.
 //
-// A zero-slot attach is an error here, because a window with no sessions cannot be rendered; the
-// caller prints the guidance.
+// Zero sessions is allowed: such a window opens on Network, keeps the tab strip and the detach keys,
+// shows the daemon's Network answer, and says in the Terminals view that there are no sessions and how
+// to start them. Nothing is fabricated to fill the space.
 //
 // UNTESTED.
 func NewDaemon(client *windowclient.Client) (*Model, error) {
@@ -124,9 +125,6 @@ func NewDaemon(client *windowclient.Client) (*Model, error) {
 	}
 
 	attached := client.Attached()
-	if len(attached.Slots) == 0 {
-		return nil, fmt.Errorf("tui: NewDaemon: the daemon attached no sessions (start one with rtk attach --agents NAME)")
-	}
 	if len(attached.Slots) > 2 {
 		return nil, fmt.Errorf("tui: NewDaemon: the daemon attached %d sessions, and a window shows at most two", len(attached.Slots))
 	}
@@ -143,9 +141,17 @@ func NewDaemon(client *windowclient.Client) (*Model, error) {
 		slots = append(slots, Slot{ID: attachedSlot.Agent, Name: attachedSlot.Name, Pane: pane})
 	}
 
-	model, err := NewRuntime(client, client.Events(), slots)
-	if err != nil {
-		return nil, err
+	// Zero sessions is not an error: the window opens on Network and says how to start one. One or two
+	// sessions go through the shared runtime constructor, which validates them.
+	var model *Model
+	if len(slots) == 0 {
+		model = allocateModel(client, client.Events(), nil)
+	} else {
+		built, err := NewRuntime(client, client.Events(), slots)
+		if err != nil {
+			return nil, err
+		}
+		model = built
 	}
 
 	daemon := &daemonWindow{client: client, network: client.Network, enter: client.Enter}
@@ -175,6 +181,12 @@ func NewDaemon(client *windowclient.Client) (*Model, error) {
 
 	if len(daemon.startErrors) > 0 {
 		model.feedback = strings.Join(daemon.startErrors, "; ")
+	}
+
+	if model.emptyDaemon() {
+		// A session-less window opens on Network: that is where the useful information is, and the tab
+		// strip then shows which one is active.
+		model.networkMode = true
 	}
 	return model, nil
 }
@@ -523,6 +535,10 @@ func (m *Model) draftBefore(i int) bool {
 // One request per slot at a time: a second press while one is in flight is consumed, because the
 // answer to the first decides what the state is.
 func (m *Model) requestTakeInput() tea.Cmd {
+	if m.emptyDaemon() {
+		m.feedback = emptyWindowHint
+		return nil
+	}
 	if m.daemon == nil {
 		return nil
 	}

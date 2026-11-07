@@ -196,10 +196,27 @@ func (m *Model) afterNetwork() tea.Cmd {
 	return nil
 }
 
-// networkTick asks for the next request if the view is open and nothing is in flight, pacing it by
-// the refresh floor so an immediate answer cannot spin.
+// seedNetwork starts the window's first Network request.
+//
+// It is called once from Init so the cache is warm before anyone opens the tab. If a poll is somehow
+// already in flight it does nothing - in particular it does not mark a refresh, which would turn the
+// seed into a second request later.
+//
+// UNTESTED.
+func (m *Model) seedNetwork() tea.Cmd {
+	if m.daemon == nil || m.network.pending {
+		return nil
+	}
+	return m.requestNetwork()
+}
+
+// networkTick asks for the next request while the window exists, pacing it by the refresh floor so an
+// immediate answer cannot spin.
+//
+// The poll runs on both tabs: the window is a fetch consumer from its attach until it closes, and the
+// tab should have data the moment it is opened.
 func (m *Model) networkTick() tea.Cmd {
-	if m.daemon == nil || !m.networkMode || m.network.pending {
+	if m.daemon == nil || m.network.pending {
 		return nil
 	}
 	if m.now().Sub(m.network.lastRequestAt) < networkRefreshFloor {

@@ -12,6 +12,15 @@ import (
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
 )
 
+// Authored but UNRUN under GR-3: exact empty-window detach wording.
+func TestEmptyWindowDetachMessage(t *testing.T) {
+	text, isError := detachMessage(endingEmpty, "")
+	want := "detached; no agents were running (rtk attach --agents claude,codex starts some)"
+	if text != want || isError {
+		t.Fatalf("got %q, error=%v", text, isError)
+	}
+}
+
 // TestEstimatePaneSize: one pane is full width, two are halved, and nothing goes below one cell.
 func TestEstimatePaneSize(t *testing.T) {
 	tests := []struct {

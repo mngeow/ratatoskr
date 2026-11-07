@@ -44,6 +44,7 @@ type networkRow struct {
 	text       string
 	detail     string
 	old        bool
+	spans      []uiSpan
 }
 
 // networkRows builds the rows in the contract's order: local first, then a gateway summary, then
@@ -54,7 +55,7 @@ func (m *Model) networkRows() []networkRow {
 	rows := make([]networkRow, 0, 8)
 	cache := &m.network
 	if !cache.have {
-		text := "loading Network data…"
+		text := "waiting for the first answer"
 		if cache.errText != "" {
 			text = cleanNetworkText(cache.errText)
 		}
@@ -62,7 +63,15 @@ func (m *Model) networkRows() []networkRow {
 	}
 	rows = append(rows, networkRow{text: "Local daemon  " + notAvailable(cleanNetworkText(cache.view.Local.Host)) + "  build " + notAvailable(cleanNetworkText(cache.view.Local.Daemon.Build))})
 
-	// Local sessions.
+	// Local sessions, or the one honest sentence that says there are none yet.
+	if len(cache.view.Local.Sessions) == 0 {
+		rows = append(rows, networkRow{
+			key:        rowKey{kind: networkRowLocal, id: "empty"},
+			selectable: false,
+			text:       "local  no local sessions",
+		})
+	}
+
 	for _, session := range cache.view.Local.Sessions {
 		key := rowKey{kind: networkRowLocal, host: cache.view.Local.Host, id: session.SessionID}
 		if key.id == "" {
@@ -73,7 +82,7 @@ func (m *Model) networkRows() []networkRow {
 			name = cleanNetworkText(session.LocalID)
 		}
 		name = notAvailable(name)
-		state := networkStateText(session.State)
+		state := networkStateCell(m, session.State)
 		input := networkInputText(session.Input)
 
 		rows = append(rows, networkRow{
@@ -81,6 +90,7 @@ func (m *Model) networkRows() []networkRow {
 			selectable: true,
 			old:        cache.oldBody,
 			text:       fmt.Sprintf("local  %s  %s  %s", name, state, input),
+			spans:      []uiSpan{{text: "local  ", fg: colDim}, {text: name, fg: m.harnessTint(session.Harness, session.Name)}, {text: "  " + state, fg: stateTint(session.State, cache.oldBody)}, {text: "  " + input, fg: inputTint(session.Input, cache.oldBody)}},
 			detail: fmt.Sprintf("local session %s on %s; observed by this daemon at %s",
 				name, notAvailable(cleanNetworkText(cache.view.Local.Host)), notAvailable(cleanNetworkText(session.StateAt))),
 		})
@@ -137,6 +147,7 @@ func (m *Model) networkRows() []networkRow {
 			key:        rowKey{kind: networkRowHost, host: host.Host},
 			selectable: true,
 			text:       fmt.Sprintf("%s  %s  %s  %s", notAvailable(hostName), live, status, networkReportAge(m, host)),
+			spans:      m.hostSpans(host, notAvailable(hostName), live, status),
 			detail:     networkHostDetail(host),
 			old:        networkHostOld(m, host),
 		})
@@ -159,7 +170,7 @@ func (m *Model) networkRows() []networkRow {
 		age := ""
 		old := false
 		if session.Reported != nil {
-			state = networkStateText(session.Reported.State)
+			state = networkStateCell(m, session.Reported.State)
 			input = networkInputText(session.Reported.Input)
 			age = networkRowAge(m, session.Reported)
 			old = session.Reported.Stale
@@ -173,6 +184,7 @@ func (m *Model) networkRows() []networkRow {
 			key:        key,
 			selectable: true,
 			text:       fmt.Sprintf("%s  %s  %s  %s  %s", address, reportedStateCell(session.Reported, state), reportedCell(session.Reported, input), registered, reportedCell(session.Reported, age)),
+			spans:      m.sessionSpans(session, address, reportedStateCell(session.Reported, state), reportedCell(session.Reported, input), registered, reportedCell(session.Reported, age)),
 			detail:     networkSessionDetail(m, session),
 			old:        networkSessionOld(m, session) || old,
 		})
@@ -189,6 +201,33 @@ func (m *Model) directoryPeers() []string {
 	return append([]string(nil), m.snap.Connection.Peers...)
 }
 
+// networkStateLines is the short form of the Network view: the header and the local or waiting state,
+// for a window too small to show the rows.
+//
+// It says only what is known, in the same words the full view uses.
+//
+// UNTESTED.
+func (m *Model) networkStateLines(width int) []string {
+	lines := []string{m.networkHeaderLine()}
+
+	cache := &m.network
+	if !cache.have {
+		lines = append(lines, "waiting for the first answer")
+		return lines
+	}
+	if len(cache.view.Local.Sessions) == 0 {
+		lines = append(lines, "no local sessions")
+		return lines
+	}
+	for _, session := range cache.view.Local.Sessions {
+		lines = append(lines, fmt.Sprintf("%s  %s  %s",
+			notAvailable(cleanNetworkText(session.Name)),
+			networkStateText(session.State),
+			networkInputText(session.Input)))
+	}
+	return lines
+}
+
 // networkHeaderLine is the one line above the rows: what this is, whose answer it is, and how old.
 func (m *Model) networkHeaderLine() string {
 	cache := &m.network
@@ -196,7 +235,7 @@ func (m *Model) networkHeaderLine() string {
 		if cache.errText != "" {
 			return "Network  " + cleanNetworkText(cache.errText)
 		}
-		return "Network  loading…"
+		return "Network  waiting for the first answer"
 	}
 	header := "Network  " + networkGatewayStateText(cache.view.Gateway.State)
 	if cache.view.Gateway.Error != "" {
@@ -248,26 +287,18 @@ func (m *Model) networkLines(width, rows int) []string {
 	for i := 0; i < listRows; i++ {
 		index := top + i
 		if index >= len(all) {
-			lines = append(lines, fitPlain("", width))
+			lines = append(lines, m.uiLine("", width, colText, colTermBG, false))
 			continue
 		}
 		row := all[index]
-		marker := "  "
-		if row.selectable && row.key == m.network.selection {
-			marker = "▶ "
-		}
-		text := marker + row.text
-		if row.old {
-			text = marker + "old  " + row.text
-		}
-		lines = append(lines, fitPlain(text, width))
+		lines = append(lines, m.renderNetworkRow(row, width))
 	}
 
 	detail := ""
 	if index := m.selectedNetworkIndex(); index >= 0 && index < len(all) && all[index].detail != "" {
 		detail = all[index].detail
 	}
-	lines = append(lines, fitPlain(detail, width))
+	lines = append(lines, m.uiLine(detail, width, colText, colDetailBG, false))
 
 	for len(lines) < rows {
 		lines = append(lines, fitPlain("", width))
@@ -276,6 +307,71 @@ func (m *Model) networkLines(width, rows int) []string {
 		lines = lines[:rows]
 	}
 	return lines
+}
+
+// renderNetworkRow draws one row, styled when colour is on.
+//
+// The plain text is built first, exactly as before, and the styling only wraps it: a selected row gets
+// its surface and focus marker, an ordinary row the mock's dark surface, a heading is muted and an old
+// row is drawn in the warning colour with its "old" word kept. Colours never carry a signal on their
+// own - the words and the marker are always there.
+//
+// UNTESTED.
+func (m *Model) renderNetworkRow(row networkRow, width int) string {
+	selected := row.selectable && row.key == m.network.selection
+	bg := colTermBG
+	marker := "  "
+	if selected {
+		bg = colSelBG
+		marker = "> "
+	}
+	spans := []uiSpan{{text: marker, fg: colFocus, bold: selected}}
+	if row.old {
+		spans = append(spans, uiSpan{text: "old  ", fg: colWarn})
+	}
+	if len(row.spans) > 0 {
+		spans = append(spans, row.spans...)
+	} else {
+		fg := stateTint("", row.old)
+		if row.key.kind == networkRowHost {
+			fg = colAccent
+		}
+		if row.key.kind == networkRowGateway && row.key.id == "" {
+			if m.network.view.Gateway.State == protocol.GatewayConnected {
+				fg = colOK
+			} else {
+				fg = colWarn
+				if m.network.view.Gateway.State == protocol.GatewayUnreachable {
+					fg = colBad
+				}
+			}
+		}
+		spans = append(spans, uiSpan{text: row.text, fg: fg})
+	}
+	return m.renderSpans(spans, width, bg)
+}
+
+func (m *Model) hostSpans(host protocol.NetworkHost, name, live, status string) []uiSpan {
+	old := networkHostOld(m, host)
+	fg := colOK
+	if old {
+		fg = colWarn
+	}
+	if host.Report == nil {
+		status = "- no report"
+	}
+	return []uiSpan{{text: name, fg: colAccent, bold: true}, {text: "  " + live, fg: fg}, {text: "  " + status + "  " + networkReportAge(m, host), fg: stateTint("", old)}}
+}
+
+func (m *Model) sessionSpans(session protocol.NetworkSession, address, state, input, registered, age string) []uiSpan {
+	old := networkSessionOld(m, session)
+	harness, rawState, rawInput := "", "", ""
+	if session.Reported != nil {
+		harness = session.Reported.Harness
+		rawState = session.Reported.State
+		rawInput = session.Reported.Input
+	}
+	return []uiSpan{{text: address, fg: m.harnessTint(harness, session.Name)}, {text: "  " + state, fg: stateTint(rawState, old)}, {text: "  " + input, fg: inputTint(rawInput, old)}, {text: "  " + registered + "  " + age, fg: stateTint("", old)}}
 }
 
 // networkFetchedText says how old the snapshot is, from the answer's own fields.
@@ -386,6 +482,47 @@ func shortAge(age time.Duration) string {
 	default:
 		return fmt.Sprintf("%dd", int(age.Hours())/24)
 	}
+}
+
+// networkStateCell renders a state as symbol and word.
+//
+// The word is always there, so colour and glyph are never the only signal; the symbol comes from the
+// theme's glyph policy, and the ASCII form is one cell so a row's width does not move when glyphs turn
+// off.
+//
+// UNTESTED.
+func networkStateCell(m *Model, state string) string {
+	word := networkStateText(state)
+	if state == protocol.SessionStateNeedsYou {
+		word = "needs you"
+	}
+	return stateSymbol(m, state) + " " + word
+}
+
+// stateSymbol is the marker for one state, or "" for a value this build does not know.
+func stateSymbol(m *Model, state string) string {
+	key := ""
+	switch state {
+	case protocol.SessionStateIdle:
+		key = "idle"
+	case protocol.SessionStateBusy:
+		key = "busy"
+	case protocol.SessionStateNeedsYou:
+		key = "needs"
+	case protocol.SessionStateUnknown:
+		key = "unknown"
+	case protocol.SessionStateExited:
+		key = "exited"
+	case protocol.SessionStateStarting:
+		key = "starting"
+	}
+	if key == "" {
+		return "?"
+	}
+	if m.theme.glyphs() {
+		return stateGlyphsUTF8[key]
+	}
+	return stateGlyphsASCII[key]
 }
 
 // networkStateText renders one state value, and says so when it is not one this build knows.
@@ -539,7 +676,7 @@ func (m *Model) localShadowed(session protocol.NetworkSession) bool {
 // reportedStateCell is the state cell of a report row: "no report" when there is none.
 func reportedStateCell(reported *protocol.ReportedSession, state string) string {
 	if reported == nil {
-		return "no report"
+		return "- no report"
 	}
 	return notAvailable(state)
 }

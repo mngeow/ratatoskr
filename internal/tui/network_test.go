@@ -57,7 +57,7 @@ func TestNetworkFreshnessUsesEveryAnswer(t *testing.T) {
 	}
 }
 
-func TestNetworkOneQueryAndNoFetchUntilOpened(t *testing.T) {
+func TestNetworkOneQueryRefreshAndReopen(t *testing.T) {
 	m, _, _, _ := daemonFixture(t, true)
 	now := time.Unix(1700000000, 0).UTC()
 	m.now = func() time.Time { return now }
@@ -66,20 +66,18 @@ func TestNetworkOneQueryAndNoFetchUntilOpened(t *testing.T) {
 		requests = append(requests, r)
 		return networkFixtureBody(now), 1, nil
 	}
-	if m.networkTick() != nil || len(requests) != 0 {
-		t.Fatal("fetched before F5")
-	}
-	first := m.key(key(tea.KeyF5))
+	first := m.networkTick()
 	if first == nil || !m.network.pending {
-		t.Fatal("F5 did not request")
+		t.Fatal("attach-time tick did not request")
 	}
+	m.key(key(tea.KeyF5))
 	if m.key(key('r')) != nil || m.networkTick() != nil {
 		t.Fatal("wait overlapped")
 	}
 	m.key(key(tea.KeyF5))
 	m.applyNetwork(first().(networkMsg))
 	if m.network.pending || m.networkTick() != nil {
-		t.Fatal("hidden view chained query")
+		t.Fatal("refresh floor or single flight was bypassed")
 	}
 	if requests[0].FirstWaitMS != 8000 || requests[0].WaitMS != 0 {
 		t.Fatal(requests)

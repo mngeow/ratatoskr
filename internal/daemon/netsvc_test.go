@@ -894,9 +894,10 @@ func TestARefusedReportDoesNotMakeTheGatewayUnreachable(t *testing.T) {
 	}
 }
 
-// TestNetworkQueryAfterTheWindowClosedDoesNotAcquire: a first network query in flight when the window
-// closes must not register a consumer nobody will release.
-func TestNetworkQueryAfterTheWindowClosedDoesNotAcquire(t *testing.T) {
+// TestClosedWindowNeverAcquires: a window that closed before attaching must not register a consumer,
+// because nothing would ever release it and the daemon would fetch for ever. Attach is where a window
+// acquires now, so this is the guard that keeps a racing close honest.
+func TestClosedWindowNeverAcquires(t *testing.T) {
 	fixture := newNetsvcFixture(t)
 	hub := newHub(&logger{out: io.Discard}, newGate())
 	hub.network = fixture.service

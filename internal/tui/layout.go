@@ -28,6 +28,11 @@ type paneBox struct {
 // cannot be confused for one another.
 func (m *Model) activeCount() int {
 	switch {
+	case m.active < 1 && m.daemon != nil:
+		// A daemon window may legitimately show nothing: it opens on Network and says how to start
+		// sessions. Every other zero value keeps the old fallback of one, which the local path and
+		// older fixtures rely on.
+		return 0
 	case m.active < 1:
 		return 1
 	case m.active > len(m.slots):
@@ -43,6 +48,10 @@ func (m *Model) single() bool { return m.activeCount() == 1 }
 // boxes returns the active panes' rectangles for the current terminal size.
 func (m *Model) boxes() []paneBox {
 	count := m.activeCount()
+	if count == 0 {
+		// No sessions, no rectangles: an empty window has no phantom panes to click or draw.
+		return nil
+	}
 	boxes := make([]paneBox, 0, count)
 
 	rows := m.screenRows()

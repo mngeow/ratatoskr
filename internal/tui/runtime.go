@@ -94,21 +94,33 @@ func buildModel(name string, router Router, events <-chan protocol.Event, slots 
 		seen[slot.ID] = struct{}{}
 	}
 
+	return allocateModel(router, events, slots), nil
+}
+
+// allocateModel builds the bare model: the slots copied into the fixed array, the draft map, the
+// clock and the mouse state. It validates nothing.
+//
+// The constructors validate first and then call it, and NewDaemon's zero-session branch calls it with
+// no slots at all - which is why the slot copying is guarded rather than assumed.
+func allocateModel(router Router, events <-chan protocol.Event, slots []Slot) *Model {
 	model := &Model{
 		router: router,
 		events: events,
-		slots:  [2]Slot{slots[0], Slot{}},
 		active: len(slots),
 		drafts: make(map[protocol.AgentID]bool, 2),
 		// The clock is injectable so the Ctrl+C window can be tested without a
 		// sleep; production always uses time.Now.
 		now:   time.Now,
 		mouse: mouseState{owner: -1},
+		theme: newUITheme(),
 	}
-	if len(slots) == 2 {
+	if len(slots) > 0 {
+		model.slots[0] = slots[0]
+	}
+	if len(slots) > 1 {
 		model.slots[1] = slots[1]
 	}
-	return model, nil
+	return model
 }
 
 // activeSlots returns the slot indices that exist.

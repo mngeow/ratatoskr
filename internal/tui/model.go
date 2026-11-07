@@ -112,6 +112,12 @@ type Model struct {
 	// networkMode is the daemon-only Network view (F5). It replaces the pane body and never
 	// changes the pane geometry, so it never resizes a PTY.
 	networkMode bool
+	// theme is the window's palette state: whether colour is drawn, and how far it must be
+	// downsampled. It starts inert and is only enabled by the terminal's own profile message.
+	theme uiTheme
+	// tabGesture is a strip press waiting for its release; it is its own state so a focus-consumed
+	// press and a strip press can never be confused.
+	tabGesture tabGesture
 	// network is the cached answer and the query discipline.
 	network networkCache
 	// entryPending and entryGeneration guard the one Enter query, and entryIntent is what an ssh plan
@@ -215,8 +221,9 @@ func New(router Router, events <-chan protocol.Event, slots []Slot) (*Model, err
 func (m *Model) Init() tea.Cmd {
 	m.applySnapshot(m.router.Snapshot())
 	if m.daemon != nil {
-		// Exactly one window-event wait, beside the one event wait and the tick.
-		return tea.Batch(m.waitEvent(), m.tick(), m.waitWindowEvent())
+		// Exactly one window-event wait, beside the one event wait, the tick, and one Network query so
+		// the tab has data before anyone opens it.
+		return tea.Batch(m.waitEvent(), m.tick(), m.waitWindowEvent(), m.seedNetwork())
 	}
 	return tea.Batch(m.waitEvent(), m.tick())
 }
@@ -260,6 +267,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case entryMsg:
 		return m, m.applyEntry(msg)
+
+	case tea.ColorProfileMsg:
+		// The terminal told us what it can show; nothing here probes for it.
+		if m.daemon != nil {
+			m.theme.applyProfile(msg)
+		}
+		return m, nil
 
 	case tickMsg:
 		if m.daemon != nil {
@@ -322,21 +336,33 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.inputCompleted(msg)
 
 	case tea.MouseClickMsg:
+		if cmd, handled := m.tabMouse(msg); handled {
+			return m, cmd
+		}
 		if m.networkMode {
 			return m, nil
 		}
 		return m, m.handleMouse(msg)
 	case tea.MouseReleaseMsg:
+		if cmd, handled := m.tabMouse(msg); handled {
+			return m, cmd
+		}
 		if m.networkMode {
 			return m, nil
 		}
 		return m, m.handleMouse(msg)
 	case tea.MouseWheelMsg:
+		if cmd, handled := m.tabMouse(msg); handled {
+			return m, cmd
+		}
 		if m.networkMode {
 			return m, nil
 		}
 		return m, m.handleMouse(msg)
 	case tea.MouseMotionMsg:
+		if cmd, handled := m.tabMouse(msg); handled {
+			return m, cmd
+		}
 		if m.networkMode {
 			return m, nil
 		}
@@ -455,6 +481,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 
 	switch {
 	case isKey(k, tea.KeyF1):
+		if m.emptyDaemon() {
+			return nil
+		}
 		m.setFocus(0)
 		return nil
 	case isKey(k, tea.KeyF2):
@@ -468,6 +497,10 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	case isKey(k, tea.KeyF3):
 		return m.enterHistory()
 	case isKey(k, tea.KeyF4):
+		if m.emptyDaemon() {
+			m.feedback = emptyWindowHint
+			return nil
+		}
 		if m.tooSmall() {
 			m.feedback = "pane too small: enlarge the terminal before delivering"
 			return nil
@@ -508,6 +541,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 // only when the write succeeded: a failed write proves nothing about what the
 // child saw.
 func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
+	if m.emptyDaemon() {
+		return nil
+	}
 	if m.networkMode {
 		return nil
 	}
@@ -540,6 +576,9 @@ func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
 // the child's bracketed-paste mode. The text itself is not sanitized here: a
 // paste is user input, not a message.
 func (m *Model) paste(content string) tea.Cmd {
+	if m.emptyDaemon() {
+		return nil
+	}
 	if m.networkMode {
 		return nil
 	}
@@ -567,6 +606,9 @@ func (m *Model) paste(content string) tea.Cmd {
 // per pane runs at a time; a stalled PTY cannot spawn a goroutine for each key.
 // UNTESTED: on overflow this input is refused visibly and draft remains held.
 func (m *Model) enqueueInput(action inputAction) tea.Cmd {
+	if m.emptyDaemon() {
+		return nil
+	}
 	action.drafting = true
 	action.priorDraft = m.drafts[m.slots[m.focus].ID]
 	return m.enqueueInputFor(m.focus, action, false)
@@ -576,7 +618,7 @@ func (m *Model) enqueueInput(action inputAction) tea.Cmd {
 // typing, and whether a full queue should complain. A wheel turn is neither
 // typing nor worth complaining about, so it must not bump the draft epoch.
 func (m *Model) enqueueInputFor(i int, action inputAction, silentOverflow bool) tea.Cmd {
-	if i < 0 || i >= m.activeCount() {
+	if i < 0 || i >= m.activeCount() || m.emptyDaemon() {
 		return nil
 	}
 
@@ -701,6 +743,9 @@ func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 // that never started - nothing is reported, because the user is not typing into
 // a child.
 func (m *Model) markDraft() {
+	if m.emptyDaemon() {
+		return
+	}
 	if m.networkMode {
 		return
 	}
@@ -848,7 +893,11 @@ func (m *Model) render() []string {
 	}
 
 	lines := make([]string, 0, height)
-	lines = append(lines, fitPlain(m.titleLine(), width))
+	if m.daemon != nil {
+		lines = append(lines, m.daemonTitleRow(width))
+	} else {
+		lines = append(lines, fitPlain(m.titleLine(), width))
+	}
 	lines = append(lines, m.headerLine())
 
 	rows := m.screenRows()
@@ -856,21 +905,33 @@ func (m *Model) render() []string {
 	case m.networkMode:
 		lines = append(lines, m.networkLines(width, rows)...)
 	case m.logMode:
-		lines = append(lines, m.historyLines(width, rows)...)
+		lines = append(lines, m.styleLogLines(m.historyLines(width, rows), width)...)
+	case m.emptyDaemon():
+		lines = append(lines, m.emptyTerminalsLines(width, rows)...)
 	default:
 		lines = append(lines, m.screenLines(width, rows)...)
 	}
 
-	lines = append(lines, strings.Repeat("─", width))
+	separator := strings.Repeat("─", width)
+	if m.daemon != nil && !m.theme.glyphs() {
+		separator = strings.Repeat("-", width)
+	}
+	lines = append(lines, m.uiLine(separator, width, colLine, colTermBG, false))
 	if m.logMode {
 		for _, line := range m.historyHelpLines()[:recentMessageRows] {
-			lines = append(lines, fitPlain(line, width))
+			lines = append(lines, m.uiLine(line, width, colDim, colTermBG, false))
 		}
 	} else {
-		lines = append(lines, m.messageLines(width, recentMessageRows)...)
+		messages := m.messageLines(width, recentMessageRows)
+		if m.daemon != nil {
+			for i := range messages {
+				messages[i] = m.uiLine(messages[i], width, colDim, colTermBG, false)
+			}
+		}
+		lines = append(lines, messages...)
 	}
-	lines = append(lines, fitPlain(m.feedbackLine(), width))
-	lines = append(lines, fitPlain(m.hintsLine(), width))
+	lines = append(lines, m.feedbackRow(width))
+	lines = append(lines, m.hintRow(width))
 
 	for len(lines) < height {
 		lines = append(lines, strings.Repeat(" ", width))
@@ -882,10 +943,28 @@ func (m *Model) render() []string {
 // says why the big layout is missing, still renders the log when F3 opened it,
 // and still offers the quit key.
 func (m *Model) renderMinimal(width, height int) []string {
+	lines := m.renderMinimalRows(width, height)
+	if m.daemon != nil {
+		for i := 1; i < len(lines); i++ {
+			lines[i] = m.uiLine(lines[i], width, colDim, colTermBG, false)
+		}
+	}
+	return lines
+}
+
+func (m *Model) renderMinimalRows(width, height int) []string {
 	lines := make([]string, 0, height)
+
+	// In a daemon window the strip keeps row 0 whatever else is happening. A warning is a line below
+	// it, never a replacement for the tab a user clicks, so no interactive row is ever hidden or moved.
+	daemonStrip := m.daemon != nil
+	if daemonStrip {
+		lines = append(lines, m.daemonTitleRow(width))
+	}
+
 	if m.quitArmed {
-		lines = append(lines, fitPlain(m.feedbackLine(), width))
-		if height > 1 {
+		lines = append(lines, m.feedbackRow(width))
+		if height > len(lines) {
 			lines = append(lines, fitPlain(m.hintsLine(), width))
 		}
 		for len(lines) < height {
@@ -896,7 +975,9 @@ func (m *Model) renderMinimal(width, height int) []string {
 	if line := m.inputUnavailableLine(); line != "" {
 		lines = append(lines, fitPlain(line, width))
 	}
-	lines = append(lines, fitPlain(m.titleLine(), width))
+	if !daemonStrip {
+		lines = append(lines, fitPlain(m.titleLine(), width))
+	}
 	if m.daemon != nil && len(m.daemon.startErrors) > 0 {
 		// In a small terminal the start errors are the only place a partially failed attach is
 		// visible, so they get a line of their own.
@@ -904,12 +985,24 @@ func (m *Model) renderMinimal(width, height int) []string {
 	}
 
 	if m.networkMode {
-		lines = append(lines, fitPlain(fmt.Sprintf("network view needs %dx%d (Esc back)", minUsableWidth, minUsableHeight), width))
+		// A small Network view still says what it knows: the gateway line and the local or waiting
+		// state, as many of them as fit. It never claims a pane needs 40x10, because nothing there is a
+		// pane.
+		for _, line := range m.networkStateLines(width) {
+			if len(lines) >= height-1 {
+				break
+			}
+			lines = append(lines, fitPlain(line, width))
+		}
 		for len(lines) < height {
 			lines = append(lines, strings.Repeat(" ", width))
 		}
 		if height > 1 {
-			lines[height-1] = fitPlain("F10 detach  Esc terminals  F6 input", width)
+			hint := "F10 detach  Esc terminals  F6 input"
+			if m.emptyDaemon() {
+				hint = "F10 detach  Esc terminals"
+			}
+			lines[height-1] = fitPlain(hint, width)
 		}
 		return lines[:height]
 	}
@@ -919,11 +1012,19 @@ func (m *Model) renderMinimal(width, height int) []string {
 		if rows > 0 {
 			lines = append(lines, m.historyLines(width, rows)...)
 		}
+	} else if m.emptyDaemon() {
+		// Nothing needs a size, so the empty window shows its guidance instead of a size warning.
+		for _, line := range emptyMessages {
+			if len(lines) >= height {
+				break
+			}
+			lines = append(lines, fitPlain(line, width))
+		}
 	} else {
 		lines = append(lines, fitPlain(fmt.Sprintf("terminal too small: need %dx%d, have %dx%d", minUsableWidth, minUsableHeight, width, height), width))
 		lines = append(lines, fitPlain("child input is paused", width))
 		if m.feedback != "" {
-			lines = append(lines, fitPlain(m.feedbackLine(), width))
+			lines = append(lines, m.feedbackRow(width))
 		}
 	}
 
@@ -931,9 +1032,12 @@ func (m *Model) renderMinimal(width, height int) []string {
 		lines = append(lines, strings.Repeat(" ", width))
 	}
 	if len(lines) < height {
-		lines = append(lines, fitPlain(m.hintsLine(), width))
+		lines = append(lines, m.theme.style(fitPlain(m.hintsLine(), width), colDim, colTermBG, false))
 	}
-	return lines[:height]
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return lines
 }
 
 func (m *Model) titleLine() string {
@@ -967,7 +1071,7 @@ func (m *Model) titleLine() string {
 // not resized - so the header is the one network line instead.
 func (m *Model) headerLine() string {
 	if m.networkMode {
-		return fitPlain(m.networkHeaderLine(), m.width)
+		return m.uiLine(m.networkHeaderLine(), m.width, colAccent, colTermBG, true)
 	}
 	boxes := m.boxes()
 	if len(boxes) == 0 {
@@ -985,14 +1089,49 @@ func (m *Model) headerLine() string {
 }
 
 func (m *Model) styledHeader(i, width int) string {
-	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	if m.daemon == nil {
+		style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+		if i == m.focus {
+			style = style.Foreground(lipgloss.Color("231")).Background(lipgloss.Color("24"))
+		}
+		if agent, ok := m.agent(m.slots[i].ID); ok && agent.State == protocol.AgentNeedsYou {
+			style = style.Foreground(lipgloss.Color("220"))
+		}
+		return style.Render(fitPlain(m.headerText(i), width))
+	}
+	text := fitPlain(cleanUISpan(m.headerText(i)), width)
+	if !m.theme.colours {
+		return text
+	}
+
+	// Every header cell pairs foreground with a KNOWN background - the focused surface or the
+	// terminal one - so a light terminal cannot leave dark text on its own dark bar.
+	bg := colTermBG
+	fg := colDim
+	bold := false
 	if i == m.focus {
-		style = style.Foreground(lipgloss.Color("231")).Background(lipgloss.Color("24"))
+		bg, fg, bold = colBarBG, colTabSel, true
 	}
-	if agent, ok := m.agent(m.slots[i].ID); ok && agent.State == protocol.AgentNeedsYou {
-		style = style.Foreground(lipgloss.Color("220"))
+
+	label := m.daemonHeaderLabel(i)
+	labelColour := fg
+	switch label {
+	case "INPUT HOLDER":
+		labelColour = colOK
+	case "SESSION ENDED":
+		labelColour = colBad
+	case "VIEWER":
+		labelColour = colFocus
 	}
-	return style.Render(fitPlain(m.headerText(i), width))
+	// Split only the UI's fixed prefix, never a reported name or state word.
+	prefix := fmt.Sprintf(" %d ", i+1)
+	if i == m.focus {
+		prefix = fmt.Sprintf(">%d ", i+1)
+	}
+	if label != "" && strings.HasPrefix(text, prefix+label) {
+		return m.renderSpans([]uiSpan{{text: prefix, fg: colFocus, bold: bold}, {text: label, fg: labelColour, bold: true}, {text: strings.TrimPrefix(text, prefix+label), fg: fg}}, width, bg)
+	}
+	return m.theme.style(text, fg, bg, bold)
 }
 
 func (m *Model) headerText(index int) string {
@@ -1000,6 +1139,9 @@ func (m *Model) headerText(index int) string {
 	marker := " "
 	if m.focus == index {
 		marker = "▶"
+		if m.daemon != nil {
+			marker = ">"
+		}
 	}
 
 	daemonLabel := ""
@@ -1173,6 +1315,23 @@ func messageLine(msg protocol.MessageView) string {
 // feedbackLine shows, in order: the quit warning, the last feedback, a pane
 // transport error, then the router's banner. Only one line is available, so the
 // most urgent wins.
+// styledLine styles one of our own plain lines: muted by default, bad when it is an error.
+func (m *Model) styledLine(line string) string {
+	if m.daemon == nil || !m.theme.colours || line == "" {
+		return line
+	}
+	if strings.HasPrefix(line, "I/O WARNING") || strings.HasPrefix(line, "not opened") || strings.HasPrefix(line, "entry failed") ||
+		strings.HasPrefix(line, "F4") || strings.Contains(line, "failed") {
+		return m.theme.style(line, colBad, colTermBG, false)
+	}
+	return m.theme.style(line, colDim, colTermBG, false)
+}
+
+// feedbackRow is the feedback line with its styling: an error reads as bad, anything else as muted.
+func (m *Model) feedbackRow(width int) string {
+	return m.styledLine(fitPlain(m.feedbackLine(), width))
+}
+
 func (m *Model) feedbackLine() string {
 	// A pane that cannot receive input is the reason keystrokes appear to do
 	// nothing, so it outranks feedback, banners and history notices.
@@ -1224,7 +1383,12 @@ func (m *Model) hintsLine() string {
 	if m.daemon != nil {
 		switch {
 		case m.networkMode:
+			if m.emptyDaemon() {
+				return "F5/Esc terminals   ↑/↓ select   PgUp/PgDn page   R refresh   Enter open session   F10 detach"
+			}
 			return "F5/Esc terminals   ↑/↓ select   PgUp/PgDn page   R refresh   Enter open session   F6 focused terminal input   F10 detach"
+		case m.emptyDaemon():
+			return "F10 detach   Ctrl+C detach   F3 log   F5 network"
 		case m.tooSmall():
 			return "F10 detach   Ctrl+C detach   F6 take input (child input paused)"
 		case m.logMode:

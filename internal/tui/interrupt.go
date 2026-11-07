@@ -65,6 +65,9 @@ func (m *Model) expireInterrupt() {
 // canReceiveInput reports whether the focused pane could take a keystroke right
 // now. When it cannot, Ctrl+C has nobody to interrupt and quits instead.
 func (m *Model) canReceiveInput() bool {
+	if m.emptyDaemon() {
+		return false
+	}
 	if m.networkMode {
 		return false
 	}
@@ -198,6 +201,9 @@ func isCtrlC(key tea.KeyPressMsg) bool {
 // operation window expires, it is visible and Ctrl+C takes the quit path.
 const inputCommandLimit = 3 * time.Second // UNTESTED UI watchdog, not a preemptive goroutine cancel.
 func (m *Model) paneInputReady(i int) bool {
+	if i < 0 || i >= m.activeCount() {
+		return false
+	}
 	if m.daemon != nil {
 		p := daemonPane(m.slots[i].Pane)
 		return p != nil && p.InputReady() && !p.Ended() && p.State().YouHold && m.daemon.client.OperationError(m.slots[i].ID) == nil

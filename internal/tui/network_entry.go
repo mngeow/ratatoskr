@@ -128,6 +128,10 @@ func (m *Model) enterNetwork() tea.Cmd {
 		return nil
 	}
 	row := rows[index]
+	if !row.selectable {
+		m.feedback = entrySelectASession
+		return nil
+	}
 
 	request, ok := m.enterRequestFor(row)
 	if !ok {

@@ -68,9 +68,9 @@ type window struct {
 	queryMu sync.Mutex
 	queries int
 
-	// networkRelease is set the first time this window asks for the network answer: from then on
-	// the daemon fetches from the gateway until the window closes. It is nil while the window has
-	// asked nothing, which is what keeps an idle window from fetching.
+	// networkRelease is set once a successful attach makes this window a consumer, and cleared when it
+	// closes. It is nil before the attach and after the close: the daemon fetches the gateway's
+	// snapshot for the life of every attached window, and not at all for a window that never attached.
 	networkRelease func()
 }
 
@@ -333,8 +333,10 @@ func (w *window) addSession(view sessionView) {
 
 // acquireNetwork registers this window as a consumer of the network fetch loop, once.
 //
-// A window that never asks for the network answer never fetches anything, which is the contract's
-// rule and the reason this is lazy.
+// It is called on a successful attach, so a window fetches from the moment it exists: the first
+// network query then has data without having had to start anything. The closed guard below is what
+// keeps a racing close honest: acquiring after closeWith has already released would leave a consumer
+// that nothing ever releases, and the daemon would fetch for ever.
 //
 // UNTESTED.
 func (w *window) acquireNetwork() {

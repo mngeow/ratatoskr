@@ -223,9 +223,9 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	windowHub.router = r
 	windowHub.pending = r.PendingOnQuit
 
-	// The network service: it reports about this host while the stream is up and fetches the
-	// gateway's snapshot only while somebody is looking. Its hooks go into the hub, the pane
-	// observer and the gate's ownership path, all nil-safe.
+	// The network service: it reports about this host while the stream is up, and fetches the
+	// gateway's snapshot while any window is attached or a control network request is in flight. Its
+	// hooks go into the hub, the pane observer and the gate's ownership path, all nil-safe.
 	network := newNetworkService(client, sessions, r, gate, log, func() string {
 		return pairing.Host
 	}, cfg.Version, now)
@@ -270,8 +270,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// r.Events(), and nothing else may read that channel.
 	go windowHub.run(r.Events())
 
-	// The reporter. Its fetch loop starts only when a consumer appears, so a daemon nobody is
-	// looking at makes no network requests beyond its own reports.
+	// The reporter. Its fetch loop runs while at least one consumer exists - every window is one from
+	// a successful attach until it closes, and a control network request (including `--watch`) is one
+	// for its own length - so a daemon with no windows and no watcher makes no fetch requests beyond
+	// its own reports.
 	network.start(bgCtx)
 
 	retentionDone := make(chan struct{})

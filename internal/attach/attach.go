@@ -61,6 +61,8 @@ const (
 	endingLost = "lost"
 	// endingDetach: the user detached on purpose.
 	endingDetach = "detach"
+	// endingEmpty: an attached window that had no sessions detached or received a signal.
+	endingEmpty = "empty"
 )
 
 // Options is one attach invocation.
@@ -157,8 +159,10 @@ func window(rootCtx context.Context, options Options, resume *tui.NetworkBookmar
 	}
 
 	attached := client.Attached()
-	if len(attached.Slots) == 0 {
-		// Nothing to show. Print what could not start, then the guidance, and leave.
+	if len(attached.Slots) == 0 && len(names) > 0 {
+		// Every session that was asked for failed to start: print each reason, then the guidance, and
+		// leave. An attach that asked for nothing is different - it opens the session-less window - so
+		// the rejection is conditional on the request, not on the count.
 		for _, startErr := range attached.StartErrors {
 			fmt.Fprintln(os.Stderr, startErrorLine(startErr.Name, startErr.Message))
 		}
@@ -201,7 +205,7 @@ func window(rootCtx context.Context, options Options, resume *tui.NetworkBookmar
 		return intent, nil
 	}
 
-	return nil, finish(windowCtx.Err() != nil, windowErr, runErr)
+	return nil, finish(windowCtx.Err() != nil, windowErr, runErr, len(attached.Slots) > 0)
 }
 
 // mapExit turns the two endings that have their own exit codes into an ExitError.
@@ -240,10 +244,14 @@ func refusalCode(err error) (wire.Code, bool) {
 //
 // A signal wins over a window error: the user's action is why the window went away, and a
 // disconnect that happened at the same moment is not something they can act on.
-func finish(signalled bool, windowErr, runErr error) error {
+func finish(signalled bool, windowErr, runErr error, hadSessions bool) error {
 	switch {
 	case signalled:
-		text, _ := detachMessage(endingSignal, "")
+		kind := endingSignal
+		if !hadSessions {
+			kind = endingEmpty
+		}
+		text, _ := detachMessage(kind, "")
 		fmt.Fprintln(os.Stdout, text)
 		return nil
 	case windowErr != nil:
@@ -257,19 +265,25 @@ func finish(signalled bool, windowErr, runErr error) error {
 		return runErr
 	}
 
-	text, _ := detachMessage(endingDetach, "")
+	kind := endingDetach
+	if !hadSessions {
+		kind = endingEmpty
+	}
+	text, _ := detachMessage(kind, "")
 	fmt.Fprintln(os.Stdout, text)
 	return nil
 }
 
 // detachMessage is what a window says when it ends.
 //
-// It is a pure function of the ending and its reason, so the three sentences can be pinned
+// It is a pure function of the ending and its reason, so its sentences can be pinned
 // without a daemon.
 //
 // UNTESTED.
 func detachMessage(kind, reason string) (text string, isError bool) {
 	switch kind {
+	case endingEmpty:
+		return "detached; no agents were running (rtk attach --agents claude,codex starts some)", false
 	case endingSignal:
 		return "detached; the agents keep running (rtk attach returns to them)", false
 	case endingLost:
@@ -301,8 +315,9 @@ func startErrorLine(name, message string) string {
 	return "rtk: could not start " + sanitize(name) + ": " + sanitize(message)
 }
 
-// noSessionsGuidance is the error a zero-slot attach returns. It carries no "rtk: " prefix, so
-// the caller prints it once.
+// noSessionsGuidance is the error an attach that asked to start sessions returns when none of them
+// started. It carries no "rtk: " prefix, so the caller prints it once. An attach that asked for
+// nothing does not use it: a session-less window is a window, not a failure.
 const noSessionsGuidance = "no sessions are running: start some with: rtk attach --agents claude,codex"
 
 // startNames is the list of sessions to start.

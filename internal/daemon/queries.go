@@ -98,8 +98,7 @@ func (w *window) answer(ctx context.Context, envelope wire.Envelope) wire.Result
 		if w.hub == nil || w.hub.network == nil {
 			return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the network answer is not available"}}
 		}
-		// The first network query makes this window a consumer, which is what starts fetching.
-		w.acquireNetwork()
+		// Attaching already made this window a consumer; a query only reads the answer.
 		view, version := w.hub.network.answer(ctx, *query.Network)
 		return wire.Result{Network: &view, NetworkVersion: version}
 

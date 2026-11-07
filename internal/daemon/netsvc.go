@@ -6,7 +6,7 @@ package daemon
 //
 //   - Report about this host while the gateway stream is connected, at most once a second, on a
 //     change, every 10 s, or when the link comes back. Nothing is queued or replayed.
-//   - Fetch the gateway's snapshot only while somebody is looking: a window that asked, or one
+//   - Fetch the gateway's snapshot while anybody is looking: every attached window, or one
 //     `rtk daemon network` call.
 //   - Answer its own windows and the CLI from cached data plus one bounded wait.
 //
