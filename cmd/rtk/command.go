@@ -10,6 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/mngeow/ratatoskr/internal/entry"
 )
 
 type commandKind int
@@ -27,16 +30,19 @@ const (
 	kindDaemonRun
 	kindDaemonStatus
 	kindDaemonStop
+	kindDaemonNetwork
 )
 
 // command is one parsed invocation. Only the fields its kind uses are set.
 type command struct {
-	kind        commandKind
-	listen      string   // kindGatewayServe
-	gatewayAddr string   // kindRuntimePair
-	code        string   // kindRuntimePair
-	agents      string   // kindAttach, raw; empty means start nothing
-	admin       []string // kindGatewayAdmin, the command word first
+	kind          commandKind
+	listen        string   // kindGatewayServe
+	gatewayAddr   string   // kindRuntimePair
+	code          string   // kindRuntimePair
+	agents        string   // kindAttach, raw; empty means start nothing
+	expectSession string   // kindAttach, --expect-session: an exact-session window
+	enteredViaSSH bool     // kindAttach, --entered-via-ssh: this window runs inside an SSH entry
+	admin         []string // kindGatewayAdmin, the command word first
 
 	// allowLAN and insecureHTTP are the gateway's two opt-ins; fingerprint and
 	// insecureHTTP are the runtime's transport choice. insecureHTTP is shared because a
@@ -49,9 +55,11 @@ type command struct {
 
 	// foreground and yes belong to the daemon forms: --foreground keeps it in this
 	// terminal, and --yes allows `daemon stop` to end running sessions.
-	foreground bool
-	yes        bool
-	session    string // kindDaemonStop, --session NAME
+	foreground   bool
+	yes          bool
+	session      string // kindDaemonStop, --session NAME
+	networkJSON  bool   // kindDaemonNetwork, --json
+	networkWatch bool   // kindDaemonNetwork, --watch
 }
 
 const (
@@ -150,6 +158,8 @@ func parseDaemon(args []string) (command, error) {
 			return command{kind: kindDaemonStatus}, nil
 		case "stop":
 			return parseDaemonStop(args[1:])
+		case "network":
+			return parseDaemonNetwork(args[1:])
 		}
 	}
 
@@ -163,6 +173,22 @@ func parseDaemon(args []string) (command, error) {
 		return command{}, fmt.Errorf("rtk: daemon: unexpected argument %q", rest[0])
 	}
 	return command{kind: kindDaemonRun, foreground: *foreground}, nil
+}
+
+// parseDaemonNetwork handles `rtk daemon network [--json] [--watch]`. No flag has a meaning the
+// parser has to enforce, so the two booleans are all it produces.
+func parseDaemonNetwork(args []string) (command, error) {
+	fs := flag.NewFlagSet("daemon network", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	asJSON := fs.Bool("json", false, "")
+	watch := fs.Bool("watch", false, "")
+	if err := fs.Parse(args); err != nil {
+		return command{}, fmt.Errorf("rtk: daemon network: %v", err)
+	}
+	if rest := fs.Args(); len(rest) > 0 {
+		return command{}, fmt.Errorf("rtk: daemon network: unexpected argument %q", rest[0])
+	}
+	return command{kind: kindDaemonNetwork, networkJSON: *asJSON, networkWatch: *watch}, nil
 }
 
 // parseDaemonStop handles `rtk daemon stop [--yes] [--session NAME]`.
@@ -217,13 +243,28 @@ func parseAttach(args []string) (command, error) {
 	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	agents := fs.String("agents", "", "")
+	expectSession := fs.String("expect-session", "", "")
+	enteredViaSSH := fs.Bool("entered-via-ssh", false, "")
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("rtk: attach: %v", err)
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		return command{}, fmt.Errorf("rtk: attach: unexpected argument %q", rest[0])
 	}
-	return command{kind: kindAttach, agents: *agents}, nil
+	if *expectSession != "" {
+		if strings.TrimSpace(*agents) != "" {
+			return command{}, fmt.Errorf("rtk: --expect-session attaches one running session and cannot be combined with --agents")
+		}
+		if !entry.IsUUID(*expectSession) {
+			return command{}, fmt.Errorf("rtk: --expect-session needs a session id")
+		}
+	}
+	return command{
+		kind:          kindAttach,
+		agents:        *agents,
+		expectSession: *expectSession,
+		enteredViaSSH: *enteredViaSSH,
+	}, nil
 }
 
 // parseRuntimePair handles `rtk runtime pair --gateway ADDR --code CODE`. Both flags

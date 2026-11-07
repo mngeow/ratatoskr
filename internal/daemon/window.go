@@ -67,6 +67,11 @@ type window struct {
 	// queries counts the read goroutines in flight, so one window cannot flood the store.
 	queryMu sync.Mutex
 	queries int
+
+	// networkRelease is set the first time this window asks for the network answer: from then on
+	// the daemon fetches from the gateway until the window closes. It is nil while the window has
+	// asked nothing, which is what keeps an idle window from fetching.
+	networkRelease func()
 }
 
 // newWindow builds a window for one connection. Nothing is sent until start.
@@ -274,6 +279,16 @@ func (w *window) closeWith(reason string) {
 		w.mu.Unlock()
 
 		close(w.done)
+
+		w.mu.Lock()
+		release := w.networkRelease
+		w.networkRelease = nil
+		w.mu.Unlock()
+		if release != nil {
+			// Idempotent: the network service's release runs once however often it is called.
+			release()
+		}
+
 		_ = w.conn.Close()
 		if w.hub != nil {
 			w.hub.unregister(w)
@@ -314,6 +329,29 @@ func (w *window) addSession(view sessionView) {
 	w.mu.Unlock()
 
 	go w.runWorker(view, requests)
+}
+
+// acquireNetwork registers this window as a consumer of the network fetch loop, once.
+//
+// A window that never asks for the network answer never fetches anything, which is the contract's
+// rule and the reason this is lazy.
+//
+// UNTESTED.
+func (w *window) acquireNetwork() {
+	if w.hub == nil || w.hub.network == nil {
+		return
+	}
+
+	w.mu.Lock()
+	// A query that was in flight when the window closed must not acquire after closeWith has
+	// already released: nothing would ever release it, and the daemon would fetch for ever.
+	if w.closed || w.networkRelease != nil {
+		w.mu.Unlock()
+		return
+	}
+	release := w.hub.network.acquire()
+	w.networkRelease = release
+	w.mu.Unlock()
 }
 
 // session returns one addressable session.

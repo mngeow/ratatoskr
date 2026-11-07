@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
+	"github.com/mngeow/ratatoskr/internal/entry"
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
@@ -39,6 +40,24 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 		return false
 	}
 
+	// An expected session is checked BEFORE the window is registered: a refused expectation must
+	// register nothing, assign nothing and take no input.
+	var expected sessionView
+	haveExpected := false
+	if request.ExpectSession != "" {
+		view, ok := s.manager.expectedSession(protocol.AgentID(request.ExpectSession))
+		if !ok {
+			s.refuseOpen(w.conn, wire.CodeNotRunning, "the expected session is not running")
+			return false
+		}
+		// The gate is the authority on whether it has ended, and it is a latch.
+		if _, _, _, ended, _ := s.hub.gate.snapshot(view.Agent); ended {
+			s.refuseOpen(w.conn, wire.CodeNotRunning, "the expected session is not running")
+			return false
+		}
+		expected, haveExpected = view, true
+	}
+
 	// Registered first, and still paused: the hub may queue messages now, and they go after
 	// the attached answer.
 	s.hub.register(w)
@@ -48,7 +67,12 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 	// Every session nobody holds belongs to the window that just arrived, so one window needs
 	// no keypress per session.
 	slots := make([]wire.Slot, 0, 2)
-	for _, view := range s.manager.Running() {
+	views := s.manager.Running()
+	if haveExpected {
+		// A window opened with an expectation has exactly one session.
+		views = []sessionView{expected}
+	}
+	for _, view := range views {
 		w.addSession(view)
 		s.hub.gate.assign(view.Agent, w.id)
 
@@ -70,6 +94,15 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 			if err := view.Pane.Err(); err != nil {
 				state.Err = sanitizeMessage(err.Error())
 			}
+		}
+
+		if haveExpected && state.Ended {
+			// It ended between the check and here. Give the hold back, refuse, and close the window
+			// through the one path that unregisters it.
+			s.hub.gate.releaseAll(w.id)
+			s.refuseOpen(w.conn, wire.CodeNotRunning, "the expected session is not running")
+			w.closeWith("the expected session ended before it could be attached")
+			return false
 		}
 
 		slots = append(slots, wire.Slot{
@@ -106,6 +139,15 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 func (s *daemonServer) validateAttach(request wire.Attach) (string, bool) {
 	if request.Width < 1 || request.Height < 1 {
 		return "the window's size must be at least 1x1", false
+	}
+	if request.ExpectSession != "" {
+		// An expectation names one session and starts nothing.
+		if len(request.Start) > 0 {
+			return "an expected session cannot be combined with starting sessions", false
+		}
+		if !entry.IsUUID(request.ExpectSession) {
+			return "an expected session must be a session id", false
+		}
 	}
 	for _, name := range request.Start {
 		if !s.manager.startable(name) {

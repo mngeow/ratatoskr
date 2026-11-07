@@ -200,6 +200,9 @@ type sessionManager struct {
 	observer   sessionObserver
 	sessions   map[string]*sessionEntry
 	pendingEnd map[string]struct{}
+	// versions is each session's harness version, recorded when the launch spec was built, for the
+	// network report. It is a copy of what the router was told, not a second lookup.
+	versions map[protocol.AgentID]string
 	// closed is set when the daemon begins to stop: no session may start after it.
 	closed bool
 }
@@ -225,6 +228,7 @@ func newSessionManager(link gatewayLink, srv sessionServer, r sessionRouter, log
 		harnessVersion: agent.Version,
 		sessions:       make(map[string]*sessionEntry, 2),
 		pendingEnd:     make(map[string]struct{}, 2),
+		versions:       make(map[protocol.AgentID]string, 2),
 	}
 }
 
@@ -273,6 +277,21 @@ func (m *sessionManager) Running() []sessionView {
 		})
 	}
 	return out
+}
+
+// expectedSession finds one running session by its exact agent id.
+//
+// An `rtk attach --expect-session` window is given this session and nothing else, so the lookup is an
+// exact string compare: a near-match is not a match.
+//
+// UNTESTED.
+func (m *sessionManager) expectedSession(id protocol.AgentID) (sessionView, bool) {
+	for _, view := range m.Running() {
+		if view.Agent == id {
+			return view, true
+		}
+	}
+	return sessionView{}, false
 }
 
 // Names is the startable names, in the order the daemon reports them.
@@ -427,6 +446,7 @@ func (m *sessionManager) start(ctx context.Context, entry *sessionEntry, dir str
 	}
 
 	m.mu.Lock()
+	m.versions[id] = spec.HarnessVersion
 	entry.pane = started
 	exitedEarly := entry.exited
 	stoppedMeanwhile := m.closed
@@ -601,6 +621,7 @@ func (m *sessionManager) finishEntry(ctx context.Context, entry *sessionEntry, c
 	if m.sessions[name] == entry {
 		delete(m.sessions, name)
 	}
+	delete(m.versions, id)
 	observer := m.observer
 	m.mu.Unlock()
 	if observer != nil {

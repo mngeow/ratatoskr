@@ -43,6 +43,15 @@ const (
 // daemonWindow is the model's daemon state. It exists only in a daemon window.
 type daemonWindow struct {
 	client daemonClient
+	// network asks the daemon for the network answer (F5). It is a function rather than a method on
+	// daemonClient so a test client needs no new method, and a window built without it simply has no
+	// Network view to open.
+	network func(ctx context.Context, request wire.NetworkRequest) (protocol.NetworkView, uint64, error)
+	// enter asks the daemon what pressing Enter on one Network row should do. Nil in a test-built
+	// window, which is what makes the Network view's Enter answer politely instead of panicking.
+	enter func(ctx context.Context, request wire.EnterRequest) (wire.EnterPlan, error)
+	// enteredViaSSH records that this window runs inside an SSH entry, so a second hop is refused.
+	enteredViaSSH bool
 
 	// lastRev is the ownership revision last reconciled per slot, so a draft is seeded when a
 	// window becomes the holder and never on every frame.
@@ -139,7 +148,7 @@ func NewDaemon(client *windowclient.Client) (*Model, error) {
 		return nil, err
 	}
 
-	daemon := &daemonWindow{client: client}
+	daemon := &daemonWindow{client: client, network: client.Network, enter: client.Enter}
 	for i, slot := range slots {
 		state := client.Pane(slot.ID).State()
 		daemon.lastRev[i] = state.Rev

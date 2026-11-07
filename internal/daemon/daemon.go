@@ -223,8 +223,19 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	windowHub.router = r
 	windowHub.pending = r.PendingOnQuit
 
+	// The network service: it reports about this host while the stream is up and fetches the
+	// gateway's snapshot only while somebody is looking. Its hooks go into the hub, the pane
+	// observer and the gate's ownership path, all nil-safe.
+	network := newNetworkService(client, sessions, r, gate, log, func() string {
+		return pairing.Host
+	}, cfg.Version, now)
+	windowHub.network = network
+	network.setStateDir(cfg.StateDir)
+
 	// The manager tells the window side when a session starts, exits and is gone.
-	sessions.setObserver(newPaneObserver(windowHub, log))
+	observer := newPaneObserver(windowHub, log)
+	observer.network = network
+	sessions.setObserver(observer)
 
 	self := &daemonServer{
 		build:      cfg.Version,
@@ -258,6 +269,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// The events fan-out and the pending ticker: the hub is the ONLY consumer of
 	// r.Events(), and nothing else may read that channel.
 	go windowHub.run(r.Events())
+
+	// The reporter. Its fetch loop starts only when a consumer appears, so a daemon nobody is
+	// looking at makes no network requests beyond its own reports.
+	network.start(bgCtx)
 
 	retentionDone := make(chan struct{})
 	go retentionLoop(bgCtx, st, log, retentionDone)

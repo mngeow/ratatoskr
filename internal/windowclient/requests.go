@@ -408,6 +408,20 @@ func (c *Client) resync() {
 
 // query sends one read and returns its result.
 func (c *Client) query(q wire.Query) (wire.Result, error) {
+	return c.queryContext(context.Background(), q)
+}
+
+// queryContext is query with the caller's context, which a network wait needs: the daemon may hold
+// the answer for its own budget, and the UI must be able to give up without ending the connection.
+//
+// A cancelled query retires its id, so a late answer is ignored rather than treated as a protocol
+// violation.
+//
+// UNTESTED.
+func (c *Client) queryContext(ctx context.Context, q wire.Query) (wire.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return wire.Result{}, err
+	}
 	if err := c.Err(); err != nil {
 		return wire.Result{}, err
 	}
@@ -419,7 +433,7 @@ func (c *Client) query(q wire.Query) (wire.Result, error) {
 		return wire.Result{}, errBusy
 	}
 
-	value, err := c.request(context.Background(), wire.TypeQuery, q, wire.TypeResult, queryTimeout)
+	value, err := c.request(ctx, wire.TypeQuery, q, wire.TypeResult, queryTimeout)
 	if err != nil {
 		return wire.Result{}, err
 	}

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
+	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
 const (
@@ -35,6 +36,29 @@ const (
 	// legitimately arrive that late; the margin is 8 s. UNTESTED guess.
 	stopSessionTimeout = shutdownBudget + closeGrace + 8*time.Second
 )
+
+// ExitError carries the exit status a command wants, so `rtk` can exit 4 for "no daemon" and 3 for
+// "the expected session is not running", while every other failure keeps the code it has today.
+//
+// An error without ExitCode keeps exiting 1, which is why this is additive.
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+// Error renders the cause.
+func (e *ExitError) Error() string {
+	if e.Err == nil {
+		return "rtk: an error with no detail"
+	}
+	return e.Err.Error()
+}
+
+// Unwrap exposes the cause, so errors.Is and errors.As still work.
+func (e *ExitError) Unwrap() error { return e.Err }
+
+// ExitCode is the status this command wants.
+func (e *ExitError) ExitCode() int { return e.Code }
 
 // ErrNotRunning is the one text for "there is no daemon".
 var ErrNotRunning = errors.New("no daemon is running (start one with: rtk daemon)")
@@ -277,6 +301,61 @@ func Stop(ctx context.Context, stateDir string, yes bool, out io.Writer) error {
 		}
 		time.Sleep(detachPollEvery)
 	}
+}
+
+// Network asks a running daemon for the network answer.
+//
+// The request's own bounds decide the timeout: the daemon may wait for the first snapshot and then
+// for a version change, so the client must outlive both with a margin.
+//
+// UNTESTED.
+func Network(ctx context.Context, stateDir string, request wire.NetworkRequest) (protocol.NetworkView, uint64, error) {
+	first := request.FirstWaitMS
+	if first < 0 {
+		first = 0
+	}
+	if first > wire.MaxNetworkFirstMS {
+		first = wire.MaxNetworkFirstMS
+	}
+	wait := request.WaitMS
+	if wait < 0 {
+		wait = 0
+	}
+	if wait > wire.MaxNetworkWaitMS {
+		wait = wire.MaxNetworkWaitMS
+	}
+	budget := time.Duration(first+wait)*time.Millisecond + controlTimeout
+
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	session, err := dialControl(ctx, stateDir)
+	if err != nil {
+		return protocol.NetworkView{}, 0, err
+	}
+	defer func() {
+		_ = session.Close()
+	}()
+
+	envelope, err := session.request(wire.TypeNetwork, request, budget)
+	if err != nil {
+		return protocol.NetworkView{}, 0, err
+	}
+	if envelope.Type != wire.TypeResult {
+		return protocol.NetworkView{}, 0, errors.New("daemon: the daemon did not answer the network request")
+	}
+
+	var result wire.Result
+	if err := wire.Decode(envelope, &result); err != nil {
+		return protocol.NetworkView{}, 0, err
+	}
+	if result.Error != nil {
+		return protocol.NetworkView{}, 0, fmt.Errorf("daemon: %s", result.Error.Error())
+	}
+	if result.Network == nil {
+		return protocol.NetworkView{}, 0, errors.New("daemon: the network answer was empty")
+	}
+	return *result.Network, result.NetworkVersion, nil
 }
 
 // StopSession ends one session by name.

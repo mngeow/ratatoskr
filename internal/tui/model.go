@@ -109,6 +109,18 @@ type Model struct {
 	// hangs off it, so the local paths are untouched.
 	daemon *daemonWindow
 
+	// networkMode is the daemon-only Network view (F5). It replaces the pane body and never
+	// changes the pane geometry, so it never resizes a PTY.
+	networkMode bool
+	// network is the cached answer and the query discipline.
+	network networkCache
+	// entryPending and entryGeneration guard the one Enter query, and entryIntent is what an ssh plan
+	// left for the attach loop to run after this window has detached.
+	entryPending    bool
+	entryGeneration uint64
+	entryViewEpoch  uint64
+	entryIntent     *EntryIntent
+
 	eventsClosed      bool
 	eventWaiting      bool
 	input             [2][]inputAction
@@ -243,6 +255,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case takeInputDone:
 		return m, m.applyTakeInputDone(msg)
 
+	case networkMsg:
+		return m, m.applyNetwork(msg)
+
+	case entryMsg:
+		return m, m.applyEntry(msg)
+
 	case tickMsg:
 		if m.daemon != nil {
 			m.expireInterrupt()
@@ -251,6 +269,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reconcileDaemon()
 			if m.daemon.disconnected {
 				return m, tea.Quit
+			}
+			if cmd := m.networkTick(); cmd != nil {
+				return m, tea.Batch(m.tick(), cmd)
 			}
 		}
 		// The outbound source refreshes on its own coalesced clock, and only while
@@ -301,12 +322,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.inputCompleted(msg)
 
 	case tea.MouseClickMsg:
+		if m.networkMode {
+			return m, nil
+		}
 		return m, m.handleMouse(msg)
 	case tea.MouseReleaseMsg:
+		if m.networkMode {
+			return m, nil
+		}
 		return m, m.handleMouse(msg)
 	case tea.MouseWheelMsg:
+		if m.networkMode {
+			return m, nil
+		}
 		return m, m.handleMouse(msg)
 	case tea.MouseMotionMsg:
+		if m.networkMode {
+			return m, nil
+		}
 		return m, m.handleMouse(msg)
 
 	case tea.PasteStartMsg:
@@ -388,6 +421,16 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		return m.requestQuit()
 	}
 
+	if m.daemon != nil && isKey(k, tea.KeyF5) {
+		// F5 toggles the Network view. It is daemon-only: in a plain window the key still reaches
+		// the child, exactly as it always has.
+		if m.networkMode {
+			m.closeNetwork()
+			return nil
+		}
+		return m.openNetwork()
+	}
+
 	if m.daemon != nil && isKey(k, tea.KeyF6) {
 		// F6 works before the log and the size warning, because taking input is how a viewer
 		// becomes useful, and it is not input for a child.
@@ -398,6 +441,10 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	// pane that cannot receive it must not be able to swallow the quit path.
 	if isCtrlC(k) {
 		return m.ctrlC(k)
+	}
+	if m.networkMode {
+		cmd, _ := m.networkKey(k)
+		return cmd
 	}
 	// Any other key means the user has moved on.
 	m.clearInterrupt()
@@ -461,6 +508,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 // only when the write succeeded: a failed write proves nothing about what the
 // child saw.
 func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
+	if m.networkMode {
+		return nil
+	}
 	if m.tooSmall() {
 		// Child input is paused while the warning is up.
 		m.feedback = "terminal too small: child input is paused"
@@ -490,6 +540,9 @@ func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
 // the child's bracketed-paste mode. The text itself is not sanitized here: a
 // paste is user input, not a message.
 func (m *Model) paste(content string) tea.Cmd {
+	if m.networkMode {
+		return nil
+	}
 	if m.quitArmed {
 		return nil
 	}
@@ -648,6 +701,9 @@ func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 // that never started - nothing is reported, because the user is not typing into
 // a child.
 func (m *Model) markDraft() {
+	if m.networkMode {
+		return
+	}
 	if m.tooSmall() || m.logMode {
 		return
 	}
@@ -797,6 +853,8 @@ func (m *Model) render() []string {
 
 	rows := m.screenRows()
 	switch {
+	case m.networkMode:
+		lines = append(lines, m.networkLines(width, rows)...)
 	case m.logMode:
 		lines = append(lines, m.historyLines(width, rows)...)
 	default:
@@ -845,6 +903,16 @@ func (m *Model) renderMinimal(width, height int) []string {
 		lines = append(lines, fitPlain("start errors: "+strings.Join(m.daemon.startErrors, "; "), width))
 	}
 
+	if m.networkMode {
+		lines = append(lines, fitPlain(fmt.Sprintf("network view needs %dx%d (Esc back)", minUsableWidth, minUsableHeight), width))
+		for len(lines) < height {
+			lines = append(lines, strings.Repeat(" ", width))
+		}
+		if height > 1 {
+			lines[height-1] = fitPlain("F10 detach  Esc terminals  F6 input", width)
+		}
+		return lines[:height]
+	}
 	if m.logMode {
 		lines = append(lines, fitPlain("log in a small terminal (F3/Esc back)", width))
 		rows := height - 3
@@ -874,6 +942,9 @@ func (m *Model) titleLine() string {
 	if m.logMode {
 		mode = "log"
 	}
+	if m.networkMode {
+		mode = "network"
+	}
 	title := fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
 	if m.daemon != nil {
 		// A session started after this window attached can never appear here, and the hint is
@@ -891,7 +962,13 @@ func (m *Model) titleLine() string {
 }
 
 // headerLine puts one header over each pane, matching the pane widths.
+//
+// In the Network view the panes are still laid out exactly as they were - the body is replaced,
+// not resized - so the header is the one network line instead.
 func (m *Model) headerLine() string {
+	if m.networkMode {
+		return fitPlain(m.networkHeaderLine(), m.width)
+	}
 	boxes := m.boxes()
 	if len(boxes) == 0 {
 		return strings.Repeat(" ", m.width)
@@ -1146,12 +1223,14 @@ func holdReason(reason string) string {
 func (m *Model) hintsLine() string {
 	if m.daemon != nil {
 		switch {
+		case m.networkMode:
+			return "F5/Esc terminals   ↑/↓ select   PgUp/PgDn page   R refresh   Enter open session   F6 focused terminal input   F10 detach"
 		case m.tooSmall():
 			return "F10 detach   Ctrl+C detach   F6 take input (child input paused)"
 		case m.logMode:
 			return m.historyHelpLines()[recentMessageRows]
 		default:
-			return "F10 detach   Ctrl+C interrupt; again detach   " + m.focusHints() + "   F3 log   F4 deliver held   F6 take input"
+			return "F10 detach   Ctrl+C interrupt; again detach   " + m.focusHints() + "   F3 log   F5 network   F4 deliver held   F6 take input"
 		}
 	}
 	switch {
@@ -1178,6 +1257,9 @@ func (m *Model) focusHints() string {
 // cursor places the terminal cursor on the focused child's cursor, offset by the
 // pane's position. It is nil when there is no live cursor to show.
 func (m *Model) cursor() *tea.Cursor {
+	if m.networkMode {
+		return nil
+	}
 	if m.tooSmall() || m.logMode {
 		return nil
 	}

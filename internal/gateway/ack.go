@@ -28,7 +28,7 @@ const ackBodyLimit = 4 << 10 // UNTESTED guess
 // UNTESTED.
 func (s *Server) handleAck(w http.ResponseWriter, r *http.Request, host string) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id := pathParam(r, "id")
 
 	row, _, err := s.store.Message(ctx, id)
 	switch {
@@ -104,7 +104,7 @@ func (s *Server) handleAck(w http.ResponseWriter, r *http.Request, host string) 
 // UNTESTED.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, host string) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id := pathParam(r, "id")
 
 	row, _, err := s.store.Message(ctx, id)
 	switch {
@@ -161,7 +161,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, host strin
 func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request, host string) {
 	ctx := r.Context()
 
-	row, _, err := s.store.Message(ctx, r.PathValue("id"))
+	row, _, err := s.store.Message(ctx, pathParam(r, "id"))
 	switch {
 	case errors.Is(err, ErrNoSuchMessage):
 		noSuchMessage(w)

@@ -37,7 +37,8 @@ const (
 	CodeNoSuchSession   Code = "no_such_session" // no session with that agent ID
 	CodeInputFailed     Code = "input_failed"    // the transport failed; Message has the reason
 	CodeShuttingDown    Code = "shutting_down"
-	CodeBusy            Code = "busy" // a session operation is already running
+	CodeBusy            Code = "busy"        // a session operation is already running
+	CodeNotRunning      Code = "not_running" // an attach expected a session that is not running (ended, replaced or never there)
 	CodeInternal        Code = "internal"
 )
 
@@ -81,11 +82,17 @@ type Refusal struct {
 // running one is left alone wherever it started. Dir is the window's working
 // directory, used only for sessions this attach starts. Width and Height are the
 // window's pane size, used as the initial size of those sessions.
+//
+// ExpectSession is a session's local ID (the router's agent ID). When set, the daemon attaches this
+// window to that one session only, and only if it is running now: otherwise it refuses with
+// CodeNotRunning before the window is registered or given any input. It cannot be combined with
+// Start. An empty value is the unchanged behaviour.
 type Attach struct {
-	Dir    string   `json:"dir"`
-	Start  []string `json:"start,omitempty"`
-	Width  int      `json:"width"`
-	Height int      `json:"height"`
+	Dir           string   `json:"dir"`
+	Start         []string `json:"start,omitempty"`
+	Width         int      `json:"width"`
+	Height        int      `json:"height"`
+	ExpectSession string   `json:"expect_session,omitempty"`
 }
 
 // Attached is the whole starting picture of a window. The session set is fixed for
@@ -273,6 +280,8 @@ const (
 	QuerySendDetail    = "send_detail"    // Args: ID
 	QueryPending       = "pending"
 	QuerySnapshot      = "snapshot"
+	QueryNetwork       = "network" // Network: NetworkRequest; the answer is Result.Network
+	QueryEnter         = "enter"   // Enter: EnterRequest; the answer is Result.Plan. Window connections only.
 )
 
 // Query is one read. Only the fields its Kind uses are set.
@@ -281,6 +290,8 @@ type Query struct {
 	History *protocol.HistoryQuery `json:"history,omitempty"`
 	Limit   int                    `json:"limit,omitempty"`
 	ID      string                 `json:"id,omitempty"`
+	Network *NetworkRequest        `json:"network,omitempty"`
+	Enter   *EnterRequest          `json:"enter,omitempty"`
 }
 
 // Result answers a query or a status request. Exactly one of Error and the payload
@@ -295,6 +306,35 @@ type Result struct {
 	Pending       *int                    `json:"pending,omitempty"`
 	Snapshot      *protocol.Snapshot      `json:"snapshot,omitempty"`
 	Status        *Status                 `json:"status,omitempty"`
+	// Network answers a network query or request. NetworkVersion is the daemon's own change
+	// counter for it, and is what a caller sends back as NetworkRequest.Since.
+	Network        *protocol.NetworkView `json:"network,omitempty"`
+	NetworkVersion uint64                `json:"network_version,omitempty"`
+	// Plan answers an enter query.
+	Plan *EnterPlan `json:"plan,omitempty"`
+}
+
+// Limits for a network request. They sit under the 10 s query deadline so a window's wait always
+// ends with an answer rather than a timeout.
+const (
+	MaxNetworkWaitMS  = 8000
+	MaxNetworkFirstMS = 8000
+)
+
+// NetworkRequest asks the daemon for the network answer.
+//
+// Asking registers the caller as a consumer: the daemon fetches from the gateway only while at
+// least one consumer exists. A window is a consumer from its first network query until it closes; a
+// control request (`rtk daemon network`) is a consumer for the length of the request.
+//
+// With no Since the answer is immediate. With Since equal to the daemon's current version, the
+// daemon waits up to WaitMS for a change and then answers with the same version and the current
+// body. FirstWaitMS bounds how long a caller with no snapshot yet waits for the first fetch, so
+// that a one-shot caller gets what has arrived by then rather than a null it caused itself.
+type NetworkRequest struct {
+	Since       uint64 `json:"since,omitempty"`
+	WaitMS      int    `json:"wait_ms,omitempty"`
+	FirstWaitMS int    `json:"first_wait_ms,omitempty"`
 }
 
 // StopSession names the session `rtk daemon stop --session` ends.
@@ -323,4 +363,46 @@ type SessionStatus struct {
 	StartedAt time.Time `json:"started_at"`
 	Holder    string    `json:"holder,omitempty"`
 	Drafting  bool      `json:"drafting,omitempty"`
+}
+
+// EnterRequest asks the daemon what pressing Enter on a Network row should do.
+//
+// Exactly one of two forms: a row from the gateway snapshot (Host and SessionID, the gateway's own
+// session ID), or a local row (LocalID, the daemon's own ID for one of its sessions; the local
+// section exists with no gateway, so it has no gateway session ID). Anything else is refused. The
+// window never builds a command: it runs the plan's Argv exactly, or shows its text.
+type EnterRequest struct {
+	Host      string `json:"host,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	LocalID   string `json:"local_id,omitempty"`
+}
+
+// Plan kinds.
+const (
+	EnterLocal   = "local"   // the row is on this host: focus it (InWindow) or say to reattach
+	EnterSSH     = "ssh"     // run Argv
+	EnterManual  = "manual"  // nothing to run: Manual is the command to run on that host yourself, Reason says why
+	EnterRefused = "refused" // nothing is possible: Reason says why. Never an attach without an expected ID.
+)
+
+// EnterPlan is the daemon's answer to an enter query.
+//
+// Every string that came from another machine (names, reasons) is cleaned of control characters
+// before it is here. Argv is set only for EnterSSH and is exact: the caller runs it without a shell
+// and adds nothing.
+type EnterPlan struct {
+	Kind    string `json:"kind"`
+	Host    string `json:"host,omitempty"`
+	LocalID string `json:"local_id,omitempty"`
+	// InWindow is meaningful only for EnterLocal: whether this window has the session (a window's
+	// sessions are fixed when it attaches).
+	InWindow bool     `json:"in_window,omitempty"`
+	Argv     []string `json:"argv,omitempty"`
+	// Display is Argv as one shell-quoted line for the person to read; never run it.
+	Display string `json:"display,omitempty"`
+	Note    string `json:"note,omitempty"`
+	// Manual is the by-hand command: for EnterManual the command to run on that host, for EnterSSH
+	// the fallback if ssh fails.
+	Manual string `json:"manual,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }

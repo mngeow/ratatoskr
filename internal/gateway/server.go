@@ -21,9 +21,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
@@ -102,6 +106,20 @@ type Server struct {
 	// exists.
 	hub *hub
 
+	// network is the snapshot machinery: the report store, the revision and the one
+	// shared recompute ticker. It exists in memory only, so a gateway restart forgets
+	// every report.
+	network *networkState
+	// startedAt is when this gateway started, which the snapshot reports.
+	startedAt time.Time
+	// networkTick is how often the shared recompute runs while a poll is parked. It is a
+	// field so a test can use a millisecond instead of a second.
+	networkTick time.Duration
+	// closing is closed once when Shutdown begins, so a parked long poll leaves before
+	// the HTTP server is asked to stop.
+	closing   chan struct{}
+	closeOnce sync.Once
+
 	http *http.Server
 }
 
@@ -139,6 +157,10 @@ func NewServer(store *Store, opts Options) *Server {
 	}
 	// Liveness reads the hub, and every registration pushes a directory.
 	server.streamOpen = server.hub.open
+	server.startedAt = server.opts.Now()
+	server.network = newNetworkState()
+	server.networkTick = defaultNetworkTick
+	server.closing = make(chan struct{})
 	server.onDirectoryChanged = server.pushDirectory
 	server.http = &http.Server{
 		Handler:           server.Handler(),
@@ -171,22 +193,54 @@ func randomID() (string, error) {
 // Order: the protocol version first, for every request; then the router, where
 // every route but pairing also requires a credential.
 //
+// The router is chi (the user's requirement). Differences from the ServeMux it
+// replaced, each deliberate:
+//
+//   - chi routes on the escaped path, so {name} and {id} arrive still escaped;
+//     pathParam decodes them, so a validly escaped name is judged as it was.
+//   - chi does not answer HEAD from a GET route, so HEAD is a 405. Nothing sends it.
+//   - chi does not clean paths or redirect; an unclean path is a 404 and the
+//     credential never follows a redirect.
+//   - chi's default 405 sets Allow and writes no body; rewriteBareErrors gives it the
+//     wire error shape, and keeps Allow.
+//
+// No chi middleware is used: a response wrapper must not hide http.Flusher from the
+// stream or the long-poll, and auth stays withAuth on each handler.
+//
 // UNTESTED.
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/pair", s.handlePair)
-	mux.HandleFunc("POST "+protocol.ConnectPath, s.withAuth(s.handleConnect))
-	mux.HandleFunc("POST "+protocol.SessionsPath, s.withAuth(s.handleAddSession))
-	mux.HandleFunc("DELETE "+protocol.SessionsPath, s.withAuth(s.handleEndSessions))
-	mux.HandleFunc("DELETE "+protocol.SessionsPath+"/{name}", s.withAuth(s.handleEndSession))
-	mux.HandleFunc("POST /v1/heartbeat", s.withAuth(s.handleHeartbeat))
-	mux.HandleFunc("GET /v1/stream", s.withAuth(s.handleStream))
-	mux.HandleFunc("POST /v1/messages", s.withAuth(s.handleSend))
-	mux.HandleFunc("POST /v1/messages/{id}/ack", s.withAuth(s.handleAck))
-	mux.HandleFunc("POST /v1/messages/{id}/status", s.withAuth(s.handleStatus))
-	mux.HandleFunc("GET /v1/messages/{id}", s.withAuth(s.handleGetMessage))
+	router := chi.NewRouter()
+	router.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		writeWireError(w, http.StatusNotFound, protocol.WireErrNotFound, "no such route")
+	})
 
-	return s.withVersion(rewriteBareErrors(mux))
+	router.Post("/v1/pair", s.handlePair)
+	router.Post(protocol.ConnectPath, s.withAuth(s.handleConnect))
+	router.Post(protocol.SessionsPath, s.withAuth(s.handleAddSession))
+	router.Delete(protocol.SessionsPath, s.withAuth(s.handleEndSessions))
+	router.Delete(protocol.SessionsPath+"/{name}", s.withAuth(s.handleEndSession))
+	router.Post("/v1/heartbeat", s.withAuth(s.handleHeartbeat))
+	router.Get("/v1/stream", s.withAuth(s.handleStream))
+	router.Post("/v1/messages", s.withAuth(s.handleSend))
+	router.Post("/v1/messages/{id}/ack", s.withAuth(s.handleAck))
+	router.Post("/v1/messages/{id}/status", s.withAuth(s.handleStatus))
+	router.Get("/v1/messages/{id}", s.withAuth(s.handleGetMessage))
+	router.Put(protocol.ReportPath, s.withAuth(s.handleReport))
+	router.Get(protocol.NetworkPath, s.withAuth(s.handleNetwork))
+
+	return s.withVersion(rewriteBareErrors(router))
+}
+
+// pathParam returns one path parameter, unescaped.
+//
+// ServeMux decoded {name} and {id}; chi hands them over as routed, escaped. An escape
+// that does not decode yields "", which every caller's validation refuses.
+func pathParam(r *http.Request, key string) string {
+	value, err := url.PathUnescape(r.PathValue(key))
+	if err != nil {
+		return ""
+	}
+	return value
 }
 
 // Serve runs the server until Shutdown.
@@ -207,7 +261,11 @@ func (s *Server) Serve(listener net.Listener) error {
 //
 // UNTESTED.
 func (s *Server) Shutdown(ctx context.Context) error {
-	// Streams first: each handler is parked in its own loop, and cancelling is
+	// The snapshot machinery goes first: a parked long poll selects on this channel, so it
+	// leaves before the HTTP server is asked to stop, and the shared ticker stops too.
+	s.closeOnce.Do(func() { close(s.closing) })
+
+	// Streams next: each handler is parked in its own loop, and cancelling is
 	// what gets it out so the http server is not waiting on it.
 	s.hub.closeAll()
 	if err := s.http.Shutdown(ctx); err != nil {
@@ -385,7 +443,7 @@ func (s *Server) handleAddSession(w http.ResponseWriter, r *http.Request, host s
 // A malformed name is a bad request; a valid name that is not open is 204, because a
 // daemon and its gateway can disagree about who ended what and the answer is the same.
 func (s *Server) handleEndSession(w http.ResponseWriter, r *http.Request, host string) {
-	name := r.PathValue("name")
+	name := pathParam(r, "name")
 	if !agentNamePattern.MatchString(name) {
 		writeWireError(w, http.StatusBadRequest, protocol.WireErrBadRequest,
 			fmt.Sprintf("gateway: %q must match %s", name, agentNamePatternText))
@@ -485,6 +543,11 @@ func (s *Server) directoryEntries(ctx context.Context) ([]protocol.DirectoryEntr
 //
 // UNTESTED.
 func (s *Server) pushDirectory() {
+	// A directory change is a snapshot change too, and a long poll that is parked with no
+	// stream open anywhere must still wake. The kick goes before the early return below for
+	// exactly that reason; it is bounded and runs in its own goroutine.
+	s.kickNetwork()
+
 	hosts := s.hub.hosts()
 	if len(hosts) == 0 {
 		// Nobody is streaming: no read, no frame, nothing to do.

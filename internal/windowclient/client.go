@@ -220,7 +220,10 @@ func (c *Client) handshake(ctx context.Context, socketPath, build string, attach
 		if err := wire.Decode(envelope, &refusal); err != nil {
 			return err
 		}
-		return fmt.Errorf("windowclient: the daemon refused this window: %s", refusal.Message)
+		// The prefix stays exactly as it was, and the code travels inside the wrap so a caller can
+		// tell an expected-session refusal from any other.
+		return fmt.Errorf("windowclient: the daemon refused this window: %w",
+			&RefusalError{Code: refusal.Code, Message: refusal.Message})
 	default:
 		return fmt.Errorf("windowclient: unexpected %q in answer to the hello", envelope.Type)
 	}
@@ -265,7 +268,8 @@ func (c *Client) handshake(ctx context.Context, socketPath, build string, attach
 		if err := wire.Decode(envelope, &refusal); err != nil {
 			return err
 		}
-		return fmt.Errorf("windowclient: the daemon refused the attach: %s", refusal.Message)
+		return fmt.Errorf("windowclient: the daemon refused the attach: %w",
+			&RefusalError{Code: refusal.Code, Message: refusal.Message})
 	default:
 		return fmt.Errorf("windowclient: unexpected %q in answer to the attach", envelope.Type)
 	}

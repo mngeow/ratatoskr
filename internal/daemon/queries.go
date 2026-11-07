@@ -81,6 +81,28 @@ func (w *window) answer(ctx context.Context, envelope wire.Envelope) wire.Result
 	}
 
 	switch query.Kind {
+	case wire.QueryEnter:
+		if query.Enter == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeBadRequest, Message: "that query has no enter request"}}
+		}
+		if w.hub == nil || w.hub.network == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the entry planner is not available"}}
+		}
+		plan := w.hub.network.enterPlan(*query.Enter, w)
+		return wire.Result{Plan: &plan}
+
+	case wire.QueryNetwork:
+		if query.Network == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeBadRequest, Message: "that query has no network request"}}
+		}
+		if w.hub == nil || w.hub.network == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the network answer is not available"}}
+		}
+		// The first network query makes this window a consumer, which is what starts fetching.
+		w.acquireNetwork()
+		view, version := w.hub.network.answer(ctx, *query.Network)
+		return wire.Result{Network: &view, NetworkVersion: version}
+
 	case wire.QuerySnapshot:
 		snapshot := router.Snapshot()
 		return wire.Result{Snapshot: &snapshot}

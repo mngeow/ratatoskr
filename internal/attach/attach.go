@@ -19,8 +19,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/sys/unix"
 
 	"github.com/mngeow/ratatoskr/internal/daemon"
@@ -61,54 +63,97 @@ const (
 	endingDetach = "detach"
 )
 
+// Options is one attach invocation.
+type Options struct {
+	// Version is this binary's build, which the daemon must match for a window.
+	Version string
+	// Agents is the raw --agents value: empty starts nothing, and is parsed only when non-empty.
+	Agents string
+	// ExpectSession makes this an exact-session window: it attaches only if the daemon has a running
+	// session with that local id, and attaches only that session.
+	ExpectSession string
+	// EnteredViaSSH records that this window runs inside an SSH entry, which the Network view uses to
+	// refuse a second hop.
+	EnteredViaSSH bool
+}
+
 // Run opens a window on the daemon's sessions.
 //
-// An empty agentsFlag starts nothing: `rtk attach` joins what is already running. Otherwise the
-// listed sessions start if they are not running already.
+// It is run(options) plus the exit-code mapping, so a caller sees either a plain error (exit 1) or an
+// ExitError carrying 3 or 4.
 //
 // UNTESTED.
-func Run(version, agentsFlag string) error {
-	names, err := startNames(agentsFlag)
-	if err != nil {
-		return err
+func Run(options Options) error {
+	return mapExit(entryLoop(options))
+}
+
+// window is one attached window, from the dial to whatever ended it.
+//
+// It returns the ssh intent when the user pressed Enter on an ssh row, and nil for every ordinary
+// ending - in which case it has already said what happened, exactly as before. rootCtx carries the
+// loop's SIGHUP/SIGTERM; this window's own SIGINT is added here, so a press cancels the window and not
+// the loop.
+//
+// resume, when set, reopens the Network view on that row before the program starts.
+func window(rootCtx context.Context, options Options, resume *tui.NetworkBookmark, feedback string) (*tui.EntryIntent, error) {
+	// A window opened with an expectation starts nothing, so the flag list is not consulted.
+	var names []string
+	var err error
+	if options.ExpectSession == "" {
+		names, err = startNames(options.Agents)
+		if err != nil {
+			return nil, err
+		}
+	} else if strings.TrimSpace(options.Agents) != "" {
+		// The parser refuses this combination already; this is the belt.
+		return nil, errors.New("rtk: --expect-session cannot be combined with --agents")
 	}
+	// EnteredViaSSH is handed to the model below, which refuses a second hop.
 
 	stateDir, err := store.DefaultDir()
 	if err != nil {
-		return fmt.Errorf("state directory: %w", err)
+		return nil, fmt.Errorf("state directory: %w", err)
 	}
 	dir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("working directory: %w", err)
+		return nil, fmt.Errorf("working directory: %w", err)
 	}
 
 	// A window is only for a daemon that is already running: attach never starts one.
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), pingTimeout)
+	pingCtx, cancelPing := context.WithTimeout(rootCtx, pingTimeout)
 	_, err = daemon.Ping(pingCtx, stateDir)
 	cancelPing()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	width, height := attachSize(names)
 
 	// The window's lifetime, and only the window's: a signal closes this socket, and the daemon
-	// and its sessions carry on.
-	windowCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	// and its sessions carry on. SIGHUP and SIGTERM come from the loop; this window adds SIGINT, so a
+	// press ends the window without ending the loop.
+	windowCtx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT)
 	defer stop()
 
 	// windowCtx is passed to Dial as it is, and it must stay alive: Dial keeps the context it is
 	// given as the client's lifetime (the client fails when it ends), and it bounds its own
 	// bootstrap with its own attach deadline. A shorter context here, cancelled after Dial
 	// returns, would close the window as it opens.
-	client, err := windowclient.Dial(windowCtx, daemon.SocketPath(stateDir), version, wire.Attach{
-		Dir:    dir,
-		Start:  names,
-		Width:  width,
-		Height: height,
-	})
+	attach := wire.Attach{
+		Start:         names,
+		Width:         width,
+		Height:        height,
+		ExpectSession: options.ExpectSession,
+	}
+	if options.ExpectSession == "" {
+		// The directory is only used for sessions this attach starts, so an exact-session window
+		// does not send one.
+		attach.Dir = dir
+	}
+
+	client, err := windowclient.Dial(windowCtx, daemon.SocketPath(stateDir), options.Version, attach)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	attached := client.Attached()
@@ -118,24 +163,77 @@ func Run(version, agentsFlag string) error {
 			fmt.Fprintln(os.Stderr, startErrorLine(startErr.Name, startErr.Message))
 		}
 		_ = client.Close()
-		return fmt.Errorf("%s", noSessionsGuidance)
+		return nil, fmt.Errorf("%s", noSessionsGuidance)
 	}
 
 	model, err := tui.NewDaemon(client)
 	if err != nil {
 		_ = client.Close()
-		return err
+		return nil, err
+	}
+
+	// The window's own defaults, and the way back to the row we came from.
+	model.SetEnteredViaSSH(options.EnteredViaSSH)
+	if resume != nil {
+		model.ResumeNetwork(*resume)
+	}
+	if feedback != "" {
+		model.SetWindowFeedback(feedback)
 	}
 
 	program := tea.NewProgram(model, tea.WithContext(windowCtx), tea.WithoutSignalHandler())
 	runErr := runUI(windowCtx, program)
 
-	// The cached disconnect reason must be read before the client is closed, because closing is
-	// what clears the way for an intentional detach to look like nothing happened.
+	// The cached disconnect reason and the entry intent must both be read before the client is closed,
+	// because closing is what clears the way for an intentional detach to look like nothing happened.
 	windowErr := model.WindowError()
+	intent := model.EntryIntent()
 	_ = client.Close()
 
-	return finish(windowCtx.Err() != nil, windowErr, runErr)
+	// Never hand the terminal to ssh unless the context is alive and the program really ended by
+	// returning an intent: the forced-cleanup path can return without Run having finished, and a
+	// cancelled context means the window is already going.
+	if windowCtx.Err() != nil || rootCtx.Err() != nil || runErr != nil || windowErr != nil {
+		intent = nil
+	}
+	if intent != nil {
+		// An ssh entry suppresses the detach line: the attach loop says what happens next.
+		return intent, nil
+	}
+
+	return nil, finish(windowCtx.Err() != nil, windowErr, runErr)
+}
+
+// mapExit turns the two endings that have their own exit codes into an ExitError.
+//
+// A missing daemon is 4 always, with or without an expectation; an attach refused because the
+// expected session is not running is 3. Everything else keeps exiting 1, exactly as before.
+//
+// UNTESTED.
+func mapExit(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, daemon.ErrNotRunning) {
+		return &daemon.ExitError{Code: 4, Err: err}
+	}
+	if code, ok := refusalCode(err); ok && code == wire.CodeNotRunning {
+		return &daemon.ExitError{Code: 3, Err: errors.New("the expected session is not running (ended or replaced)")}
+	}
+	return err
+}
+
+// refusalCode reads the wire code out of a refusal, when the client provides one.
+//
+// Windowclient.RefusalError exposes the daemon's wire code through wrapped errors.
+//
+// UNTESTED.
+func refusalCode(err error) (wire.Code, bool) {
+	var coded interface{ RefusalCode() wire.Code }
+	if errors.As(err, &coded) {
+		return coded.RefusalCode(), true
+	}
+	return "", false
 }
 
 // finish turns the ending into what the user sees.
@@ -269,11 +367,11 @@ func terminalSize() (cols, rows int) {
 // terminal.
 func sanitize(text string) string {
 	cleaned := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return -1
 		}
 		return r
-	}, text)
+	}, ansi.Strip(text))
 	return strings.TrimSpace(cleaned)
 }
 

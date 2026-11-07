@@ -65,6 +65,9 @@ func (m *Model) expireInterrupt() {
 // canReceiveInput reports whether the focused pane could take a keystroke right
 // now. When it cannot, Ctrl+C has nobody to interrupt and quits instead.
 func (m *Model) canReceiveInput() bool {
+	if m.networkMode {
+		return false
+	}
 	if m.logMode || m.tooSmall() {
 		return false
 	}

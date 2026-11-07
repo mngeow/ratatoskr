@@ -39,6 +39,10 @@ type hub struct {
 	// router is what a window's void requests reach: the draft flag, a submit, deliver-held.
 	router windowRouter
 
+	// network is the network service, when one is running. Every hook below is nil-safe, so a hub
+	// built without one (a test, or an early slice) behaves exactly as before.
+	network *networkService
+
 	mu      sync.Mutex
 	windows map[string]*window
 	// panes is the latest session-level pane state per agent, from the watcher or from a
@@ -92,6 +96,15 @@ func (h *hub) fanOut(event protocol.Event) {
 	h.mu.Lock()
 	windows := h.snapshotWindowsLocked()
 	h.mu.Unlock()
+
+	if event.Agent != nil {
+		// One agent changed state: stamp it for the report and ask for one soon. Both are cheap
+		// and take no new lock while hub.mu is held.
+		if h.network != nil {
+			h.network.observe([]protocol.AgentView{*event.Agent}, time.Now())
+			h.network.kick()
+		}
+	}
 
 	for _, w := range windows {
 		w.push(wire.TypeEvent, 0, event)
@@ -208,6 +221,10 @@ func (h *hub) snapshotWindowsLocked() []*window {
 // Each window fills in its own you_hold, so the same message serves the new holder, the old
 // one and every viewer.
 func (h *hub) announceOwnership(agent protocol.AgentID, ownership wire.Ownership) {
+	if h.network != nil {
+		// Input ownership is part of what a host reports, so a holder change asks for a report.
+		h.network.kick()
+	}
 	h.mu.Lock()
 	windows := h.snapshotWindowsLocked()
 	h.mu.Unlock()

@@ -36,13 +36,14 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway
-       rtk attach [--agents claude,codex]     open a window on the daemon's sessions, starting any listed session that is not running
+       rtk attach [--agents claude,codex] [--expect-session ID] [--entered-via-ssh]     open a window on the daemon's sessions, starting any listed session that is not running
        rtk runtime [--agents claude,codex]    an alias for rtk attach
        rtk daemon                             start this machine's daemon in the background
        rtk daemon --foreground                the same, staying in this terminal
        rtk daemon status                      running or not, its sessions, windows and log path
        rtk daemon stop [--yes]                stop the daemon and every session
        rtk daemon stop --session NAME         end one session
+       rtk daemon network [--json] [--watch]  the network answer: local sessions and the gateway snapshot
 `
 
 func main() {
@@ -77,9 +78,15 @@ func main() {
 	case kindAttach:
 		// A window owns its own signal handling: a signal closes its socket and leaves the
 		// daemon and its sessions running.
-		if err := attach.Run(version, cmd.agents); err != nil {
-			fmt.Fprintln(os.Stderr, "rtk:", err)
-			os.Exit(1)
+		// The exit code travels with the error: 4 for no daemon, 3 for an expectation that is not
+		// running, 1 for everything else.
+		if err := attach.Run(attach.Options{
+			Version:       version,
+			Agents:        cmd.agents,
+			ExpectSession: cmd.expectSession,
+			EnteredViaSSH: cmd.enteredViaSSH,
+		}); err != nil {
+			exitWith(err)
 		}
 		return
 	case kindDaemonRun:
@@ -94,6 +101,16 @@ func main() {
 		if err := daemonStatus(); err != nil {
 			fmt.Fprintln(os.Stderr, "rtk:", err)
 			os.Exit(1)
+		}
+		return
+	case kindDaemonNetwork:
+		daemon.SetBuild(version)
+		// A signal is how a --watch ends, so the context carries the terminal's signals.
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		err := daemonNetwork(ctx, cmd)
+		stop()
+		if err != nil {
+			exitWith(err)
 		}
 		return
 	case kindDaemonStop:
@@ -131,6 +148,27 @@ func main() {
 		fmt.Fprintln(os.Stderr, "rtk:", err)
 		os.Exit(1)
 	}
+}
+
+// daemonNetwork runs `rtk daemon network` against this machine's state directory.
+func daemonNetwork(ctx context.Context, cmd command) error {
+	cfg, err := daemonConfig(false)
+	if err != nil {
+		return err
+	}
+	return daemon.RunNetwork(ctx, cfg.StateDir, cmd.networkJSON, cmd.networkWatch, os.Stdout)
+}
+
+// exitWith prints an error and exits with the status it asks for, or 1.
+//
+// Only errors that carry an exit code change the status; everything else keeps exiting 1, which is
+// what every command did before this existed.
+func exitWith(err error) {
+	fmt.Fprintln(os.Stderr, "rtk:", err)
+	if coded, ok := err.(interface{ ExitCode() int }); ok {
+		os.Exit(coded.ExitCode())
+	}
+	os.Exit(1)
 }
 
 // daemonConfig is the daemon's configuration for this binary and this state directory.

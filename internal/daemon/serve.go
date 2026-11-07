@@ -186,6 +186,31 @@ func (s *daemonServer) serveControl(conn net.Conn) {
 			s.requestStop()
 			return
 
+		case wire.TypeNetwork:
+			var request wire.NetworkRequest
+			if err := wire.Decode(envelope, &request); err != nil {
+				s.writeAck(conn, envelope.ID, wire.Ack{OK: false, Error: &wire.Error{Code: wire.CodeBadRequest, Message: "the request could not be read"}})
+				continue
+			}
+			if s.hub == nil || s.hub.network == nil {
+				s.writeAck(conn, envelope.ID, wire.Ack{OK: false, Error: &wire.Error{Code: wire.CodeInternal, Message: "the network answer is not available"}})
+				continue
+			}
+
+			// A control request is a consumer only for the length of the request. A client that
+			// hangs up during the wait is noticed when the wait ends (at most the first-wait plus
+			// the clamped wait, both under the 30 s control idle bound), which is acceptable: the
+			// alternative would be a second reader on this connection.
+			networkCtx, cancelNetwork := context.WithTimeout(context.Background(), networkAnswerBudget)
+			release := s.hub.network.acquire()
+			view, version := s.hub.network.answer(networkCtx, request)
+			release()
+			cancelNetwork()
+
+			if err := s.writeMessage(conn, wire.TypeResult, envelope.ID, wire.Result{Network: &view, NetworkVersion: version}); err != nil {
+				return
+			}
+
 		case wire.TypeStopSession:
 			var request wire.StopSession
 			if err := wire.Decode(envelope, &request); err != nil {
@@ -291,6 +316,10 @@ func sessionStatus(control sessionControl) []wire.SessionStatus {
 	}
 	return control.Status()
 }
+
+// networkAnswerBudget bounds one control network request: both clamped waits plus a margin, well
+// under the 30 s control idle bound.
+const networkAnswerBudget = 20 * time.Second // UNTESTED guess
 
 // sessionStatusWithHolder reports the sessions, with the holder added from the gate: the
 // manager knows which sessions run, and only the gate knows who may type into them.

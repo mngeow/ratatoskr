@@ -62,6 +62,7 @@ const (
 	TypeStatus      Type = "status"       // no body; answer TypeResult with Status
 	TypeStop        Type = "stop"         // no body; answer TypeAck, then the daemon stops
 	TypeStopSession Type = "stop_session" // body StopSession; answer TypeAck
+	TypeNetwork     Type = "network"      // body NetworkRequest; answer TypeResult with Network
 )
 
 // Daemon to window.

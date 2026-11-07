@@ -456,3 +456,119 @@ func TestUsageListsAttachAndAlias(t *testing.T) {
 		}
 	}
 }
+
+// TestParseDaemonNetwork: the network subcommand and its two flags.
+// UNTESTED: written, not run.
+func TestParseDaemonNetwork(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want command
+	}{
+		{name: "one shot", args: []string{"daemon", "network"}, want: command{kind: kindDaemonNetwork}},
+		{name: "json", args: []string{"daemon", "network", "--json"}, want: command{kind: kindDaemonNetwork, networkJSON: true}},
+		{name: "watch", args: []string{"daemon", "network", "--watch"}, want: command{kind: kindDaemonNetwork, networkWatch: true}},
+		{
+			name: "both", args: []string{"daemon", "network", "--json", "--watch"},
+			want: command{kind: kindDaemonNetwork, networkJSON: true, networkWatch: true},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCommand(tc.args)
+			if err != nil {
+				t.Fatalf("parseCommand(%q): %v", tc.args, err)
+			}
+			if got.kind != tc.want.kind || got.networkJSON != tc.want.networkJSON || got.networkWatch != tc.want.networkWatch {
+				t.Fatalf("parseCommand(%q) = %+v, want %+v", tc.args, got, tc.want)
+			}
+		})
+	}
+
+	// An unknown flag is a parse error, which exits 2 like every other usage error.
+	for _, args := range [][]string{
+		{"daemon", "network", "--now"},
+		{"daemon", "network", "extra"},
+	} {
+		if _, err := parseCommand(args); err == nil {
+			t.Fatalf("parseCommand(%q) accepted the arguments", args)
+		}
+	}
+}
+
+// TestUsageListsDaemonNetwork pins the new usage line.
+func TestUsageListsDaemonNetwork(t *testing.T) {
+	if !strings.Contains(usage, "rtk daemon network [--json] [--watch]") {
+		t.Fatalf("usage does not mention the network command:\n%s", usage)
+	}
+}
+
+// TestParseAttachExpectation: the exact-session flags and their usage errors.
+// UNTESTED: written, not run.
+func TestParseAttachExpectation(t *testing.T) {
+	const sessionID = "0192f2b4-1111-2222-3333-444455556666"
+
+	t.Run("an expectation alone", func(t *testing.T) {
+		got, err := parseCommand([]string{"attach", "--expect-session", sessionID})
+		if err != nil {
+			t.Fatalf("parseCommand: %v", err)
+		}
+		if got.kind != kindAttach || got.expectSession != sessionID || got.agents != "" {
+			t.Fatalf("command = %+v", got)
+		}
+	})
+
+	t.Run("the ssh marker alone is accepted", func(t *testing.T) {
+		got, err := parseCommand([]string{"attach", "--entered-via-ssh"})
+		if err != nil {
+			t.Fatalf("parseCommand: %v", err)
+		}
+		if !got.enteredViaSSH || got.expectSession != "" {
+			t.Fatalf("command = %+v", got)
+		}
+	})
+
+	t.Run("both together", func(t *testing.T) {
+		got, err := parseCommand([]string{"runtime", "--expect-session", sessionID, "--entered-via-ssh"})
+		if err != nil {
+			t.Fatalf("parseCommand: %v", err)
+		}
+		if !got.enteredViaSSH || got.expectSession != sessionID {
+			t.Fatalf("command = %+v", got)
+		}
+	})
+
+	t.Run("agents with an expectation is a usage error", func(t *testing.T) {
+		_, err := parseCommand([]string{"attach", "--agents", "claude", "--expect-session", sessionID})
+		if err == nil {
+			t.Fatal("the combination was accepted")
+		}
+		if !strings.Contains(err.Error(), "cannot be combined") {
+			t.Fatalf("error = %q", err)
+		}
+	})
+
+	t.Run("a value that is not a session id is a usage error", func(t *testing.T) {
+		for _, bad := range []string{"nope", "0192f2b4-1111-2222-3333", "0192f2b4111122223333444455556666"} {
+			if _, err := parseCommand([]string{"attach", "--expect-session", bad}); err == nil {
+				t.Fatalf("%q was accepted", bad)
+			}
+		}
+	})
+
+	t.Run("an unknown flag is still a usage error", func(t *testing.T) {
+		if _, err := parseCommand([]string{"attach", "--entered-via-ssh=maybe"}); err == nil {
+			t.Fatal("a bad boolean value was accepted")
+		}
+	})
+}
+
+// TestUsageListsTheEntryFlags pins the usage line.
+func TestUsageListsTheEntryFlags(t *testing.T) {
+	for _, form := range []string{"--expect-session ID", "--entered-via-ssh"} {
+		if !strings.Contains(usage, form) {
+			t.Fatalf("usage does not mention %q:\n%s", form, usage)
+		}
+	}
+}

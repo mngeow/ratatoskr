@@ -832,7 +832,7 @@ func splitWrapped(text string, width int) []string {
 func (m *Model) historyHints() string {
 	if m.outbound.source {
 		if m.daemon != nil {
-			return strings.ReplaceAll(m.outboundHints(), "F10 quit", "F10 detach  F6 take input")
+			return strings.ReplaceAll(m.outboundHints(), "F10 quit", "F5 network  F10 detach  F6 take input")
 		}
 		return m.outboundHints()
 	}
@@ -849,7 +849,7 @@ func (m *Model) historyHints() string {
 	quit := "F10 quit"
 	if m.daemon != nil {
 		// A window detaches; the sessions keep running.
-		quit = "F10 detach  F6 take input"
+		quit = "F5 network  F10 detach  F6 take input"
 	}
 	if m.history.detailID != "" {
 		return "↑/↓ scroll  PgUp/PgDn page  Home/End  R reload  ←/→ runs  Esc list  F3 exit  " + focus + "  " + quit

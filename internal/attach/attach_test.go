@@ -4,8 +4,12 @@ package attach
 // daemon, no program.
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/mngeow/ratatoskr/internal/daemon"
+	"github.com/mngeow/ratatoskr/internal/daemon/wire"
 )
 
 // TestEstimatePaneSize: one pane is full width, two are halved, and nothing goes below one cell.
@@ -180,5 +184,87 @@ func TestSanitize(t *testing.T) {
 	}
 	if got := sanitize(""); got != "" {
 		t.Fatalf("sanitize of empty = %q", got)
+	}
+}
+
+// TestMapExit: the two codes that travel with the error, and everything else unchanged.
+// UNTESTED: written, not run.
+func TestMapExit(t *testing.T) {
+	const expected = "0192f2b4-1111-2222-3333-444455556666"
+
+	t.Run("no error", func(t *testing.T) {
+		if err := mapExit(nil); err != nil {
+			t.Fatalf("mapExit(nil) = %v", err)
+		}
+	})
+
+	t.Run("no daemon is exit 4", func(t *testing.T) {
+		err := mapExit(daemon.ErrNotRunning)
+		coded, ok := err.(interface{ ExitCode() int })
+		if !ok {
+			t.Fatalf("mapExit returned %T, want an exit code", err)
+		}
+		if coded.ExitCode() != 4 {
+			t.Fatalf("exit code = %d, want 4", coded.ExitCode())
+		}
+		if !errors.Is(err, daemon.ErrNotRunning) {
+			t.Fatal("the cause was lost")
+		}
+	})
+
+	t.Run("an ended expectation is exit 3", func(t *testing.T) {
+		refusal := &codedRefusal{code: wire.CodeNotRunning}
+		err := mapExit(refusal)
+		coded, ok := err.(interface{ ExitCode() int })
+		if !ok {
+			t.Fatalf("mapExit returned %T, want an exit code", err)
+		}
+		if coded.ExitCode() != 3 {
+			t.Fatalf("exit code = %d, want 3", coded.ExitCode())
+		}
+		if !strings.Contains(err.Error(), "not running") {
+			t.Fatalf("error = %q", err)
+		}
+	})
+
+	t.Run("any other code stays a plain error", func(t *testing.T) {
+		err := mapExit(&codedRefusal{code: wire.CodeBadRequest})
+		if _, ok := err.(interface{ ExitCode() int }); ok {
+			t.Fatalf("a bad request gained an exit code: %v", err)
+		}
+	})
+
+	t.Run("a refusal without a code stays a plain error", func(t *testing.T) {
+		if _, ok := mapExit(errors.New("the daemon refused the attach")).(interface{ ExitCode() int }); ok {
+			t.Fatal("a codeless refusal gained an exit code")
+		}
+	})
+
+	_ = expected
+}
+
+// codedRefusal is a refusal that carries a wire code, which is what frontend's client will provide.
+type codedRefusal struct{ code wire.Code }
+
+// Error renders the refusal.
+func (r *codedRefusal) Error() string { return "the daemon refused the attach" }
+
+// RefusalCode is the wire code.
+func (r *codedRefusal) RefusalCode() wire.Code { return r.code }
+
+// TestRunOptionsZeroValueIsTheOldCall: with no expectation and no SSH flag, the option struct is the
+// old two-argument call.
+// UNTESTED: written, not run.
+func TestRunOptionsZeroValueIsTheOldCall(t *testing.T) {
+	options := Options{Version: "1.2.3", Agents: "claude,codex"}
+	if options.ExpectSession != "" || options.EnteredViaSSH {
+		t.Fatal("the zero value is not the plain attach")
+	}
+	names, err := startNames(options.Agents)
+	if err != nil {
+		t.Fatalf("startNames: %v", err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("names = %v", names)
 	}
 }

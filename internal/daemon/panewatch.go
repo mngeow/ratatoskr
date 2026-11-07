@@ -145,8 +145,11 @@ func endedPaneState(h *hub, view sessionView, exitCode *int) wire.PaneState {
 // It must be idempotent: an exit runs sessionExited and, moments later, sessionEnded for the
 // same session.
 type paneObserver struct {
-	hub      *hub
-	log      *logger
+	hub *hub
+	log *logger
+	// network is the network service, when one is running: a session starting, exiting or ending
+	// changes what this host reports, so it is asked for a report. Nil-safe.
+	network  *networkService
 	mu       sync.Mutex
 	watchers map[protocol.AgentID]*paneWatcher
 }
@@ -170,6 +173,9 @@ func (o *paneObserver) sessionStarted(view sessionView) {
 
 	if previous != nil {
 		previous.shut()
+	}
+	if o.network != nil {
+		o.network.kick()
 	}
 	o.log.logf("watching the %s session (%s)", view.Name, view.Agent)
 }
@@ -195,6 +201,9 @@ func (o *paneObserver) sessionExited(view sessionView, exitCode *int) {
 	// must see the end whatever the order of frames.
 	o.hub.publishPane(endedPaneState(o.hub, view, exitCode))
 	o.hub.announceSessionEnded(view.Agent, rev, exitCode)
+	if o.network != nil {
+		o.network.kick()
+	}
 	o.log.logf("the %s session exited (%s)", view.Name, view.Agent)
 }
 
@@ -212,5 +221,10 @@ func (o *paneObserver) sessionEnded(view sessionView) {
 		watcher.shut()
 	}
 	o.hub.gate.removeSession(view.Agent)
+	if o.network != nil {
+		// The session is gone, so its state_at stamp must go with it.
+		o.network.forget(view.Agent)
+		o.network.kick()
+	}
 	o.log.logf("the %s session is gone (%s)", view.Name, view.Agent)
 }
