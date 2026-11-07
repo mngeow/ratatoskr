@@ -2,7 +2,7 @@
 
 Owner: architect. Design source: [ADR-0003](../adr/0003-per-host-daemon/index.html). Authorized by the user on 2026-11-06: "Begin the implementation for daemon".
 
-This is the contract for the daemon transition. **It's written and compile-checked, and nothing in it has been run.** Engineers own the code structure. If something here is wrong or doesn't fit the code, raise it through lead to architect instead of quietly diverging.
+This is the contract for the daemon transition. **It's built. The user reports testing it by hand on 2026-11-06, and that it works apart from one open bug. The team has run nothing, and each item here isn't individually confirmed.** Engineers own the code structure. If something here is wrong or doesn't fit the code, raise it through lead to architect instead of quietly diverging.
 
 ## Rules
 
@@ -133,4 +133,4 @@ Same rules as version 1. Version 1 runtimes are refused with the existing explic
 
 ## Done means
 
-Reviewed, integrated code that builds on darwin and linux, passes `gofmt` and `go vet`, has tests written but not run, and keeps plain `rtk` unchanged by review. A report separates what's implemented from what's untested, and gives architect the actual commands, keys and printed lines, so that the README and ADR-0003 can be finalized. **Nothing is verified until the user runs it.**
+Reviewed, integrated code that builds on darwin and linux, passes `gofmt` and `go vet`, has tests written but not run, and keeps plain `rtk` unchanged by review. A report separates what's implemented from what's untested, and gives architect the actual commands, keys and printed lines, so that the README and ADR-0003 can be finalized. **Only the user's own runs count as verification.**

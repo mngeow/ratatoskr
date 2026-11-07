@@ -1,0 +1,1100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0004 Network Tab</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0004</p>
+  <h1>A Network tab inside the attached window: see every host's sessions and enter any of them</h1>
+  <p class="prose">One extra tab in the window you already get from <code>rtk attach</code>. It lists the hosts and sessions on the network, and entering a session on another machine opens a direct SSH connection from your Mac. A gateway API supplies what the tab shows, and SSH, run from your own terminal, does the entering. The gateway never carries a terminal. <b>As of 2026-11-07 this is written but has never been run.</b></p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-06. Implemented in the working tree 2026-11-07 and never run.</b> The gateway API, the F5 tab and SSH entry are written and have passed only <code>gofmt</code>, <code>go vet</code> and <code>go build</code> (darwin and linux). Nothing is committed. <a href="#built">Section 1a</a> says what was built and where it differs from the proposals below. <span class="tag t-user">USER</span> chose the direction: "Ok, follow how agent-net does it. Also, this should not be a dashboard, it is an additional interface. It should be rendered as an additional tab when you attach to any sessions. In the ADR, draw some mockups on how it could look like". Later the user said: "Ok this means that my design makes sense. Build an api for the api gateway to expose all necessary information to populate the network tab, ssh will handle the interactive remote entry", then "Please also use chi framework for the api" and "Implement SSH entry as well please". Sections 2 to 10 keep the original proposals for the record, and where 1a differs, 1a wins. The <a href="#decisions">decisions table</a> says which choices are still open.</dd></div>
+    <div><dt>Replaces</dt><dd>The first draft of this ADR, which proposed a separate <code>rtk dashboard</code> command. <b>That is withdrawn and is not the chosen design.</b> It was withdrawn before it was ever committed, and this page now lives at <code>docs/adr/0004-network-tab/</code>.</dd></div>
+    <div><dt>Source inspected</dt><dd>Ratatoskr at commit <code>f411629</code>. agent-net files under <code>~/Projects/compare/agent-net</code> (outside this repository), read, never run. Herdr 0.9.5 by its install files only.</dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing here has been run</b> (<a href="../../design/ground-rules.md">GR-3</a>), neither Ratatoskr nor agent-net nor Herdr. The mockups are drawings with sample data. This page's scripts have been checked as source only and never opened in a browser.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#summary">1. Short answer</a> ·
+  <a href="#built">1a. What was built</a> ·
+  <a href="#mockups">2. Mockups</a> ·
+  <a href="#pattern">3. The agent-net pattern</a> ·
+  <a href="#today">4. What exists today</a> ·
+  <a href="#flow">5. How entering works</a> ·
+  <a href="#contexts">6. Handover and tab contexts</a> ·
+  <a href="#trust">7. Trust boundary</a> ·
+  <a href="#herdr">8. Herdr</a> ·
+  <a href="#scenarios">9. Scenarios</a> ·
+  <a href="#gaps">10. Gaps and compatibility</a> ·
+  <a href="#decisions">11. Decisions</a> ·
+  <a href="#sources">12. Sources</a>
+</nav>
+
+<p class="prose small"><b>How to read the labels.</b>
+  <span class="tag t-user">USER</span> the user decided or reported it.
+  <span class="tag t-code">CODE</span> read in the source, not seen running.
+  <span class="tag t-arch">PROPOSAL</span> the architect's suggestion. It is not a user decision.
+  <span class="tag t-unv">OPEN</span> undecided.
+  <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+</p>
+<p class="prose small muted">With JavaScript off, every tab and step is shown in full, and the mockups show all their states one after another.</p>
+
+<h2 id="summary">1. Short answer</h2>
+<div class="note">
+  <p><b>The Mac's attached window gets a third kind of view: a Network tab.</b> It sits beside the terminals and the message log you already have, and it lists local and remote sessions with their freshness. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>Selecting a session on an Ubuntu VM and pressing Enter</b> asks that VM's own daemon, through the gateway, whether the session is still there and enterable. Then your Mac hands its terminal to <code>ssh -t</code>, using your own keys and config, and runs <code>rtk attach</code> on the VM for that exact session. F10 there brings you back to the tab. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>The gateway can be anywhere.</b> It answers "who exists" and relays one short question and answer. The terminal travels over a separate SSH connection from your Mac to the VM, over the LAN or a tailnet. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>This is not a dashboard.</b> There's no new command and no screen of its own. The tab exists only inside a window attached to a session, and its Enter action leaves the window. <span class="tag t-user">USER</span> asked for an additional tab.</p>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>What changed from the first draft</th><th>Why</th></tr>
+  <tr><td>No <code>rtk dashboard</code>. The interface is a tab in the attached window.</td><td><span class="tag t-user">USER</span> decision.</td></tr>
+  <tr><td>Discovery and the entry check go through the gateway, as in agent-net. SSH is for the terminal only. The first draft polled every host over SSH.</td><td><span class="tag t-user">USER</span> said to follow agent-net, and the operator's note says control and discovery use the gateway.</td></tr>
+  <tr><td><b>Correction:</b> the first draft said the daemon's status lists each session's ID. It doesn't, and the section on gaps adds it. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/wire/types.go#L319"><code>internal/daemon/wire/types.go:319</code> <code>type SessionStatus struct</code></a></td><td>Found while reading for this revision. Without an ID the "enter exactly this session" check has nothing to compare.</td></tr>
+  <tr><td>Hosts a gateway announces are never used as SSH destinations on their own. The first draft had the same rule, now spelled out against agent-net, which does the opposite for an unmapped host.</td><td>Section 7.</td></tr>
+</table></div>
+
+<h2 id="built">1a. What was built (2026-11-07)</h2>
+<p class="prose"><span class="tag t-code">CODE</span> Read from the working tree and the lead's static review. <b>No test, <code>rtk</code>, gateway, daemon or <code>ssh</code> has been run for any of it</b> (<a href="../../design/ground-rules.md">GR-3</a>), so every line below is what the code is written to do. The authoritative field-by-field description is <a href="../../implementation/network-api-contract.md">the contract</a>.</p>
+<div class="note">
+  <p><b>The central API direction replaced the relayed question.</b> Each host daemon reports its own sessions to the gateway, the gateway aggregates them in memory, and the owner's daemon reads the result and gives it to the window. <b>The gateway relays no question and no terminal, and nothing polls a host over SSH.</b> Enter builds its plan from that snapshot and the owner's <code>hosts.json</code>, and the <i>remote</i> <code>rtk attach --expect-session</code> makes the authoritative check.</p>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>Section 5 / 6 / 11 proposed</th><th>As built</th></tr>
+  <tr><td>A relayed host question and answer through the gateway (decision 3, 9)</td><td><b>Dropped.</b> Replaced by <code>PUT /v1/report</code> and <code>GET /v1/network</code>, on chi v5.5.0, protocol still 2, schema 1, no database change. Reports are kept in gateway memory only.</td></tr>
+  <tr><td>An <code>id</code> field in daemon status</td><td><b>Not done.</b> <code>rtk daemon status</code> is unchanged. The ID is <code>local_id</code> in <code>rtk daemon network --json</code>.</td></tr>
+  <tr><td>Suspend the window and hand over the same terminal, then take it back (decision 4)</td><td><b>Quit and reopen.</b> The window closes, the attach loop runs <code>ssh -t -o ConnectTimeout=5 -- &lt;ssh&gt; &lt;remote command&gt;</code> on the same terminal, and a fresh window opens on the Network tab at the same row. Chosen because a paused program might stop draining its window events. That risk is unverified.</td></tr>
+  <tr><td>F5 and the tab strip (decision 1)</td><td>F5 toggles the view and F5 or Esc returns. Keys: arrows and PgUp/PgDn, Enter, R, F6, F10.</td></tr>
+  <tr><td>Host map (decision 2)</td><td><code>&lt;state dir&gt;/hosts.json</code>, version 1, read at each Enter, keyed by the gateway's host name, with <code>ssh</code>, absolute <code>rtk</code> and optional <code>state_home</code>. Refused if linked, not regular, writable by others, owned by someone else or over 64 KiB. No entry means a by-hand command, run by nothing.</td></tr>
+  <tr><td>Enter from inside a remote window (decision 5)</td><td>Blocked with "press F10 to return to the machine you came from, then choose from there".</td></tr>
+  <tr><td>Window with no sessions (decision 10)</td><td>Unchanged: a window needs a session. If none run when you return from SSH, <code>rtk</code> prints the no-sessions guidance and exits.</td></tr>
+</table></div>
+<p class="prose"><b>The new commands.</b> <code>rtk daemon network [--json] [--watch]</code> and <code>rtk attach --expect-session ID [--entered-via-ssh]</code>. Exit codes from the remote attach: 0 normal, 3 the expected session isn't running, 4 no daemon, 2 usage or too-old build, anything else is reported as is. SSH's own 255 can't distinguish unreachable, timeout, host key, auth or a dropped link.</p>
+<p class="prose"><b>Terminal safety added during review.</b> ssh is stopped with SIGTERM and a kill only after 2 s, because a killed ssh can't restore the local terminal. After any ssh that didn't exit cleanly, the saved termios is restored and a targeted escape-sequence reset is written, never a full reset. SIGINT is caught, never ignored, so ssh stays interruptible while connecting. A failed restore ends <code>rtk</code> rather than opening a window on an unknown terminal.</p>
+<h3 id="built-limits">Known limits of what was built</h3>
+<ul class="plain">
+  <li><b>Never run.</b> Whether the terminal comes back clean after every way ssh can end is the main thing the owner's first test has to answer.</li>
+  <li>The 600 ms handover wait (drops typeahead during the handover) rests on reading Bubble Tea v2.1.1's source, not on observation. A late terminal reply may still leak, and nothing is flushed on return. <span class="tag t-unv">UNVERIFIED</span></li>
+  <li><b>Same-user agents aren't isolated</b> from this data. They can read <code>pairing.json</code>, and any paired host can read every host's snapshot. The API grants no control, and entry still needs the owner's SSH keys.</li>
+  <li>No cap on parked long-polls (paired hosts only). A poll parked when its host is unpaired can answer for up to 20 s.</li>
+  <li>A stale report is history, not proof a process still runs. <code>unknown</code> is never shown as idle, and a host with no report reads "no report".</li>
+  <li>chi differences: <code>HEAD</code> on a <code>GET</code> route is 405, and an unclean path is 404 rather than a redirect. The router change was first written by the backend without the supervised path and was reported to the owner rather than redone.</li>
+  <li>Unix only: darwin and linux. No HTTPS over a tailnet, no offline replay, no remote worker spawn, no Herdr dependency.</li>
+  <li><b>Compatibility:</b> either machine may be upgraded first, but the tab needs the gateway and each daemon on the new build, and a window must match its own daemon's build. An older gateway gives bare peer addresses with no live flag.</li>
+</ul>
+
+<h2 id="mockups">2. Mockups</h2>
+<p class="prose">Drawings of what each state could look like, with sample data. Each has controls you can use: click a tab, or focus one and use ← → Home End, and on the session list use ↑ ↓. All names, addresses and IDs are made up. <span class="tag t-arch">PROPOSAL</span></p>
+
+<div data-tabs class="mockset">
+  <div role="tablist" aria-label="Mockups">
+    <button role="tab" id="k1" aria-controls="kp1">1. The attached window and its tabs</button>
+    <button role="tab" id="k2" aria-controls="kp2">2. Network tab</button>
+    <button role="tab" id="k3" aria-controls="kp3">3. Selected session and Enter</button>
+    <button role="tab" id="k4" aria-controls="kp4">4. Entering, and when it fails</button>
+    <button role="tab" id="k5" aria-controls="kp5">5. Input ownership and return</button>
+  </div>
+
+  <div role="tabpanel" id="kp1" aria-labelledby="k1">
+    <h3>The window you get from <code>rtk attach</code>, with one extra tab</h3>
+    <p class="prose">Today the window is up to two terminals side by side, a status line, and a message log on F3. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L30"><code>internal/tui/doc.go:30</code> <code>F3 toggles the log</code></a> The proposal adds a tab strip at the top and one more view. The terminals, the log and every key you use now stay as they are. Pick a tab below.</p>
+    <div class="mock" role="group" aria-label="Mockup of the attached window">
+      <div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · on mac</div>
+      <div data-tabs class="inner">
+        <div role="tablist" aria-label="Views in the window" class="tabstrip">
+          <button role="tab" id="w1" aria-controls="wp1">Terminals</button>
+          <button role="tab" id="w2" aria-controls="wp2">Messages <i>F3</i></button>
+          <button role="tab" id="w3" aria-controls="wp3">Network <i>F5</i> <b class="badge">4 hosts</b></button>
+        </div>
+        <div role="tabpanel" id="wp1" aria-labelledby="w1" class="screen">
+          <div class="panes">
+            <div class="pane"><p class="ph hold">claude@mac · you hold input</p><p>Claude Code is running in this pane.</p><p class="dim">&gt; refactor the retry loop</p></div>
+            <div class="pane"><p class="ph">codex@mac · free</p><p>Codex is running in this pane.</p><p class="dim">&gt; (idle)</p></div>
+          </div>
+        </div>
+        <div role="tabpanel" id="wp2" aria-labelledby="w2" class="screen">
+          <p class="hd">Messages · the existing F3 log</p>
+          <p>14:02:11 claude@mac → codex@vmb · delivered</p>
+          <p>14:02:40 codex@vmb → claude@mac · delivered</p>
+          <p class="dim">Esc or F3 leaves. This view is unchanged by the proposal.</p>
+        </div>
+        <div role="tabpanel" id="wp3" aria-labelledby="w3" class="screen">
+          <p class="hd">Network · gateway connected · directory 3s old</p>
+          <p>mac (this machine) 2 sessions · vmb 2 · vmc 1 stale · vmd 1 not enterable</p>
+          <p class="dim">Open the next mockup for the full list.</p>
+        </div>
+        <p class="status">F1/F2 focus · F3 log · <b>F5 network</b> · F6 take input · F10 detach</p>
+      </div>
+    </div>
+    <ul class="prose">
+      <li><b>F5 is a proposal.</b> The code as read binds F1, F2, F3, F4, F6 and F10 and leaves F5, F7, F8 and F9 unused. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L31"><code>internal/tui/doc.go:31</code> <code>F10 quits</code></a> <span class="tag t-unv">OPEN</span> The key and whether a tab strip is shown all the time.</li>
+      <li><b>The tab is available in any attached window,</b> because a window can't open with no session at all. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/daemon.go#L119"><code>internal/tui/daemon.go:119</code> <code>the daemon attached no sessions</code></a> So there's no way to reach it without attaching to something first. <span class="tag t-unv">OPEN</span> Whether that's acceptable on a Mac with a daemon and no sessions.</li>
+      <li><b>The Network tab is read-only except for Enter.</b> It can't type into a session, answer a prompt or end one.</li>
+    </ul>
+  </div>
+
+  <div role="tabpanel" id="kp2" aria-labelledby="k2">
+    <h3>Network tab: hosts, sessions and how fresh each fact is</h3>
+    <p class="prose">Use ↑ ↓ on the list, or click a row. The detail line shows where each fact came from. Two columns have different sources on purpose: the gateway's directory (what the gateway believes) and the host's own answer (what that machine says about itself).</p>
+    <div class="mock" role="group" aria-label="Mockup of the Network tab">
+      <div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · on mac</div>
+      <p class="strip" aria-hidden="true"><span>Terminals</span><span>Messages</span><span class="on">Network</span></p>
+      <div class="screen net">
+        <p class="hd">Gateway http://vma.lan:8443 · connected · directory 3s old</p>
+        <div class="grid head" aria-hidden="true"><span>SESSION</span><span>GATEWAY SAYS</span><span>HOST SAYS</span><span>INPUT</span><span>ENTER</span></div>
+        <div class="list" role="listbox" aria-label="Sessions on the network" data-listbox>
+          <button type="button" class="grid row" role="option" aria-selected="true" id="r1" data-detail="d1"><span>claude@mac <i>this host</i></span><span>live</span><span>local, now</span><span>you</span><span>Terminals</span></button>
+          <button type="button" class="grid row" role="option" aria-selected="false" id="r2" data-detail="d2"><span>codex@mac <i>this host</i></span><span>live</span><span>local, now</span><span>free</span><span>Terminals</span></button>
+          <button type="button" class="grid row" role="option" aria-selected="false" id="r3" data-detail="d3"><span>codex@vmb</span><span>live</span><span>answered 2s ago</span><span>held</span><span>ssh</span></button>
+          <button type="button" class="grid row" role="option" aria-selected="false" id="r4" data-detail="d4"><span>claude@vmb</span><span>live</span><span>answered 2s ago</span><span>free</span><span>ssh</span></button>
+          <button type="button" class="grid row stale" role="option" aria-selected="false" id="r5" data-detail="d5"><span>claude@vmc</span><span>not live, 4m</span><span>no answer</span><span>unknown</span><span>none</span></button>
+          <button type="button" class="grid row" role="option" aria-selected="false" id="r6" data-detail="d6"><span>codex@vmd</span><span>live</span><span>answered 3s ago</span><span>free</span><span>by hand</span></button>
+        </div>
+        <div class="detail" aria-live="polite">
+          <div id="d1"><p><b>claude@mac</b> · <code>0192f2a0-…-c1a4</code></p><p>Source: this Mac's daemon, now. You hold its input. Enter switches to the Terminals tab.</p></div>
+          <div id="d2"><p><b>codex@mac</b> · <code>0192f2a0-…-77e0</code></p><p>Source: this Mac's daemon, now. Nobody holds its input. Enter switches to the Terminals tab.</p></div>
+          <div id="d3"><p><b>codex@vmb</b> · <code>0192f2b4-…-9d31</code></p><p>Gateway: live. Host: running 2h, build 9c1e, one window holds input, so you would be a viewer until you press F6. Enter opens it over SSH.</p></div>
+          <div id="d4"><p><b>claude@vmb</b> · <code>0192f2c8-…-1be2</code></p><p>Gateway: live. Host: running 5m, nobody holds input, so you would hold it. Enter opens it over SSH.</p></div>
+          <div id="d5"><p><b>claude@vmc</b> · last seen 4 minutes ago</p><p>The gateway has no live stream from <code>vmc</code>, and the question to it timed out. The last facts are shown as old, not as current. Enter is off: there's nothing to ask.</p></div>
+          <div id="d6"><p><b>codex@vmd</b> · <code>0192f2d1-…-00aa</code></p><p>Live, but <code>hosts.json</code> has no entry for <code>vmd</code>. The tab never guesses a destination from a name the gateway sent. Enter shows the command to run on <code>vmd</code> yourself.</p></div>
+        </div>
+        <p class="status">↑↓ select · Enter open · R refresh · Esc back to Terminals · F10 detach</p>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <tr><th>Column</th><th>Source</th><th>Exists today?</th><th>If the source is gone</th></tr>
+      <tr><td>Session, host, live</td><td>The gateway's directory. It carries an address, a host and a live flag. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/protocol/wire.go#L96"><code>internal/protocol/wire.go:96</code> <code>type DirectoryEntry struct</code></a></td><td>The gateway sends it and the daemon receives it. The window doesn't get it. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/protocol/protocol.go#L115"><code>internal/protocol/protocol.go:115</code> <code>type Snapshot struct</code></a></td><td>"gateway disconnected", with the age of the last list.</td></tr>
+      <tr><td>Host says</td><td>That host's own daemon, asked through the gateway.</td><td>No. This is the new relayed question (section 5).</td><td>"no answer", with the time it last did.</td></tr>
+      <tr><td>Input holder</td><td>The same host answer. Only held or free, never a window's identity.</td><td>The daemon knows it locally. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/wire/types.go#L160"><code>internal/daemon/wire/types.go:160</code> <code>json:"holder,omitempty"</code></a></td><td>"unknown".</td></tr>
+      <tr><td>Enter</td><td>Computed locally from <code>hosts.json</code> and the answers above.</td><td>No.</td><td>Off, with the reason.</td></tr>
+    </table></div>
+  </div>
+
+  <div role="tabpanel" id="kp3" aria-labelledby="k3">
+    <h3>A selected remote session: details and what Enter will run</h3>
+    <p class="prose">Choose how <code>hosts.json</code> names the machine. The command Enter builds is the same fixed template every time; only the destination you wrote changes. Nothing in it comes from the gateway except the session ID, which is checked first.</p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Destination style">
+        <button role="tab" id="e1" aria-controls="ep1">LAN address</button>
+        <button role="tab" id="e2" aria-controls="ep2">Tailnet name</button>
+        <button role="tab" id="e3" aria-controls="ep3">SSH alias</button>
+      </div>
+      <div role="tabpanel" id="ep1" aria-labelledby="e1">
+        <div class="mock" role="group" aria-label="Mockup of session details, LAN"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network</div>
+          <div class="screen detailscreen">
+            <p class="hd">codex@vmb</p>
+            <dl class="kv"><dt>Session</dt><dd><code>0192f2b4-…-9d31</code>, started 12:01, Codex</dd>
+              <dt>Gateway</dt><dd>live, directory 3s old</dd>
+              <dt>Host says</dt><dd>running · one window holds input · answered 2s ago</dd>
+              <dt>If you enter</dt><dd>you become a <b>viewer</b>. F6 takes input.</dd>
+              <dt>Your mapping</dt><dd><code>"vmb": {"ssh": "me@192.168.1.23", "rtk": "/home/me/.local/bin/rtk"}</code></dd></dl>
+            <pre class="cmdbox">ssh -t -o ConnectTimeout=5 -- me@192.168.1.23 \
+  /home/me/.local/bin/rtk attach --expect-session 0192f2b4-…-9d31</pre>
+            <p class="status"><b>[Enter] open over SSH</b> · [C] copy the command · Esc back</p>
+          </div></div>
+      </div>
+      <div role="tabpanel" id="ep2" aria-labelledby="e2">
+        <div class="mock" role="group" aria-label="Mockup of session details, tailnet"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network</div>
+          <div class="screen detailscreen">
+            <p class="hd">codex@vmb</p>
+            <dl class="kv"><dt>Session</dt><dd><code>0192f2b4-…-9d31</code>, started 12:01, Codex</dd>
+              <dt>Gateway</dt><dd>live, directory 3s old</dd>
+              <dt>Host says</dt><dd>running · one window holds input · answered 2s ago</dd>
+              <dt>If you enter</dt><dd>you become a <b>viewer</b>. F6 takes input.</dd>
+              <dt>Your mapping</dt><dd><code>"vmb": {"ssh": "me@vmb.example-tailnet.ts.net", "rtk": "/home/me/.local/bin/rtk"}</code></dd></dl>
+            <pre class="cmdbox">ssh -t -o ConnectTimeout=5 -- me@vmb.example-tailnet.ts.net \
+  /home/me/.local/bin/rtk attach --expect-session 0192f2b4-…-9d31</pre>
+            <p class="status"><b>[Enter] open over SSH</b> · SSH itself may ask for a Tailscale check · Esc back</p>
+          </div></div>
+      </div>
+      <div role="tabpanel" id="ep3" aria-labelledby="e3">
+        <div class="mock" role="group" aria-label="Mockup of session details, alias"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network</div>
+          <div class="screen detailscreen">
+            <p class="hd">codex@vmb</p>
+            <dl class="kv"><dt>Session</dt><dd><code>0192f2b4-…-9d31</code>, started 12:01, Codex</dd>
+              <dt>Gateway</dt><dd>live, directory 3s old</dd>
+              <dt>Host says</dt><dd>running · one window holds input · answered 2s ago</dd>
+              <dt>If you enter</dt><dd>you become a <b>viewer</b>. F6 takes input.</dd>
+              <dt>Your mapping</dt><dd><code>"vmb": {"ssh": "build-vmb", "rtk": "/home/me/.local/bin/rtk"}</code> (an alias in your <code>~/.ssh/config</code>)</dd></dl>
+            <pre class="cmdbox">ssh -t -o ConnectTimeout=5 -- build-vmb \
+  /home/me/.local/bin/rtk attach --expect-session 0192f2b4-…-9d31</pre>
+            <p class="status"><b>[Enter] open over SSH</b> · keys, jump hosts and ports come from your SSH config · Esc back</p>
+          </div></div>
+      </div>
+    </div>
+    <p class="prose small"><b>Illustrative only.</b> The mapping file's name, location and fields are a proposal <span class="tag t-unv">OPEN</span>. A state directory that isn't the default would need a flag on <code>rtk attach</code> that doesn't exist. <span class="tag t-unv">UNVERIFIED</span> The line in the box wraps with a backslash only for reading; the real argument list has no shell in it on your Mac.</p>
+  </div>
+
+  <div role="tabpanel" id="kp4" aria-labelledby="k4">
+    <h3>Entering: what you see, including the ways it can fail</h3>
+    <p class="prose">Choose an outcome. The wording from SSH is SSH's own and varies by version, so the boxes show its general shape. What Ratatoskr adds is the line before and the line after.</p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Entering outcomes">
+        <button role="tab" id="g1" aria-controls="gp1">Connects</button>
+        <button role="tab" id="g2" aria-controls="gp2">Password or passphrase</button>
+        <button role="tab" id="g3" aria-controls="gp3">Unknown host key</button>
+        <button role="tab" id="g4" aria-controls="gp4">Host key changed</button>
+        <button role="tab" id="g5" aria-controls="gp5">Unreachable</button>
+        <button role="tab" id="g6" aria-controls="gp6">Session replaced</button>
+        <button role="tab" id="g7" aria-controls="gp7">Not mapped</button>
+      </div>
+      <div role="tabpanel" id="gp1" aria-labelledby="g1"><div class="mock" role="group" aria-label="Mockup, connects"><div class="mock-title"><span class="dots" aria-hidden="true"></span>mac terminal</div><div class="screen term">
+        <p class="dim">rtk · asked vmb: codex (0192f2b4…) is running and can be entered</p>
+        <p>rtk · opening codex@vmb over ssh. F10 inside the window detaches and brings you back here.</p>
+        <p class="dim">…the remote window draws over this terminal…</p></div>
+        <p class="note-s">The local window has released this terminal and its connection to the Mac's daemon, and reconnects when SSH ends (section 6).</p></div></div>
+      <div role="tabpanel" id="gp2" aria-labelledby="g2"><div class="mock" role="group" aria-label="Mockup, password"><div class="mock-title"><span class="dots" aria-hidden="true"></span>mac terminal</div><div class="screen term">
+        <p>rtk · opening codex@vmb over ssh.</p>
+        <p>Enter passphrase for key '~/.ssh/id_ed25519':<span class="cursor"></span></p></div>
+        <p class="note-s">This is SSH asking you, in your terminal. <code>rtk</code> doesn't read it, store it or pass it on. Your agent or a Tailscale check can answer it for you.</p></div></div>
+      <div role="tabpanel" id="gp3" aria-labelledby="g3"><div class="mock" role="group" aria-label="Mockup, unknown host key"><div class="mock-title"><span class="dots" aria-hidden="true"></span>mac terminal</div><div class="screen term">
+        <p>The authenticity of host '192.168.1.23' can't be established.</p>
+        <p>ED25519 key fingerprint is SHA256:…</p>
+        <p>Are you sure you want to continue connecting (yes/no)?<span class="cursor"></span></p></div>
+        <p class="note-s">SSH's own question about a machine your Mac hasn't met. <code>rtk</code> never answers it for you and never turns host-key checking off.</p></div></div>
+      <div role="tabpanel" id="gp4" aria-labelledby="g4"><div class="mock" role="group" aria-label="Mockup, host key changed"><div class="mock-title"><span class="dots" aria-hidden="true"></span>mac terminal</div><div class="screen term bad">
+        <p>WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!</p>
+        <p class="dim">ssh exited with status 255</p>
+        <p>rtk · couldn't connect over ssh. To enter by hand, run this on vmb:</p>
+        <p>/home/me/.local/bin/rtk attach --expect-session 0192f2b4-…-9d31</p></div>
+        <p class="note-s">Stopped by SSH. <code>rtk</code> doesn't edit <code>known_hosts</code> or retry. Exit status 255 is how SSH reports "couldn't connect or log in", the same signal agent-net uses.</p></div></div>
+      <div role="tabpanel" id="gp5" aria-labelledby="g5"><div class="mock" role="group" aria-label="Mockup, unreachable"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network</div><div class="screen term bad">
+        <p>ssh: connect to host 192.168.1.23 port 22: Operation timed out</p>
+        <p>rtk · vmb isn't reachable over ssh from here (last answered 14:02:11). The session may be running fine.</p>
+        <p>To enter by hand, run this on vmb: /home/me/.local/bin/rtk attach --expect-session 0192f2b4-…-9d31</p></div>
+        <p class="note-s">The row stays in the tab and is marked "ssh failed 14:05", separately from "gateway: live". Different networks fail differently.</p></div></div>
+      <div role="tabpanel" id="gp6" aria-labelledby="g6"><div class="mock" role="group" aria-label="Mockup, replaced"><div class="mock-title"><span class="dots" aria-hidden="true"></span>mac terminal</div><div class="screen term">
+        <p>rtk: session codex 0192f2b4-…-9d31 is no longer running on this machine. A different codex (0192f2e7-…-40c8) is. Not opened.</p>
+        <p class="dim">returning to the Network tab…</p></div>
+        <p class="note-s">The remote <code>rtk attach</code> refused, not the Mac. You choose the new session on purpose, or leave it.</p></div></div>
+      <div role="tabpanel" id="gp7" aria-labelledby="g7"><div class="mock" role="group" aria-label="Mockup, not mapped"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network</div><div class="screen term">
+        <p>vmd isn't in hosts.json, so rtk won't choose an ssh destination for it.</p>
+        <p>On vmd, run: rtk attach --expect-session 0192f2d1-…-00aa</p>
+        <p class="dim">Add "vmd" to hosts.json to enter from here.</p></div>
+        <p class="note-s">This is where agent-net differs: it would try the host name itself as the destination.</p></div></div>
+    </div>
+  </div>
+
+  <div role="tabpanel" id="kp5" aria-labelledby="k5">
+    <h3>Input ownership, taking over, and returning to the tab</h3>
+    <p class="prose">Entering uses the rules from <a href="../0003-per-host-daemon/index.html#input">ADR-0003</a>, unchanged: one holder per session, an attaching window takes an unheld session, and a held one is viewed until F6. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/gate.go#L175"><code>internal/daemon/gate.go:175</code> <code>func (g *gate) assign</code></a></p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Ownership states">
+        <button role="tab" id="h1" aria-controls="hp1">Free: you hold it</button>
+        <button role="tab" id="h2" aria-controls="hp2">Held: you view</button>
+        <button role="tab" id="h3" aria-controls="hp3">F6: take over</button>
+        <button role="tab" id="h4" aria-controls="hp4">F10: back to the tab</button>
+      </div>
+      <div role="tabpanel" id="hp1" aria-labelledby="h1"><div class="mock" role="group" aria-label="Mockup, holder"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach on vmb, through ssh</div><div class="screen">
+        <p class="ph hold">claude@vmb · you hold input</p><p class="dim">&gt; the remote window is the ordinary one</p>
+        <p class="status">F3 log · F5 network (view only here) · F6 take input · F10 detach and return to mac</p></div></div></div>
+      <div role="tabpanel" id="hp2" aria-labelledby="h2"><div class="mock" role="group" aria-label="Mockup, viewer"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach on vmb, through ssh</div><div class="screen">
+        <p class="ph">codex@vmb · viewing · held by another window</p><p class="dim">your typing is refused here; the first Ctrl+C detaches</p>
+        <p class="status">F6 take input · F10 detach and return to mac</p></div></div></div>
+      <div role="tabpanel" id="hp3" aria-labelledby="h3"><div class="mock" role="group" aria-label="Mockup, takeover"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach on vmb, through ssh</div><div class="screen">
+        <p class="ph hold">codex@vmb · you hold input</p><p class="dim">the other window was told it is now a viewer</p>
+        <p class="status">Whoever held it can take it back with F6. Nothing asks them first.</p></div></div></div>
+      <div role="tabpanel" id="hp4" aria-labelledby="h4"><div class="mock" role="group" aria-label="Mockup, return"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · Network, on mac</div><div class="screen">
+        <p class="hd">Network · refreshed on return</p><p>codex@vmb · live · <b>free</b> (you let go on F10)</p>
+        <p class="dim">ssh ended, the remote window closed, and codex@vmb kept running</p></div></div></div>
+    </div>
+    <p class="prose"><b>Viewing is not peeking.</b> There's no view-only attach: entering an unheld session takes its input, which is why the tab says so before you press Enter. <span class="tag t-code">CODE</span> A view-only attach is a separate decision (section 11).</p>
+  </div>
+</div>
+
+<h2 id="pattern">3. The agent-net pattern: what is adopted, and what is not</h2>
+<p class="prose"><span class="tag t-user">USER</span> said to follow how agent-net does it. These are agent-net's mechanics as read in <code>internal/daemon/enter.go</code> and the "Enter a session" section of <code>docs/reference.md</code>. The right-hand column is what Ratatoskr would do differently, and why. <span class="tag t-code">CODE</span></p>
+<div class="table-wrap"><table>
+  <tr><th>agent-net does</th><th>Ratatoskr proposal</th></tr>
+  <tr><td>The TUI asks its local daemon to plan the entry; the TUI builds no command itself. <span class="src ext"><code>agent-net internal/daemon/enter.go:20</code></span></td><td><b>Adopted.</b> The window asks its daemon. The daemon returns a plan the window runs.</td></tr>
+  <tr><td>A session on another machine is planned by that machine, with the question relayed by the gateway. <span class="src ext"><code>agent-net internal/daemon/enter.go:31</code></span></td><td><b>Adopted.</b> The target host's daemon says whether its session can be entered. Its answer is data about the session, not a command (below).</td></tr>
+  <tr><td>The owner's machine opens the connection: herdr's remote client if available, otherwise <code>ssh -t -o ConnectTimeout=5</code>. <span class="src ext"><code>agent-net internal/daemon/enter.go:111</code></span></td><td><b>Adopted for SSH.</b> Herdr is not adopted now (section 8).</td></tr>
+  <tr><td>Owner config maps a host's name to an ssh target, which can be an alias; ssh uses your own keys and config. <span class="src ext"><code>agent-net internal/daemon/enter.go:95</code></span></td><td><b>Adopted,</b> with tailnet names allowed as targets, and with a stricter rule when the entry is missing.</td></tr>
+  <tr><td>With no mapping, the host name from the gateway is used as the ssh target. <span class="src ext"><code>agent-net internal/daemon/enter.go:94</code></span></td><td><b>Not adopted.</b> No entry means no destination. A name a gateway sent must never choose where your Mac connects.</td></tr>
+  <tr><td>The remote machine sends an argument list, and the asker wraps it as <code>exec ARGV</code> run by the remote shell. <span class="src ext"><code>agent-net internal/daemon/enter.go:170</code></span></td><td><b>Not adopted.</b> The remote answers with identifiers and flags only. The Mac builds the command from a fixed template, so a compromised gateway has no command text to change.</td></tr>
+  <tr><td>A failed connection (exit 255) shows the command to run on the other machine. <span class="src ext"><code>agent-net internal/daemon/enter.go:112</code></span></td><td><b>Adopted.</b> That's the "manual fallback".</td></tr>
+  <tr><td>A secret never crosses the gateway; the asker discards any environment in the plan. <span class="src ext"><code>agent-net internal/daemon/enter.go:80</code></span></td><td><b>Adopted, and simpler:</b> Ratatoskr has no per-session secret to send.</td></tr>
+  <tr><td>Remote text is stripped of control codes before it is shown. <span class="src ext"><code>agent-net internal/daemon/enter.go:77</code></span></td><td><b>Adopted.</b> Every remote string is cleaned like the existing labels. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L19"><code>internal/tui/doc.go:19</code> <code>stripped</code></a></td></tr>
+  <tr><td>Only the owner's CLI or TUI may ask; never an agent session. <span class="src ext"><code>agent-net internal/daemon/enter.go:37</code></span></td><td><b>Adopted.</b> Through the window protocol only, never through MCP or messaging.</td></tr>
+  <tr><td>Entering uses each harness's own resume: <code>claude attach &lt;id&gt;</code>, <code>codex resume &lt;thread&gt;</code>, <code>opencode --session</code>. <span class="src ext"><code>agent-net internal/daemon/enter.go:370</code></span></td><td><b>Not imported.</b> Ratatoskr sessions are daemon-owned PTYs. Entering means attaching a window to that PTY by its exact session ID. It never resumes, launches a second harness, or picks a replacement.</td></tr>
+  <tr><td>It finds the session by walking process ancestry to a herdr or tmux pane. <span class="src ext"><code>agent-net internal/daemon/enter.go:449</code></span></td><td><b>Not imported.</b> The daemon already owns the session and knows it.</td></tr>
+  <tr><td>A bar on the bottom terminal row says how to come back (<code>ctrl+]</code>). <span class="src ext"><code>agent-net internal/daemon/enter.go:304</code></span></td><td><b>Idea adopted, mechanism different.</b> The remote window already has F10, and a one-line banner is printed on the Mac before the handover. Nothing reserves a row.</td></tr>
+</table></div>
+
+<h2 id="today">4. What exists today</h2>
+<p class="prose">Traced in the code. This replaces the first draft's list: the gateway and the socket are as before, with the status-ID correction.</p>
+<div data-tabs>
+  <div role="tablist" aria-label="What exists">
+    <button role="tab" id="t1" aria-controls="tp1">The gateway</button>
+    <button role="tab" id="t2" aria-controls="tp2">A daemon's socket</button>
+    <button role="tab" id="t3" aria-controls="tp3">The window</button>
+  </div>
+  <div role="tabpanel" id="tp1" aria-labelledby="t1">
+    <div class="two">
+      <div class="card does"><h3>It can</h3><ul>
+        <li>Answer a paired machine's credential on its routes: connect, sessions, heartbeat, the stream, and messages. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/gateway/server.go#L183"><code>internal/gateway/server.go:183</code> <code>mux.HandleFunc("GET /v1/stream"</code></a></li>
+        <li>Send a daemon the directory on the stream: an address, a host and a live flag per agent. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/protocol/wire.go#L115"><code>internal/protocol/wire.go:115</code> <code>type StreamFrame struct</code></a></li>
+        <li>Count a host live while its stream is open and its heartbeat is under 15 seconds old. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/gateway/liveness.go#L17"><code>internal/gateway/liveness.go:17</code> <code>liveWindow = 15 * time.Second</code></a></li>
+      </ul></div>
+      <div class="card doesnt"><h3>It can't</h3><ul>
+        <li>Relay anything but messages today. Every route is auth, sessions, stream or messages; there is no request and answer between two daemons.</li>
+        <li>Say what a session is doing, who holds it, or what build runs. It never sees that.</li>
+        <li>Carry terminal bytes. ADR-0002 left that out on purpose.</li>
+      </ul></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="tp2" aria-labelledby="t2">
+    <div class="two">
+      <div class="card does"><h3>It can</h3><ul>
+        <li>Answer a status request with PID, build, start time, log path, window count, link state, and each session's name, agent, address, start time, holder and drafting flag. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/wire/types.go#L306"><code>internal/daemon/wire/types.go:306</code> <code>type Status struct</code></a></li>
+        <li>Name a session by a new ID for every session, never reused. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/sessions.go#L290"><code>internal/daemon/sessions.go:290</code> <code>func (m *sessionManager) Add</code></a> and a UUIDv7. <a class="src" href="../../../internal/store/store.go#L54"><code>internal/store/store.go:54</code> <code>uuid.NewV7()</code></a></li>
+        <li>Serve status to a control connection from a different build. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/serve.go#L355"><code>internal/daemon/serve.go:355</code> <code>func helloDecision</code></a></li>
+        <li>Refuse any other user, and a caller descended from one of its own harnesses as a best effort. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/serve.go#L74"><code>internal/daemon/serve.go:74</code> <code>peer.UID != uint32(os.Geteuid())</code></a></li>
+      </ul></div>
+      <div class="card doesnt"><h3>It can't</h3><ul>
+        <li><b>Say a session's ID in status.</b> It isn't in the status type. <span class="tag t-code">CODE</span></li>
+        <li>Be reached over a network. It's a Unix socket with no TCP listener.</li>
+        <li>Give a window to a different build. A window must match its own daemon exactly.</li>
+        <li>Tell its window what the gateway's directory holds. The router's snapshot has no directory field. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/protocol/protocol.go#L115"><code>internal/protocol/protocol.go:115</code> <code>type Snapshot struct</code></a></li>
+      </ul></div>
+    </div>
+  </div>
+  <div role="tabpanel" id="tp3" aria-labelledby="t3">
+    <div class="two">
+      <div class="card does"><h3>It can</h3><ul>
+        <li>Show up to two sessions side by side, a status line, and the F3 log, and take F1, F2, F3, F4, F6 and F10. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L13"><code>internal/tui/doc.go:13</code> <code>Two slots, no more</code></a></li>
+        <li>Take input for a session nobody holds, and view the rest; F6 takes over. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/gate.go#L175"><code>internal/daemon/gate.go:175</code> <code>func (g *gate) assign</code></a></li>
+        <li>Be run by Bubble Tea with its terminal handed to another program, then taken back. <span class="tag t-code">CODE</span> Bubble Tea v2.1.1, <code>exec.go</code>: <code>ExecProcess</code>.</li>
+      </ul></div>
+      <div class="card doesnt"><h3>It can't</h3><ul>
+        <li>Pick a daemon or a session. <code>rtk attach</code> uses the default state directory and shows that daemon's sessions, at most two. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/attach/attach.go#L76"><code>internal/attach/attach.go:76</code> <code>stateDir, err := store.DefaultDir()</code></a></li>
+        <li>Open with no session. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/daemon.go#L119"><code>internal/tui/daemon.go:119</code> <code>the daemon attached no sessions</code></a></li>
+        <li>Refuse to open if a different session replaced the one you meant. It has no way to be told which.</li>
+        <li>Attach without taking input, or run SSH. No code in the repo does either.</li>
+        <li>Be sure its event channels keep draining while suspended. <span class="tag t-unv">UNVERIFIED</span> Section 6 says why this matters.</li>
+      </ul></div>
+    </div>
+  </div>
+</div>
+
+<h2 id="flow">5. How entering a remote session works</h2>
+<p class="prose"><span class="tag t-arch">PROPOSAL</span> Three kinds of traffic, kept apart. Select a part of the map to see it, or step through below.</p>
+<div class="topo five" id="mapall">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+<ol class="prose">
+  <li><b>Discovery</b> is the gateway's existing directory, plus a short host question (below). Small, text, nothing durable.</li>
+  <li><b>The entry question</b> goes from your Mac's daemon, through the gateway, to the target host's daemon, and the answer returns the same way. It's not a message: it isn't stored in the ledger, isn't shown to any agent, and can't be sent by an agent.</li>
+  <li><b>The terminal</b> goes directly between your Mac and the VM, over SSH. The gateway isn't on this path, so where it runs doesn't matter, and a gateway outage doesn't drop an open session.</li>
+</ol>
+<div data-stepper data-map="mapall"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+<ol class="steps">
+  <li data-lit="win"><button class="step-h">You press Enter on codex@vmb</button><div class="step-d"><p>The window sends its own daemon a request: host <code>vmb</code>, session ID. It sends nothing else, and builds no command.</p></div></li>
+  <li data-lit="md,cfg"><button class="step-h">The Mac's daemon checks your mapping</button><div class="step-d"><p>It looks up <code>vmb</code> in <code>hosts.json</code>. No entry means no plan and the by-hand command. An entry gives the ssh target and the <code>rtk</code> path, both checked against fixed patterns.</p></div></li>
+  <li data-lit="md,wl,gw,wr,vd"><button class="step-h">The question reaches vmb's daemon through the gateway</button><div class="step-d"><p>"Is session <code>0192f2b4…</code> running, and can it be attached?" The gateway relays it by host name, as it does messages, and stores nothing.</p></div></li>
+  <li data-lit="vd,vx"><button class="step-h">vmb's daemon answers about its own session</button><div class="step-d"><p>Found, replaced, ended or not attachable, with the name, agent, start time and whether it's held. It reads its own table, and sends no path, command or screen text.</p></div></li>
+  <li data-lit="md,win"><button class="step-h">The Mac's daemon returns a plan</button><div class="step-d"><p>The plan is built here from the fixed template and your mapping. The answer's strings are cleaned of control characters before display. A refusal comes back as a reason to show instead.</p></div></li>
+  <li data-lit="win,ssh,vd,vx"><button class="step-h">The window hands over the terminal</button><div class="step-d"><p><code>ssh -t</code> runs the remote <code>rtk attach</code> with the expected session ID. The gateway is not involved from here.</p></div></li>
+</ol></div>
+<h3>What each side needs that it lacks today</h3>
+<div class="table-wrap"><table>
+  <tr><th>Piece</th><th>Where</th><th>New</th></tr>
+  <tr><td>Network view for the window</td><td>Mac daemon and window</td><td>The daemon passes the directory to the window, with ages. A window request for the host questions and the entry plan.</td></tr>
+  <tr><td>Relayed question and answer</td><td>Gateway and both daemons</td><td>A request and answer pair between two paired hosts, short-lived and not in the ledger. <span class="tag t-unv">OPEN</span> Whether it's a new route or a new stream frame.</td></tr>
+  <tr><td>The answer</td><td>Target daemon</td><td>A reply built from its own session table: found, ID, name, agent, started, held or free, attachable, a reason.</td></tr>
+  <tr><td>Exact-session attach</td><td><code>rtk attach</code></td><td><code>--expect-session ID</code>: open only if that session is running, else refuse with a reason and exit non-zero.</td></tr>
+  <tr><td>ID in status</td><td>Daemon status</td><td>An add-only <code>id</code> field on each session. Older readers ignore it.</td></tr>
+  <tr><td>Host mapping</td><td>Mac, an owner-edited file</td><td>A reader and a validator for <code>hosts.json</code>.</td></tr>
+</table></div>
+
+<h2 id="contexts">6. Handover, and how the tab differs locally and remotely</h2>
+<h3>Does the local window stay, or does a new view open?</h3>
+<p class="prose"><span class="tag t-arch">PROPOSAL</span> <b>The window suspends and hands the same terminal to SSH, then takes it back.</b> That's what agent-net does when Herdr isn't there, and what Bubble Tea supports through <code>ExecProcess</code>. A new terminal tab or window would depend on which terminal program you use, which Ratatoskr can't see.</p>
+<div class="two">
+  <div class="card does"><h3>Why suspending is enough</h3><ul>
+    <li>The sessions live in the daemon, so the local agents keep running while the window is away.</li>
+    <li>You never have two windows drawing into one terminal.</li>
+    <li>Nothing new has to be installed.</li>
+  </ul></div>
+  <div class="card doesnt"><h3>What it costs, and one risk</h3><ul>
+    <li>You can't watch the Mac's sessions while you're inside a remote one.</li>
+    <li><b>A suspended window may be dropped by its daemon.</b> The window delivers frames through channels, and a program that isn't reading may fall behind. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/windowclient/client.go#L63"><code>internal/windowclient/client.go:63</code> <code>windowEvents chan WindowEvent</code></a> <span class="tag t-unv">UNVERIFIED</span> I haven't traced whether the daemon would then close it.</li>
+    <li>So the proposal is to <b>release</b> the window before the handover (close its connection, letting go of the Mac's input as an ordinary close does), and <b>reconnect</b> when SSH ends. The agents never notice. <span class="tag t-arch">PROPOSAL</span></li>
+  </ul></div>
+</div>
+<h3>The two tabs are different, because they run on different machines</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>The window on your Mac</th><th>The window inside the SSH session, on the VM</th></tr>
+  <tr><td>It is</td><td>The Mac's <code>rtk attach</code>, talking to the Mac's daemon.</td><td>The VM's <code>rtk attach</code>, talking to the VM's daemon, drawn by your Mac's terminal.</td></tr>
+  <tr><td>Terminals tab</td><td>The Mac's sessions.</td><td>The VM's sessions, or just the one you chose.</td></tr>
+  <tr><td>Network tab</td><td>Everything the gateway lists. Enter on a remote row hands over to SSH.</td><td>The same list, seen from the VM. <b>Enter is off for rows on other hosts</b> with a note: "press F10 to return to mac, then choose from there". <span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>F10</td><td>Detaches the Mac's window and leaves the program.</td><td>Detaches the VM's window, SSH ends, and you're back in the Mac's window on the Network tab.</td></tr>
+  <tr><td>Why different</td><td colspan="2">A second SSH hop from the VM would need keys there (or your agent forwarded), and it makes "which F10 is this?" ambiguous. Going back to the Mac and choosing again is two keystrokes.</td></tr>
+</table></div>
+<h3>Detach semantics</h3>
+<ul class="prose">
+  <li><b>F10 in a remote window</b> detaches only that window. The agent keeps running on the VM and the session is not ended. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/gate.go#L202"><code>internal/daemon/gate.go:202</code> <code>func (g *gate) releaseAll</code></a></li>
+  <li><b>If SSH drops,</b> the remote window ends the same way, and the Mac's window reconnects and shows the tab. Nothing is resent. A keystroke in flight may or may not have arrived.</li>
+  <li><b>On return,</b> the Mac's window refreshes the tab before showing it, because everything may have changed while you were away.</li>
+  <li><b>Ending a session</b> stays <code>rtk daemon stop --session NAME</code> on its machine. The tab doesn't offer it.</li>
+</ul>
+
+<h2 id="trust">7. Trust boundary: what the gateway may tell the Mac</h2>
+<p class="prose">The owner's file says <i>where</i> and <i>how</i>. The gateway and the remote daemon say only <i>which</i> and <i>what state</i>.</p>
+<div class="table-wrap"><table>
+  <tr><th>Item</th><th>Comes from</th><th>Checked how</th><th>Can it reach a shell?</th></tr>
+  <tr><td>SSH destination</td><td><code>hosts.json</code>, written by you</td><td>A plain host name, <code>user@host</code>, or an alias: letters, digits and <code>._@:-</code>, not starting with <code>-</code>, 253 characters at most</td><td>No. Passed after <code>--</code>, as one argument.</td></tr>
+  <tr><td>Path to <code>rtk</code> on the VM</td><td><code>hosts.json</code></td><td>Absolute, letters, digits and <code>._/-</code> only</td><td>Yes, it's part of the remote command line, so it's checked tightly.</td></tr>
+  <tr><td>Session ID</td><td>The gateway directory, then the host's answer</td><td>Must be a UUID in canonical form and equal what the host reported</td><td>Yes, same reason.</td></tr>
+  <tr><td>Host name</td><td>The gateway</td><td>Used only as a key into <code>hosts.json</code>, exact match</td><td>No. It is never an SSH destination.</td></tr>
+  <tr><td>Session names, notes, reasons</td><td>Gateway and remote daemon</td><td>Cleaned of control characters and cut by display width before drawing</td><td>No. Shown, never run.</td></tr>
+  <tr><td>Commands, paths, environment</td><td>Nobody remote</td><td>The remote answer has no such fields, and any that arrive are dropped</td><td>No.</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>A hostile gateway can,</b> at worst, lie about which sessions exist, say a host is live or not, or stall a question. The result is a wrong row or a timeout. It can't make your Mac connect somewhere you didn't write down, or run something you didn't choose. <span class="tag t-arch">PROPOSAL</span></li>
+  <li><b>A paired host can ask other hosts about their sessions.</b> The same hosts can already message each other. A host can switch off answering these questions in its own config. <span class="tag t-unv">OPEN</span></li>
+  <li><b>Authority is your login.</b> Entering is exactly as strong as your SSH access to that machine. Prompts in the session are that agent's own, answered by you. The tab answers none.</li>
+  <li><b>No credential is added.</b> Not for the gateway, not for the daemon's socket, and not for SSH. The Mac's daemon uses its existing pairing only to relay the short question.</li>
+  <li><b>Agents can't reach any of it.</b> The questions are available through the window protocol only, behind the same user-ID and ancestry checks as the rest. They're not MCP tools and not messages. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/ancestry.go#L78"><code>internal/daemon/ancestry.go:78</code> <code>func ancestryCheck</code></a></li>
+</ul>
+
+<h2 id="herdr">8. Herdr: is it feasible, and is it needed?</h2>
+<div class="two">
+  <div class="card does"><h3>What was checked, without running anything</h3><ul>
+    <li>Herdr 0.9.5 is installed on this Mac with Homebrew, from the install files in its Cellar. It's a version of Herdr, not something Ratatoskr depends on.</li>
+    <li>Its README and the strings in its binary show <code>herdr --remote &lt;ssh target&gt;</code>, saved machines (<code>herdr machine add &lt;ssh-target&gt;</code>), and a need for Herdr on both machines. It connects over SSH.</li>
+    <li>agent-net uses that remote client only for a session that runs in a Herdr pane on the other machine. <span class="src ext"><code>agent-net internal/daemon/enter.go:105</code></span></li>
+  </ul></div>
+  <div class="card doesnt"><h3>Why it doesn't fit today</h3><ul>
+    <li><b>Ratatoskr's sessions aren't Herdr panes.</b> They live in the daemon's own PTYs. Herdr's remote client would show Herdr's panes, not them.</li>
+    <li>It could work by running <code>rtk attach</code> inside a Herdr pane on each VM. That's an extra layer to install and keep in step on every machine, and nobody has tried it. <span class="tag t-unv">UNVERIFIED</span></li>
+    <li>Whether the Ubuntu VMs have Herdr is not known. <span class="tag t-unv">UNVERIFIED</span></li>
+  </ul></div>
+</div>
+<p class="prose"><b>Proposal:</b> SSH only, now. Herdr could be offered later as an option for people who already use it, with clipboard image paste as the gain, and agent-net shows how. <span class="tag t-arch">PROPOSAL</span> <b>No dependency, install or setup change is made or proposed here.</b> Whether to ever add Herdr is your choice (section 11). <span class="tag t-unv">OPEN</span></p>
+
+<h2 id="scenarios">9. Scenarios</h2>
+<p class="prose">Each is the proposal at work, with the gateway on an Ubuntu VM and the Mac in a LAN or tailnet. None exists. The diagram lights the parts doing the work at each step.</p>
+<div data-tabs>
+  <div role="tablist" aria-label="Scenarios">
+    <button role="tab" id="n1" aria-controls="np1">Open the Network tab</button>
+    <button role="tab" id="n2" aria-controls="np2">Enter over the LAN</button>
+    <button role="tab" id="n3" aria-controls="np3">Enter over a tailnet</button>
+    <button role="tab" id="n4" aria-controls="np4">Auth, and when SSH fails</button>
+    <button role="tab" id="n5" aria-controls="np5">Take input, then come back</button>
+    <button role="tab" id="n6" aria-controls="np6">Stale, ended or replaced</button>
+  </div>
+
+  <div role="tabpanel" id="np1" aria-labelledby="n1">
+    <h3>You attach on the Mac, and the gateway is on a VM</h3>
+    <div class="topo five" id="m1">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m1"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win,md,mc"><button class="step-h">You run <code>rtk attach</code></button><div class="step-d"><p>The window opens on the Mac's sessions, as it does today. The tab strip shows Terminals, Messages and Network.</p></div></li>
+      <li data-lit="md,wl,gw"><button class="step-h">The Mac's daemon already has the directory</button><div class="step-d"><p>The gateway has been sending it on the stream. The daemon passes it to the window with its age. This needs no new gateway behaviour.</p></div></li>
+      <li data-lit="win"><button class="step-h">You press F5</button><div class="step-d"><p>The tab lists the directory's sessions grouped by host, with "gateway says" and its age.</p></div></li>
+      <li data-lit="md,wl,gw,wr,vd"><button class="step-h">Host answers fill in the rest</button><div class="step-d"><p>The daemon asks each live host's daemon the short status question through the gateway. Answers arrive row by row, and rows without one say "no answer" with the time.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np2" aria-labelledby="n2">
+    <h3>Mac to Ubuntu VM over the LAN, with plain HTTP on the gateway</h3>
+    <div class="topo five" id="m2">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m2"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win"><button class="step-h">You select <code>codex@vmb</code> and press Enter</button><div class="step-d"><p>The detail line has already told you whether you'd hold input or view.</p></div></li>
+      <li data-lit="md,cfg"><button class="step-h">The destination is your own</button><div class="step-d"><p><code>hosts.json</code> maps <code>vmb</code> to <code>me@192.168.1.23</code> and the VM's <code>rtk</code> path.</p></div></li>
+      <li data-lit="md,wl,gw,wr,vd,vx"><button class="step-h">The gateway relays the question and the answer</button><div class="step-d"><p>Over the same plain-HTTP LAN link the daemons already use. This hop carries a UUID and a few words, not a terminal.</p></div></li>
+      <li data-lit="win,ssh,vd,vx"><button class="step-h">SSH takes the terminal</button><div class="step-d"><p><code>ssh -t -o ConnectTimeout=5 -- me@192.168.1.23 /home/me/.local/bin/rtk attach --expect-session …</code>. The terminal is encrypted by SSH and doesn't use the gateway's transport.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np3" aria-labelledby="n3">
+    <h3>The same, over a tailnet</h3>
+    <div class="topo five" id="m3">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m3"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="cfg,md"><button class="step-h">The mapping names the tailnet host</button><div class="step-d"><p><code>"vmb": {"ssh": "me@vmb.example-tailnet.ts.net"}</code>. The gateway still lists the host as <code>vmb</code>. Only your file connects the two names.</p></div></li>
+      <li data-lit="win,ssh"><button class="step-h">SSH goes over the tailnet</button><div class="step-d"><p>Tailscale carries the packets. SSH asks for what it asks for, which may include a Tailscale SSH check. That's SSH and Tailscale's, not <code>rtk</code>'s.</p></div></li>
+      <li data-lit="gw"><button class="step-h">The gateway can be elsewhere entirely</button><div class="step-d"><p>The tab works the same if the gateway is on the Mac, on a VM in the LAN, or on the tailnet. The gateway's own HTTPS limits are a separate gap, described in the <a href="../../testing/index.html">test guide</a>.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np4" aria-labelledby="n4">
+    <h3>SSH asks you something, or can't connect</h3>
+    <div class="topo five" id="m4">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m4"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win,ssh"><button class="step-h">SSH needs your answer</button><div class="step-d"><p>A passphrase, a host-key question or a Tailscale check appears in your terminal. You answer it. <code>rtk</code> sees none of it.</p></div></li>
+      <li data-lit="ssh"><button class="step-h">SSH exits with status 255</button><div class="step-d"><p>A changed host key, a refusal, or a 5-second connect timeout. The window reconnects to the Mac's daemon.</p></div></li>
+      <li data-lit="win"><button class="step-h">The tab shows the manual way</button><div class="step-d"><p>"To enter by hand, run this on vmb: …", the command from the plan's fallback. The row is marked "ssh failed" at that time, apart from the gateway's view.</p></div></li>
+      <li data-lit="gw,vd"><button class="step-h">Gateway and SSH can disagree</button><div class="step-d"><p>The gateway may call <code>vmb</code> live while SSH can't reach it, such as on a different network or a closed port. Both facts stay on the row.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np5" aria-labelledby="n5">
+    <h3>You're a viewer, you take input, then you return</h3>
+    <div class="topo five" id="m5">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m5"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="ssh,vd,vx"><button class="step-h">The session is held elsewhere</button><div class="step-d"><p>Another window on the VM holds input, so you enter as a viewer. Your typing is refused, and the first Ctrl+C detaches.</p></div></li>
+      <li data-lit="vd,vx"><button class="step-h">F6 takes input</button><div class="step-d"><p>The VM's daemon moves the hold to you and tells the other window it's now a viewer.</p></div></li>
+      <li data-lit="win,md"><button class="step-h">F10 returns you to the Mac</button><div class="step-d"><p>The remote window detaches, SSH ends, and the Mac's window reconnects on the Network tab.</p></div></li>
+      <li data-lit="vd,vx"><button class="step-h">The agent carries on</button><div class="step-d"><p>The hold is released and the session isn't ended.</p></div></li>
+    </ol></div>
+  </div>
+
+  <div role="tabpanel" id="np6" aria-labelledby="n6">
+    <h3>The row is old, or the session is gone</h3>
+    <div class="topo five" id="m6">
+      <div class="host"><p class="host-l">Your Mac</p>
+        <div class="node" data-k="win">rtk window<small>Terminals, Messages and Network tabs</small></div>
+        <div class="node" data-k="md">rtk daemon<small>local socket, plans the entry</small></div>
+        <div class="node" data-k="cfg">hosts.json<small>written by you; only source of destinations</small></div>
+        <div class="node claude" data-k="mc">claude@mac<small>a session</small></div></div>
+      <div class="mid"><div class="wire" data-k="wl">question</div><div class="wire rev" data-k="wl">directory</div><p class="mid-l">Mac's daemon dials the gateway</p></div>
+      <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Directory and routing<small>relays a short question; no terminals pass through</small></div></div>
+      <div class="mid"><div class="wire" data-k="wr">question</div><div class="wire rev" data-k="wr">answer</div><p class="mid-l">VM-B's daemon dials the gateway</p></div>
+      <div class="host"><p class="host-l">Ubuntu VM-B</p>
+        <div class="node" data-k="vd">rtk daemon<small>answers about its own sessions</small></div>
+        <div class="node codex" data-k="vx">codex@vmb<small>a session</small></div></div>
+      <div class="sshline" data-k="ssh">SSH from the Mac straight to VM-B, over the LAN or a tailnet. It does not pass through the gateway.</div>
+    </div>
+    <div data-stepper data-map="m6"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="gw"><button class="step-h">A host drops</button><div class="step-d"><p>For up to 15 seconds the gateway still counts it live. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/gateway/liveness.go#L17"><code>internal/gateway/liveness.go:17</code> <code>liveWindow = 15 * time.Second</code></a> The row shows the directory's age.</p></div></li>
+      <li data-lit="md,wl,gw"><button class="step-h">The question times out</button><div class="step-d"><p>"Host says" turns to "no answer" with a time, and Enter is off. Old facts are shown as old.</p></div></li>
+      <li data-lit="win,vd,vx"><button class="step-h">A session was replaced after you looked</button><div class="step-d"><p>The row held <code>0192f2b4…</code> and the host now has <code>0192f2e7…</code>. The host's answer says "replaced", and the tab refuses to enter. If you got past that, the remote <code>rtk attach</code> would refuse too.</p></div></li>
+      <li data-lit="win"><button class="step-h">You choose again, on purpose</button><div class="step-d"><p>The refreshed list shows the new session. Nothing is picked for you.</p></div></li>
+    </ol></div>
+  </div>
+</div>
+
+<h2 id="gaps">10. Current against proposed, and compatibility</h2>
+<div class="table-wrap"><table>
+  <tr><th>Capability</th><th>Today</th><th>Needs</th></tr>
+  <tr><td>A tab beside the terminals</td><td><b>Not present.</b> The window has terminals and the F3 log. <span class="tag t-code">CODE</span></td><td>A third view, a key, and a tab strip.</td></tr>
+  <tr><td>The directory in the window</td><td>The daemon receives it, and the window doesn't. <span class="tag t-code">CODE</span></td><td>A field in the snapshot or a window request, with an age. Add-only.</td></tr>
+  <tr><td>Remote host's own answer</td><td><b>Not present.</b> The gateway relays only messages.</td><td>A request and answer between paired hosts. An older gateway would answer "not found", and the tab would show directory facts only. <span class="tag t-unv">OPEN</span> Whether to bump the protocol version.</td></tr>
+  <tr><td>Session ID in status</td><td><b>Not present.</b> <span class="tag t-code">CODE</span></td><td>An add-only <code>id</code> field.</td></tr>
+  <tr><td>Attach for an exact session</td><td><b>Not present.</b></td><td><code>rtk attach --expect-session ID</code>, refusing on mismatch.</td></tr>
+  <tr><td>SSH handover and return</td><td><b>Not present.</b> Bubble Tea can do the handover.</td><td>A plan type, a runner, the 255 fallback, and release-and-reconnect.</td></tr>
+  <tr><td>Host mapping file</td><td><b>Not present.</b></td><td>A reader, a validator and a documented example.</td></tr>
+  <tr><td>View-only attach</td><td><b>Not present.</b> Entering takes input for an unheld session.</td><td>A separate decision.</td></tr>
+  <tr><td>Several remote sessions at once</td><td><b>Not present, and not proposed.</b></td><td>Would need a forwarded socket and an exact build match. It is not in this ADR.</td></tr>
+  <tr><td>Terminals through the gateway</td><td><b>Not present, and not proposed.</b></td><td>Would change the gateway's job and add an owner credential.</td></tr>
+  <tr><td>Remote worker dispatch</td><td><b>Deferred.</b> <a href="../0003-per-host-daemon/index.html#decisions">ADR-0003</a></td><td>Unrelated to entering a session you already own. This ADR gives workers no route and takes none.</td></tr>
+</table></div>
+<h3>Compatibility</h3>
+<ul class="prose">
+  <li><b>Builds.</b> A window must match its own daemon exactly, and the proposal never changes that. The Mac's window talks to the Mac's daemon, and the VM's window to the VM's daemon, so the Mac and the VM can run different builds, unlike a forwarded-socket design.</li>
+  <li><b>Remote build lacks <code>--expect-session</code>.</b> The remote <code>rtk attach</code> would reject the unknown flag, and the Mac would show the by-hand command. It must not fall back to attaching without the flag.</li>
+  <li><b>Older daemon on the target</b> doesn't answer the new question, which looks like "no answer". Entering is then off, not guessed.</li>
+  <li><b>Status gets a field.</b> Control messages already add fields without breaking older readers. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/daemon/serve.go#L355"><code>internal/daemon/serve.go:355</code> <code>func helloDecision</code></a></li>
+</ul>
+
+<h2 id="decisions">11. Decisions</h2>
+<p class="prose">The direction is the user's. The rows marked <b>built</b> were implemented as the architect's reading of the user's requests and are untested. The user has not confirmed any of them as decisions, so each stays open until they say so.</p>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>Status</th><th>Proposal</th></tr>
+  <tr><td>0</td><td>An additional tab in the attached window, following agent-net, not a dashboard.</td><td><span class="tag t-user">USER</span> decided</td><td>As drawn.</td></tr>
+  <tr><td>1</td><td>The key and the tab strip: F5, always shown?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as F5 toggling the view</td><td>F5, with the strip always shown. Other keys are free.</td></tr>
+  <tr><td>2</td><td>The host mapping: file name, location and fields. Missing entry means by-hand command only?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as <code>hosts.json</code></td><td><code>hosts.json</code> beside the other state, with <code>ssh</code> and <code>rtk</code> per host. No guessing.</td></tr>
+  <tr><td>3</td><td>Build the relayed host question, or start with the directory alone?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> differently: a central report and snapshot API, no relayed question (1a)</td><td>Two stages: first the tab with the directory and local sessions, then the relayed question, remote entry plan and SSH. Splitting is the lead's and your call.</td></tr>
+  <tr><td>4</td><td>Handover by suspending the same terminal, with release and reconnect?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as quit and reopen on the same terminal</td><td>Yes. New terminal tabs and Herdr panes stay out.</td></tr>
+  <tr><td>5</td><td>Enter on other hosts' rows, from inside a remote window?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as off</td><td>Off, with a note to return to the Mac.</td></tr>
+  <tr><td>6</td><td>View-only attach, so a row can be looked at without taking input?</td><td><span class="tag t-unv">OPEN</span></td><td>Defer. The tab says who would hold input before you enter.</td></tr>
+  <tr><td>7</td><td>Herdr as an optional way in?</td><td><span class="tag t-unv">OPEN</span></td><td>Not now. No install or dependency change.</td></tr>
+  <tr><td>8</td><td>Ending sessions, or message counts and text, from the tab?</td><td><span class="tag t-unv">OPEN</span></td><td>No. Ending stays a command on that machine, and message bodies stay out of the tab.</td></tr>
+  <tr><td>9</td><td>Hosts that don't answer the new question: can a host switch it off?</td><td><span class="tag t-unv">OPEN</span> not built; there is no relayed question</td><td>Yes, in its own config.</td></tr>
+  <tr><td>10</td><td>A Mac daemon with no sessions: reach the tab how?</td><td><span class="tag t-unv">OPEN</span></td><td>Start one with <code>rtk attach --agents NAME</code>, as now. A tab with no terminal isn't proposed.</td></tr>
+</table></div>
+
+<h2 id="sources">12. Sources</h2>
+<ul class="prose small">
+  <li><b>Ratatoskr code:</b> the files cited above, at commit <code>f411629</code>, plus Bubble Tea v2.1.1 for <code>ExecProcess</code>. Read, not run.</li>
+  <li><b>agent-net:</b> <code>internal/daemon/enter.go</code> and the "Enter a session" section of <code>docs/reference.md</code>, in <code>~/Projects/compare/agent-net</code>. That is not part of this repository, so the line numbers beside its quotations are from the copy read on 2026-11-06 and can change. Read, not run.</li>
+  <li><b>Herdr:</b> its install files (<code>README.md</code>, <code>CHANGELOG.md</code>, receipt) and strings in its binary, read from the Homebrew Cellar. It was not run.</li>
+  <li><b>Context:</b> <a href="../0003-per-host-daemon/index.html">ADR-0003</a>, <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, the <a href="../../implementation/daemon-contract.md">daemon contract</a>, the <a href="../../testing/index.html">daemon test guide</a> and the <a href="../../design/ground-rules.md">ground rules</a>.</li>
+  <li><b>The request:</b> the user's words, relayed by the operator on 2026-11-06. Only the quoted words are the user's own.</li>
+  <li><b>Not consulted:</b> OpenSSH and Tailscale documentation, and Herdr's online docs. Claims about their behaviour are marked UNVERIFIED or described as typical.</li>
+</ul>
+
+</div>
+
+<script>
+
+
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll(':scope > [role="tablist"] > [role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  function setupListbox(box) {
+    var rows = Array.prototype.slice.call(box.querySelectorAll('[role="option"]'));
+    function pick(i, focus) {
+      rows.forEach(function (r, n) {
+        var on = n === i;
+        r.setAttribute('aria-selected', on ? 'true' : 'false');
+        r.tabIndex = on ? 0 : -1;
+        var d = document.getElementById(r.getAttribute('data-detail'));
+        if (d) d.hidden = !on;
+      });
+      if (focus) rows[i].focus();
+    }
+    rows.forEach(function (r, i) {
+      r.addEventListener('click', function () { pick(i, false); });
+      r.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowDown') n = Math.min(i + 1, rows.length - 1);
+        if (e.key === 'ArrowUp') n = Math.max(i - 1, 0);
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = rows.length - 1;
+        if (n !== null) { e.preventDefault(); pick(n, true); }
+      });
+    });
+    pick(0, false);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-listbox]'), setupListbox);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+}());
+</script>
+</body>
+</html>

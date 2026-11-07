@@ -5,7 +5,7 @@
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
-> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is new, and the owner reports that it worked in their own testing on 2026-11-06. That test used the earlier `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has since replaced it, and **the daemon has never been run**.
+> Ratatoskr is at a very early stage and **its first version is largely unproven.** The project's owner has run it by hand on macOS, and reports that mouse click focus and Ctrl+C work and that Codex's automatic startup and messaging between Claude Code and Codex in both directions work. No automated test has been run, and recovery, Linux and the other acceptance checks haven't been verified, so don't assume the rest works. See [outstanding issues](docs/implementation/outstanding-issues.md). The product sections describe what the project is setting out to build; [Setup](#setup) covers the first version. [Cross-machine messaging](#cross-machine-messaging) is new, and the owner reports that it worked in their own testing on 2026-11-06. That test used the earlier `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has since replaced it, and the owner reports that it works too, with one [open bug](#the-daemon-and-its-windows).
 
 ## Why
 
@@ -144,7 +144,7 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 - **Pastes have limits.** A paste over 1 MiB is refused with a message. A slow paste can stop after 3 seconds with only part of it delivered.
 - **Pasting is how messages arrive,** so they look like user turns. The message frame says they came from a peer.
 - **No resume or resend.** Agent sessions end with `rtk` and a new run knows nothing about the last one. Unfinished messages are marked `interrupted` and never resent; read them in the log (F3) and pass them on yourself.
-- **If an SSH connection drops,** plain `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap. [The daemon](#the-daemon-and-its-windows) is designed to survive this, but it needs a gateway and hasn't been run.
+- **If an SSH connection drops,** plain `rtk` and both agents may end with it. Running `rtk` inside `tmux` or `screen` on the server is the suggested stopgap. [The daemon](#the-daemon-and-its-windows) is designed to survive this, but it needs a gateway.
 - **Not a security boundary.** Both agents run as you and could read each other's files or tokens. A message can't approve anything for the recipient, but it can still persuade its model, so its permission prompts remain the real check.
 
 ## Cross-machine messaging
@@ -152,7 +152,7 @@ Message bodies and delivery history are stored in `$XDG_STATE_HOME/ratatoskr/`, 
 > [!WARNING]
 > **The project's owner tested this by hand on 2026-11-06, and reports:** "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." That's the only run so far, and the report doesn't say which setup, transport or failure cases it covered, so don't assume any particular one has been checked. No automated test has run, and the team hasn't run it. Plain `rtk` still has its own limits, described under [Setup](#setup).
 >
-> **That report doesn't cover what's described below.** It ran the earlier in-process `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has replaced that and changed how sessions register with the gateway, so connected messaging needs testing again. **The daemon is written and compile-checked, and has never been run,** so expect corrections.
+> **That report doesn't cover what's described below.** It ran the earlier in-process `rtk runtime`. [The daemon](#the-daemon-and-its-windows) has replaced that and changed how sessions register with the gateway. The owner has since tested the daemon too, as that section describes.
 
 Claude Code and Codex can run on different machines and message each other through a central gateway. The gateway keeps every message that reaches it, with its full text, so you can read them in one place. [ADR-0002](docs/adr/0002-cross-machine-messaging/index.html) explains why it works this way.
 
@@ -236,7 +236,7 @@ Ask codex@ubuntu-b what files are in its directory, using ratatoskr_send.
 ### The daemon and its windows
 
 > [!WARNING]
-> **Everything in this section is written and compile-checked, and has never been run.** It describes what the code is meant to do.
+> **The project's owner tested this by hand on 2026-11-06, and reports:** "Ok I tested it and it all works! There is a small bug though: Whenever I type something in claude code / codex chat and get an answer, some text is auto pasted into the prompt box". **That bug is open, and its cause is unknown.** The report doesn't say which scenarios, machines or failure cases it covered, so don't assume any particular one has been checked. No automated test has run, and the team hasn't run it.
 
 Each machine with agents runs one daemon, which owns the agents and their connection to the gateway. A window is only a view of them, so closing it doesn't stop anything. Starting the daemon is always a separate step: `rtk attach` and `rtk runtime` never start one.
 
@@ -248,6 +248,8 @@ Each machine with agents runs one daemon, which owns the agents and their connec
 | `rtk attach` | Opens a window on the agents already running. If none are, it says so and exits |
 | `rtk attach --agents claude,codex` | The same, first starting any listed agent that isn't running, in this directory. Running agents stay where they started |
 | `rtk runtime [--agents claude,codex]` | An alias for `rtk attach`. **This has changed:** without `--agents` it no longer starts both agents, and it needs a running daemon |
+| `rtk daemon network [--json] [--watch]` | Prints what this machine and the gateway know about every host's sessions. See [The Network tab and SSH entry](#the-network-tab-and-ssh-entry) |
+| `rtk attach --expect-session ID` | Attaches only the running session with that ID, and refuses before taking input otherwise. This is what SSH entry runs on the remote machine |
 | `rtk daemon stop --session NAME` | Ends one agent |
 | `rtk daemon stop` | Stops the daemon and every agent. With agents running, it lists them and refuses unless you add `--yes` |
 
@@ -357,7 +359,7 @@ Nothing is resent automatically. If an agent sends again after an uncertain resu
 
 ### Test it
 
-> **For a step-by-step walkthrough, use the [daemon test guide](docs/testing/index.html).** It covers [one Mac](docs/testing/scenario-1-local/README.md), including several copies of each harness, a [LAN with plain HTTP](docs/testing/scenario-2-lan-http/README.md) and a [tailnet](docs/testing/scenario-3-tailnet/README.md), with diagrams and copy buttons. **`rtk` doesn't support HTTPS on a Tailscale address,** and the guide explains the alternatives. Open it from a local checkout, because GitHub shows `.html` as source.
+> **For a step-by-step walkthrough, use the [daemon test guide](docs/testing/index.html).** Its expected results come from reading the code. It covers [one Mac](docs/testing/scenario-1-local/README.md), including several copies of each harness, a [LAN with plain HTTP](docs/testing/scenario-2-lan-http/README.md) and a [tailnet](docs/testing/scenario-3-tailnet/README.md), with diagrams and copy buttons. **`rtk` doesn't support HTTPS on a Tailscale address,** and the guide explains the alternatives. Open it from a local checkout, because GitHub shows `.html` as source.
 
 Please run these in order, because each one relies on the one before. Tell the team what you see, especially anything that differs. **Expected results come from reading the code,** not from a record of each check passing.
 
@@ -484,6 +486,77 @@ Tell the team if a command or message differs from this, especially step 7, or a
 - **The ledger may miss a final state.** If a daemon stops before reporting `interrupted`, its log entry stays at the last reported state, marked `(session ended)`.
 - **One daemon per state directory,** and plain `rtk` counts as one. The loop budget of 20 is per daemon, and resets when the window holding input presses Enter on that machine.
 
+### The Network tab and SSH entry
+
+> [!WARNING]
+> **Written, never run.** This was implemented in the working tree on top of commit f411629 and checked only by `gofmt`, `go vet` and `go build` (darwin and linux). No test, `rtk`, gateway, daemon or `ssh` has been run for it, and nothing is committed or pushed. Expect defects. The tests that exist have never executed. Rebuild `rtk` before you try anything: any `./rtk` already in the repo predates the final code.
+
+The Network tab is an extra view inside any attached window, not a dashboard. Press **F5** to switch to it and F5 or Esc to return to your terminals.
+
+**Where the data comes from.** Each daemon reports its own sessions to the gateway (`PUT /v1/report`). The gateway joins the reports with its directory of paired hosts. Your daemon reads that through `GET /v1/network` and hands it to your window and to `rtk daemon network`. Nothing polls a host over SSH, and the gateway never carries a terminal, keystrokes, prompts, screens, environments or credentials. Reports are kept in the gateway's memory only, so a gateway restart empties them until the daemons report again.
+
+**What a row means.** Per session: name, harness, start time, a state (`starting`, `idle`, `busy`, `needs_you`, `unknown`, `exited`), when that state was seen, and whether input is held, free or unknown.
+
+- `unknown` is shown as unknown. It is never turned into idle.
+- A missing field means it isn't available. The model is never reported.
+- A report older than 30 seconds, or from a host that isn't live, is stale: it is history, not proof that anything is still running.
+- A host with no report reads "no report", which is not the same as having no sessions.
+- A gateway older than this build gives only bare peer addresses with no live flag.
+
+**Keys in the tab:** arrows and PgUp/PgDn select, **Enter** enters the session, **R** refreshes, **F6** takes input, **F10** detaches.
+
+**Commands**
+
+```
+rtk daemon network            # a table: this machine, the gateway link, every host's sessions
+rtk daemon network --json     # the same as JSON (schema 1)
+rtk daemon network --watch    # reprint when it changes
+```
+
+The JSON has `local` (always available, even with no gateway), `gateway.state` (`connected`, `unreachable`, `not_configured` or `unsupported`) and `snapshot` (the last one fetched, or `null` before the first). Field-by-field schemas and the two gateway routes are in [`docs/implementation/network-api-contract.md`](docs/implementation/network-api-contract.md).
+
+**SSH entry.** Enter on a session in another machine's row opens it over `ssh` from your own terminal, with your own keys, agent and `~/.ssh/config`. `rtk` adds no host-key or auth settings. The window closes, `ssh -t -o ConnectTimeout=5 -- <ssh> '<rtk> attach --expect-session <id> --entered-via-ssh'` runs in the same terminal, and when it ends a fresh window opens on the Network tab at the same row. If nothing is running locally any more, `rtk` prints the usual guidance and exits.
+
+Enter needs a host map on the machine you enter from, `<state dir>/hosts.json` (the state directory is shown under [Data](#data)). You edit it by hand and it is read at each Enter:
+
+```json
+{
+  "version": 1,
+  "hosts": {
+    "vmb": { "ssh": "me@192.168.1.23", "rtk": "/home/me/.local/bin/rtk" },
+    "vmc": { "ssh": "build-vmc", "rtk": "/usr/local/bin/rtk", "state_home": "/home/me/.local/state" }
+  }
+}
+```
+
+- Keys are the host names exactly as the gateway lists them. `ssh` can be a LAN or tailnet address, `user@host`, or an alias from your SSH config. `rtk` must be an absolute path on the remote machine. `state_home` is optional.
+- The file is refused if it is a symlink, not a regular file, writable by group or others, owned by someone else or over 64 KiB. Without an entry, the row shows the command to type on that machine instead (a `manual` plan). Nothing is run.
+- On the remote machine `rtk attach --expect-session` attaches only that exact session. If it ended or was replaced, it refuses before taking input.
+
+| `ssh` ended with | The tab says |
+| --- | --- |
+| 0 | Nothing: back on the tab |
+| 3 | The session ended or was replaced; choose again |
+| 4 | No `rtk` daemon on that host |
+| 2 | That host's `rtk` is too old for `--expect-session` |
+| 255 | `ssh` couldn't connect or the connection ended. `rtk` can't tell unreachable, timeout, host key, auth or a dropped link apart, so read `ssh`'s own message |
+| other | The remote command exited with that code |
+
+**Limits**
+
+- Same-user agents can read `pairing.json`, so this API doesn't isolate them from the network data. It grants no control: no starting, stopping, typing or entering without your own SSH keys. Any paired host can read every host's snapshot.
+- Entering a session on another machine from inside an SSH-entered window is blocked. Press F10 to go back first.
+- The gateway doesn't cap parked long-polls (paired hosts only), and a poll parked when its host is unpaired can answer for up to 20 seconds.
+- `state_at` for a session that was already busy is when the daemon first saw it.
+- The terminal handover (a 600 ms wait that drops typeahead) rests on reading Bubble Tea's source, not on observation. Whether a terminal is left clean after each way `ssh` can end is exactly what still needs your testing.
+- SSH entry works on macOS and Linux only.
+
+**Upgrading.** Either machine can be upgraded first. The full tab needs the gateway and each daemon on this build, and a window must match its own daemon's build, as before. There is no database change and the wire protocol stays at 2. Restarting a daemon with `rtk daemon stop --yes` ends its sessions, as before. Nothing is added for HTTPS over a tailnet.
+
+The gateway now routes with [chi](https://github.com/go-chi/chi) v5.5.0. Two behaviours differ from before: `HEAD` on a `GET` route returns 405, and a request with an unclean path gets 404 instead of a redirect.
+
+**First things worth testing, once you say so:** the terminal after each way `ssh` can end (clean exit, 255, `kill` of `rtk`, `kill -9` of `ssh`); typeahead and late terminal replies at the handover; Ctrl+C during the connection; F10 returning to the same row; exit 3 and 4 through `ssh`; ages moving on a quiet network; and live and stale flips while a poll is parked. The step-by-step version is scenario 4 in [`docs/testing/`](docs/testing/).
+
 ## Architecture decisions
 
 Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Records (ADRs). Each one says what was chosen, why, what was rejected and what it costs.
@@ -492,7 +565,8 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | --- | --- | --- |
 | [0001](docs/adr/0001-mcp-agent-messaging/index.html) | Agents send through an MCP tool and receive through a gated paste | Accepted |
 | [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. The owner reports that it worked in their testing on 2026-11-06, before the daemon replaced `rtk runtime` | Accepted |
-| [0003](docs/adr/0003-per-host-daemon/index.html) | Move from `rtk runtime` to a long-lived daemon on each machine, with attachable windows, as the basis for sessions that spawn workers. Plain `rtk` stays local. The daemon is written and compile-checked but has never been run. Workers aren't built, and some questions about them remain open | Accepted |
+| [0003](docs/adr/0003-per-host-daemon/index.html) | Move from `rtk runtime` to a long-lived daemon on each machine, with attachable windows, as the basis for sessions that spawn workers. Plain `rtk` stays local. The daemon is built, and the owner reports that it works in their testing on 2026-11-06, with one open bug. Workers aren't built, and some questions about them remain open | Accepted |
+| [0004](docs/adr/0004-network-tab/index.html) | A Network tab inside the attached window, following agent-net: a gateway API lists every host's sessions with how fresh each fact is, and Enter on a remote session opens a direct SSH connection from your own terminal. Not a dashboard. The API, tab and SSH entry are written but have never been run; the open choices in the record are proposals, not decisions | Proposed |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 

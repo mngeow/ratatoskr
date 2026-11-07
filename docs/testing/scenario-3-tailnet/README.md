@@ -4,7 +4,7 @@ The same three machines, connected by Tailscale instead of your LAN.
 
 **This is the short form, for reading on a VM or on GitHub.** The [full guide](../index.html#s3) has the diagrams, fill-in fields and copy buttons. Open it from a local checkout, because GitHub shows `.html` as source.
 
-> **Nobody has run the daemon.** Expected results come from reading the code, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
+> **Expected results come from reading the code,** and the team hasn't run these steps, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
 
 > **This isn't HTTPS.** `rtk` refuses HTTPS on a Tailscale address: it allows `--allow-lan` and `--fingerprint` on LAN addresses only. These steps use plain HTTP inside Tailscale's WireGuard tunnel, and the gateway says so when it starts. To test HTTPS, use [scenario 2](../scenario-2-lan-http/README.md) with `rtk gateway --listen <GW_LAN_IP>:<GW_PORT> --allow-lan`, and pair with the printed `--fingerprint` line. Adding HTTPS on a tailnet would be a small product change, and is the user's decision.
 

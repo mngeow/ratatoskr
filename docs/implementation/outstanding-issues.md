@@ -22,7 +22,7 @@ Owner: `delivery.lead`. This is the current list for the `rtk` first version. It
 
 - All automated tests. They compile but have never been executed.
 - Anything in the cross-machine candidate (`rtk gateway`, `rtk runtime`) by the team, and any automated test of it. The user's manual test is recorded above. What it doesn't separately confirm stays open in [Cross-machine candidate](#cross-machine-candidate) and [Direct LAN](#direct-lan).
-- All of the per-host daemon (`rtk daemon`, `rtk attach`). See [Per-host daemon](#per-host-daemon).
+- All of the per-host daemon (`rtk daemon`, `rtk attach`) by the team, and its automated tests. The user's manual report and its limits are recorded in [Per-host daemon](#per-host-daemon).
 - Linux at runtime, and use over SSH.
 - Recovery after a crash, and storage failure handling. The runners for acceptance checks 10 and 12 aren't written.
 - The other acceptance checks in design section 12. Mouse focus and Ctrl+C aren't numbered checks.
@@ -30,6 +30,12 @@ Owner: `delivery.lead`. This is the current list for the `rtk` first version. It
 - The paste limits and every time limit below.
 
 **The earlier UI freeze is an open risk, not a closed defect.** The user saw the whole UI freeze on Ctrl+C and no longer reports it. Its cause was never established. The fix was a redesign so that pane problems can't block the UI, whatever the cause. If it comes back, record what was on screen and which key was pressed, and capture stacks with `kill -QUIT <rtk pid>` from another terminal.
+
+## Open user-reported defect: text in the prompt after answers
+
+User report, 2026-11-06: "Whenever I type something in claude code / codex chat and get an answer, some text is auto pasted into the prompt box". The user adds that the text is readable and vanishes after typing a letter and then backspacing. **Cause unknown; pasted input has not been established.** Exact text/colour, affected harness versions, plain-versus-daemon behaviour, holder/viewer state and reproduction details are not yet available.
+
+Static trace has found no dim/italic/reverse stripping in the shared x/vt → Frame.Content → paneLines/fitStyled path; daemon frames carry full rendered strings rather than incremental repaint commands. **UNVERIFIED hypothesis:** native suggestion/placeholder text; a stale repaint also remains a hypothesis. [Claude's documented prompt suggestions](https://code.claude.com/docs/en/interactive-mode#prompt-suggestions) appear after responses and typing dismisses them; that matches part of the report but does not identify this user's text or explain Codex. Real delivery and terminal replies remain distinguishable by the exact text; no code change is justified yet. No harness, app, probe or test was run for this investigation.
 
 ## Confirmed defects
 
@@ -167,7 +173,7 @@ Every value here is a guess, marked in code, and none has been measured. A wrong
 
 ### Per-host daemon
 
-`rtk daemon`, `rtk attach` and `rtk runtime` as its alias, built from the [daemon contract](daemon-contract.md) and [design](daemon-design.md). All of it is written and never run: `gofmt`, `go vet` and `go build` pass for macOS and Linux, tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`.
+`rtk daemon`, `rtk attach` and `rtk runtime` as its alias, built from the [daemon contract](daemon-contract.md) and [design](daemon-design.md). The user reports testing the daemon by hand on 2026-11-06 and that 'it all works', apart from this bug. The report doesn't say which scenarios, machines or failure cases it covered, and no automated test has run. The team has not run it: `gofmt`, `go vet` and `go build` pass for macOS and Linux, tests are written and unrun, and that plain `rtk` is unchanged is argued from the diffs, not shown. Time limits are `UNTESTED guess`. See the [open prompt-text report](#open-user-reported-defect-text-in-the-prompt-after-answers).
 
 | Risk or gap | If it's wrong, or what it means | Status | What would resolve it |
 | --- | --- | --- | --- |

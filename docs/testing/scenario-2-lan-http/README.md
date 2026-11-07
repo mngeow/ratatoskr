@@ -4,7 +4,7 @@ A gateway on one Ubuntu VM, a daemon on a second, and a daemon on your Mac, all 
 
 **This is the short form, for reading on a VM or on GitHub.** The [full guide](../index.html#s2) has the diagrams, fill-in fields and copy buttons. Open it from a local checkout, because GitHub shows `.html` as source.
 
-> **Nobody has run the daemon.** Expected results come from reading the code, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
+> **Expected results come from reading the code,** and the team hasn't run these steps, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
 
 > **Plain HTTP is readable on this network.** Anyone who can see the traffic can read messages, the pairing code and the credential, and anyone who can redirect it can inject messages into your agents. Use it only on a LAN you trust. If you take the Mac elsewhere, stop its daemon first, because it keeps trying to reach this address and would send its credential to whatever answers.
 

@@ -4,7 +4,7 @@ A gateway and two daemons on one Mac, with two copies of each harness. Each daem
 
 **This is the short form, for reading on a VM or on GitHub.** The [full guide](../index.html#s1) has the diagrams, fill-in fields and copy buttons. Open it from a local checkout, because GitHub shows `.html` as source.
 
-> **Nobody has run the daemon.** Expected results come from reading the code, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
+> **Expected results come from reading the code,** and the team hasn't run these steps, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
 
 ## 1. Open five terminals
 

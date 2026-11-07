@@ -255,10 +255,10 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <h1>Moving from <code>rtk runtime</code> to a daemon on each host</h1>
   <p class="prose">Why agents should stop living inside a terminal window, what that gives you, what it costs, and which choices are still yours.</p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Accepted, 2026-11-06. The daemon transition is written and compile-checked, with no worker features. It has never been run.</b> <span class="tag t-user">USER</span> "Yes, adopt the daemon". "Begin the implementation for daemon". The <a href="../../implementation/daemon-contract.md">implementation contract</a> has the current detail. The record was requested with: "Ok, create a new ADR for me, where we transition from the rtk runtime to a daemon based approach, clearly highlighting the benefits that you just told me about."</dd></div>
+    <div><dt>Status</dt><dd><b>Accepted, 2026-11-06. The daemon transition is built, with no worker features, and the user reports that it works, with one open bug.</b> <span class="tag t-user">USER</span> "Yes, adopt the daemon". "Begin the implementation for daemon". The <a href="../../implementation/daemon-contract.md">implementation contract</a> has the current detail. The record was requested with: "Ok, create a new ADR for me, where we transition from the rtk runtime to a daemon based approach, clearly highlighting the benefits that you just told me about."</dd></div>
     <div><dt>Written</dt><dd>2026-11-06, by the architect, at the user's request. Updated the same day as the user made decisions.</dd></div>
     <div><dt>Source inspected</dt><dd>Commit <code>65aa2bf</code>, from before the daemon. Citations and their line numbers refer to that commit, and some of that code has since moved or gone. <code>internal/app/runtime.go</code>, which the daemon replaces, is cited without a link for that reason. The daemon itself came after that commit.</dd></div>
-    <div><dt>Tests</dt><dd><b>The daemon has never been run.</b> Only <code>gofmt</code>, <code>go vet</code> and <code>go build</code> have been applied, and its tests are written but not run (<a href="../../design/ground-rules.md">GR-3</a>). The only run behind this record is the user's own test of <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, which used the in-process <code>rtk runtime</code> that this work removes, so it doesn't carry over.</dd></div>
+    <div><dt>Tests</dt><dd><b>The user's report, 2026-11-06:</b> "Ok I tested it and it all works! There is a small bug though: Whenever I type something in claude code / codex chat and get an answer, some text is auto pasted into the prompt box". That bug is open and its cause unknown. The report doesn't say which scenarios, machines or failure cases it covered. The team hasn't run the daemon, and its tests are written but not run (<a href="../../design/ground-rules.md">GR-3</a>). The only run behind this record is the user's own test of <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, which used the in-process <code>rtk runtime</code> that this work removes, so it doesn't carry over.</dd></div>
   </dl>
 </header>
 
@@ -459,7 +459,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 </table></div>
 
 <h2 id="input">7. Input: one writer, no double delivery, no automatic approval</h2>
-<p class="prose">Once several windows can see one session, "who is typing?" needs a real answer. Today the question can't come up, because only one TUI exists. This part is written, and has never been run. <span class="tag t-arch">BUILT, UNTESTED</span></p>
+<p class="prose">Once several windows can see one session, "who is typing?" needs a real answer. Today the question can't come up, because only one TUI exists. This part is built. The user's report doesn't say whether they tried several windows. <span class="tag t-arch">BUILT</span></p>
 <div class="two">
   <div class="card"><h3>One input owner per session</h3>
     <ul>
@@ -801,7 +801,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <tr><th>Form</th><th>What it does</th><th>Source</th></tr>
   <tr><td><code>rtk daemon</code></td><td>Starts this machine's daemon</td><td><span class="tag t-user">USER</span></td></tr>
   <tr><td><code>rtk attach</code></td><td>Opens a window on the running daemon</td><td><span class="tag t-user">USER</span></td></tr>
-  <tr><td><code>rtk runtime</code></td><td>An alias for <code>rtk attach</code> for a while. With no daemon running, it says so and exits, and doesn't start one, because starting is explicit. <span class="tag t-arch">BUILT, UNTESTED</span></td><td><span class="tag t-user">USER</span> alias</td></tr>
+  <tr><td><code>rtk runtime</code></td><td>An alias for <code>rtk attach</code> for a while. With no daemon running, it says so and exits, and doesn't start one, because starting is explicit. <span class="tag t-arch">BUILT</span></td><td><span class="tag t-user">USER</span> alias</td></tr>
   <tr><td><code>rtk</code></td><td>Local only, unchanged</td><td><span class="tag t-user">USER</span></td></tr>
   <tr><td><code>rtk gateway ...</code>, <code>rtk runtime pair ...</code></td><td>Unchanged. <span class="tag t-arch">PROPOSAL</span> The daemon uses the saved pairing</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
   <tr><td><code>RTK_MAX_WORKERS</code></td><td>Maximum live workers on this host, across all its sessions. Read when the daemon starts, so changing it needs a restart. Default <b>4</b>. <code>0</code> turns spawning off. Anything that isn't a whole number stops the daemon from starting, with a clear error</td><td><span class="tag t-user">USER</span> a variable with a default. <b><span class="tag t-arch">PROPOSAL</span> its name, the value 4 and the host-wide scope are the architect's.</b> You didn't pick a number, and 4 is a starting guess, not a measurement</td></tr>
@@ -835,7 +835,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 <p class="prose small muted">The first three steps below are the authorized daemon transition, and they're now written. The later ones aren't authorized. The <a href="../../implementation/daemon-contract.md">contract</a> has the detail, and the <a href="../../../README.md#the-daemon-and-its-windows">README</a> has the commands, keys and test steps. "Today" is commit <code>65aa2bf</code>.</p>
 <h3 id="built">Written so far, and what isn't</h3>
 <div class="two">
-  <div class="card"><h3>Written, never run <span class="tag t-arch">BUILT, UNTESTED</span></h3>
+  <div class="card"><h3>Built <span class="tag t-user">USER</span> reported working, with one open bug</h3>
     <ul>
       <li><code>rtk daemon</code>, its status and stop forms, and <code>rtk attach</code>, with <code>rtk runtime</code> as an alias. Plain <code>rtk</code> stays local.</li>
       <li>The daemon owns PTYs, gates, MCP and hooks, the store and the gateway link.</li>
