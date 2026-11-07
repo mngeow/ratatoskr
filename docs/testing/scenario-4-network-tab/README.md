@@ -86,7 +86,7 @@ Expect:
 
 ## 5. Open the tab
 
-Inside any attached window, press F5.
+Every attached window shows a `[Terminals] [Network]` strip on its top row. Click Network with the mouse (F5 also works). You do **not** need `rtk daemon network` first: the window fetches from the moment it attaches.
 
 **M1 Mac**
 
@@ -96,11 +96,35 @@ rtk attach
 
 Expect:
 
-- F5 shows the Network tab: your Mac's sessions and VM-B's, each with state, how old the fact is, and whether input is held. F5 or Esc returns to the terminals, and the agents never noticed.
+- Clicking Network shows the tab at once or within a moment (`waiting for the first answer` first, then data): your Mac's sessions and VM-B's, each with state, how old the fact is, and whether input is held. F5 or Esc returns to the terminals, and the agents never noticed.
 - Arrows and PgUp/PgDn move the selection. R refreshes. Your own host's session appears once, not twice.
 - Stop the gateway: the tab says so, keeps what it had with its age, and never shows it as live.
 
-## 6. Write the host map on the Mac
+## 6. Check the strip, the colours, the clicks and the empty window
+
+These are the checks for the always-visible tab and its styling. **Never run before, never drawn.** Rebuild with a new identifier and restart the daemon first, because a window must match its daemon. Tell the team what differs.
+
+**M1 Mac**
+
+```sh
+rtk daemon stop --session claude
+rtk attach
+```
+
+Expect:
+
+- **Do they look like tabs?** The top row is a dark bar with two touching blocks, ` Terminals ` and ` Network `: the active one a filled green block with dark bold text, the other muted. Say whether they look and click like tabs (you asked for Herdr-style), and whether the Monokai colours are what you meant. Also try 40 columns, a narrow window, a light terminal theme (expect a seam against the panes), `NO_COLOR=1 rtk attach` (no colours; the active tab is bold and reverse with a `>`), a 256-colour terminal and a window over ssh (colours or symbols may differ there).
+- On the Network tab each state has a symbol and a word (`● idle`, `◐ busy`, `▲ needs you`, `? unknown`, `○ exited`), stale facts are amber with an age, and the selected row is highlighted. Harness panes look exactly as before. Click the left and right padding of each tab, not just its name.
+- The top row of every window reads `[Terminals] [Network]`, the active one marked with `>`. In a narrow terminal it shortens to `[T] [N]`.
+- Click Terminals, then Network, then Terminals. Each click switches the tab and **types nothing into the agent**: the agent's prompt shows no stray text and the pane header does not change to drafting.
+- Press the mouse on the strip and drag down into a pane: the click is not forwarded, and a drag that began in a pane still ends normally.
+- With no agent running, plain `rtk attach` opens a window on the Network tab (it says `No sessions in this window`, and Terminals says `rtk attach --agents claude,codex`). It does not start a daemon or an agent. With no daemon at all it still exits with `no daemon`.
+- `rtk attach --agents claude` when the start fails exits non-zero with the reason and opens no window.
+- A session you start while a window is open appears only after you detach and attach again.
+
+Detaching an empty window, or ending it with a signal, prints `detached; no agents were running`. Windows with agents are unchanged.
+
+## 7. Write the host map on the Mac
 
 Enter needs `hosts.json` in the Mac's state directory. Use the names exactly as `rtk gateway hosts` lists them.
 
@@ -126,9 +150,9 @@ Expect:
 
 If your state directory is laid out differently, `rtk daemon status` shows where the daemon keeps its files, and `hosts.json` sits beside `pairing.json`. Check that path first if Enter says there is no mapping.
 
-## 7. Enter a remote session over SSH
+## 8. Enter a remote session over SSH
 
-In the Mac's window press F5, select the `codex` row on `vmb`, and press Enter.
+In the Mac's window click Network, select the `codex` row on `vmb`, and press Enter.
 
 **M1 Mac**
 
@@ -145,7 +169,7 @@ Expect:
 
 The command run is `ssh -t -o ConnectTimeout=5 -- <ssh> '<rtk> attach --expect-session <id> --entered-via-ssh'`. Nothing from the gateway becomes a destination, a path or an option.
 
-## 8. Try the endings, and check the terminal each time
+## 9. Try the endings, and check the terminal each time
 
 After each one, check the Mac terminal is normal: typed characters echo, the cursor is visible, the mouse doesn't print escape codes, and Enter and Ctrl+C behave. If it isn't normal, type `reset` and **tell the team which ending did it.**
 
@@ -171,7 +195,7 @@ Expect:
 
 Each ending that exits non-zero should restore the terminal exactly and write a targeted reset, never a full clear. A clean exit needs neither.
 
-## 9. The harder cases
+## 10. The harder cases
 
 These are the ones most likely to expose the terminal handover. Do them last.
 
@@ -191,7 +215,7 @@ Expect:
 
 The 600 ms wait is based on reading Bubble Tea's source, not on any test, so these checks are real unknowns.
 
-## 10. Stop and clean up
+## 11. Stop and clean up
 
 Removes only this guide's folders, like the other scenarios.
 

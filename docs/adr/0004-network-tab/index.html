@@ -301,6 +301,25 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   .mock .row { padding: 6px 8px; }
 }
 .src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
 </style>
 </head>
 <body>
@@ -368,10 +387,11 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <tr><td>A relayed host question and answer through the gateway (decision 3, 9)</td><td><b>Dropped.</b> Replaced by <code>PUT /v1/report</code> and <code>GET /v1/network</code>, on chi v5.5.0, protocol still 2, schema 1, no database change. Reports are kept in gateway memory only.</td></tr>
   <tr><td>An <code>id</code> field in daemon status</td><td><b>Not done.</b> <code>rtk daemon status</code> is unchanged. The ID is <code>local_id</code> in <code>rtk daemon network --json</code>.</td></tr>
   <tr><td>Suspend the window and hand over the same terminal, then take it back (decision 4)</td><td><b>Quit and reopen.</b> The window closes, the attach loop runs <code>ssh -t -o ConnectTimeout=5 -- &lt;ssh&gt; &lt;remote command&gt;</code> on the same terminal, and a fresh window opens on the Network tab at the same row. Chosen because a paused program might stop draining its window events. That risk is unverified.</td></tr>
-  <tr><td>F5 and the tab strip (decision 1)</td><td>F5 toggles the view and F5 or Esc returns. Keys: arrows and PgUp/PgDn, Enter, R, F6, F10.</td></tr>
+  <tr><td>F5 and the tab strip (decision 1)</td><td><b>Changed after the owner tested the first build</b> ("it should be a clickable tab that is always on the TUI"). Every window draws <code>[Terminals] [Network]</code> on its top row, Network is clickable, and F5 is only an optional shortcut. The window fetches from attach, so nothing needs <code>rtk daemon network</code> first. Keys in the tab: arrows and PgUp/PgDn, Enter, R, F6, F10.</td></tr>
+  <tr><td>A window needs at least one session (decision 10)</td><td><b>Changed:</b> a plain <code>rtk attach</code> with no agents, and the SSH return with none, now open on the Network tab, so the tab is always present. Attach still never starts a daemon, and starts agents only with <code>--agents</code>. <code>--agents</code> with every start failing still exits with the reasons.</td></tr>
   <tr><td>Host map (decision 2)</td><td><code>&lt;state dir&gt;/hosts.json</code>, version 1, read at each Enter, keyed by the gateway's host name, with <code>ssh</code>, absolute <code>rtk</code> and optional <code>state_home</code>. Refused if linked, not regular, writable by others, owned by someone else or over 64 KiB. No entry means a by-hand command, run by nothing.</td></tr>
   <tr><td>Enter from inside a remote window (decision 5)</td><td>Blocked with "press F10 to return to the machine you came from, then choose from there".</td></tr>
-  <tr><td>Window with no sessions (decision 10)</td><td>Unchanged: a window needs a session. If none run when you return from SSH, <code>rtk</code> prints the no-sessions guidance and exits.</td></tr>
+  <tr><td>Window with no sessions (decision 10)</td><td>See the row above: it now opens on the Network tab. Written, never run.</td></tr>
 </table></div>
 <p class="prose"><b>The new commands.</b> <code>rtk daemon network [--json] [--watch]</code> and <code>rtk attach --expect-session ID [--entered-via-ssh]</code>. Exit codes from the remote attach: 0 normal, 3 the expected session isn't running, 4 no daemon, 2 usage or too-old build, anything else is reported as is. SSH's own 255 can't distinguish unreachable, timeout, host key, auth or a dropped link.</p>
 <p class="prose"><b>Terminal safety added during review.</b> ssh is stopped with SIGTERM and a kill only after 2 s, because a killed ssh can't restore the local terminal. After any ssh that didn't exit cleanly, the saved termios is restored and a targeted escape-sequence reset is written, never a full reset. SIGINT is caught, never ignored, so ssh stays interruptible while connecting. A failed restore ends <code>rtk</code> rather than opening a window on an unknown terminal.</p>
@@ -383,6 +403,8 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
   <li>No cap on parked long-polls (paired hosts only). A poll parked when its host is unpaired can answer for up to 20 s.</li>
   <li>A stale report is history, not proof a process still runs. <code>unknown</code> is never shown as idle, and a host with no report reads "no report".</li>
   <li>chi differences: <code>HEAD</code> on a <code>GET</code> route is 405, and an unclean path is 404 rather than a redirect. The router change was first written by the backend without the supervised path and was reported to the owner rather than redone.</li>
+  <li><b>Round 2 (2026-11-07), after the owner's second look:</b> "The Network and Terminal tabs do not look or function like tabs, I want it to function like herdr tabs" and "I want more of a one dark color theme, like monokai"; later: "Terminals and Network should remain 2 tabs for now". The mockups below now draw contiguous tab blocks with centred labels, a filled active tab and muted inactive tabs, in a Monokai palette (<code>#272822</code> background, <code>#a6e22e</code> active tab, <code>#e6db74</code> headings, <code>#fd971f</code> stale, <code>#66d9ef</code> selection bar). Herdr's tab look was read from its install files only, never seen running, and Herdr's keyboard switching is prefix-based, which <code>rtk</code> doesn't have, so only click and F5 are offered.</li>
+  <li><b>The terminal does not match these mockups exactly.</b> The palette and hierarchy come from them (dark bar, bold white selected tab with an amber marker, state symbols with words), but the terminal uses ASCII bracket edges, has no rounded corners, pills, hover or host-count badge, and paints its dark bars on light themes too. Never drawn, so whether it reads as tabs is the owner's call.</li>
   <li>Unix only: darwin and linux. No HTTPS over a tailnet, no offline replay, no remote worker spawn, no Herdr dependency.</li>
   <li><b>Compatibility:</b> either machine may be upgraded first, but the tab needs the gateway and each daemon on the new build, and a window must match its own daemon's build. An older gateway gives bare peer addresses with no live flag.</li>
 </ul>
@@ -408,7 +430,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
         <div role="tablist" aria-label="Views in the window" class="tabstrip">
           <button role="tab" id="w1" aria-controls="wp1">Terminals</button>
           <button role="tab" id="w2" aria-controls="wp2">Messages <i>F3</i></button>
-          <button role="tab" id="w3" aria-controls="wp3">Network <i>F5</i> <b class="badge">4 hosts</b></button>
+          <button role="tab" id="w3" aria-controls="wp3">Network <b class="badge">4 hosts</b></button>
         </div>
         <div role="tabpanel" id="wp1" aria-labelledby="w1" class="screen">
           <div class="panes">
@@ -427,11 +449,11 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
           <p>mac (this machine) 2 sessions · vmb 2 · vmc 1 stale · vmd 1 not enterable</p>
           <p class="dim">Open the next mockup for the full list.</p>
         </div>
-        <p class="status">F1/F2 focus · F3 log · <b>F5 network</b> · F6 take input · F10 detach</p>
+        <p class="status">F1/F2 focus · F3 log · <b>click Network</b> (F5 optional) · F6 take input · F10 detach</p>
       </div>
     </div>
     <ul class="prose">
-      <li><b>F5 is a proposal.</b> The code as read binds F1, F2, F3, F4, F6 and F10 and leaves F5, F7, F8 and F9 unused. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L31"><code>internal/tui/doc.go:31</code> <code>F10 quits</code></a> <span class="tag t-unv">OPEN</span> The key and whether a tab strip is shown all the time.</li>
+      <li><b>F5 is now only an optional shortcut.</b> The tab strip, not F5, is how the tab is found. The code as read bound F1, F2, F3, F4, F6 and F10 and leaves F5, F7, F8 and F9 unused. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/doc.go#L31"><code>internal/tui/doc.go:31</code> <code>F10 quits</code></a> <span class="tag t-user">USER</span> asked for a clickable tab that is always shown.</li>
       <li><b>The tab is available in any attached window,</b> because a window can't open with no session at all. <span class="tag t-code">CODE</span> <a class="src" href="../../../internal/tui/daemon.go#L119"><code>internal/tui/daemon.go:119</code> <code>the daemon attached no sessions</code></a> So there's no way to reach it without attaching to something first. <span class="tag t-unv">OPEN</span> Whether that's acceptable on a Mac with a daemon and no sessions.</li>
       <li><b>The Network tab is read-only except for Enter.</b> It can't type into a session, answer a prompt or end one.</li>
     </ul>
@@ -820,7 +842,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
     <ol class="steps">
       <li data-lit="win,md,mc"><button class="step-h">You run <code>rtk attach</code></button><div class="step-d"><p>The window opens on the Mac's sessions, as it does today. The tab strip shows Terminals, Messages and Network.</p></div></li>
       <li data-lit="md,wl,gw"><button class="step-h">The Mac's daemon already has the directory</button><div class="step-d"><p>The gateway has been sending it on the stream. The daemon passes it to the window with its age. This needs no new gateway behaviour.</p></div></li>
-      <li data-lit="win"><button class="step-h">You press F5</button><div class="step-d"><p>The tab lists the directory's sessions grouped by host, with "gateway says" and its age.</p></div></li>
+      <li data-lit="win"><button class="step-h">You click Network</button><div class="step-d"><p>The tab lists the directory's sessions grouped by host, with "gateway says" and its age.</p></div></li>
       <li data-lit="md,wl,gw,wr,vd"><button class="step-h">Host answers fill in the rest</button><div class="step-d"><p>The daemon asks each live host's daemon the short status question through the gateway. Answers arrive row by row, and rows without one say "no answer" with the time.</p></div></li>
     </ol></div>
   </div>
@@ -978,7 +1000,7 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 <div class="table-wrap"><table>
   <tr><th>#</th><th>Question</th><th>Status</th><th>Proposal</th></tr>
   <tr><td>0</td><td>An additional tab in the attached window, following agent-net, not a dashboard.</td><td><span class="tag t-user">USER</span> decided</td><td>As drawn.</td></tr>
-  <tr><td>1</td><td>The key and the tab strip: F5, always shown?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as F5 toggling the view</td><td>F5, with the strip always shown. Other keys are free.</td></tr>
+  <tr><td>1</td><td>The key and the tab strip: F5, always shown?</td><td><span class="tag t-user">USER</span> decided after testing: always-visible, clickable. F5 optional. <b>Built, never run</b></td><td>F5, with the strip always shown. Other keys are free.</td></tr>
   <tr><td>2</td><td>The host mapping: file name, location and fields. Missing entry means by-hand command only?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as <code>hosts.json</code></td><td><code>hosts.json</code> beside the other state, with <code>ssh</code> and <code>rtk</code> per host. No guessing.</td></tr>
   <tr><td>3</td><td>Build the relayed host question, or start with the directory alone?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> differently: a central report and snapshot API, no relayed question (1a)</td><td>Two stages: first the tab with the directory and local sessions, then the relayed question, remote entry plan and SSH. Splitting is the lead's and your call.</td></tr>
   <tr><td>4</td><td>Handover by suspending the same terminal, with release and reconnect?</td><td><span class="tag t-unv">OPEN</span> <b>built</b> as quit and reopen on the same terminal</td><td>Yes. New terminal tabs and Herdr panes stay out.</td></tr>
@@ -1003,6 +1025,11 @@ html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
 </div>
 
 <script>
+
+
+
+
+
 
 
 (function () {

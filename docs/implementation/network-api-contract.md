@@ -277,6 +277,35 @@ Facts, from chi's own README, release notes, `go.mod` and `path_value_test.go` a
 - **Not changed:** transport, TLS pinning, pairing, credentials, the 15 s liveness window, wire protocol 2.
 - **Dependency note for the lead:** `go get github.com/go-chi/chi/v5@v5.5.0` changes `go.mod` and `go.sum`. That fetches source and runs nothing; building with `go build` and `go vet` is allowed under GR-3, and no test is run.
 
+## Always-visible Network tab (user correction 2026-11-07)
+
+The owner tested the first build and said: "I have to press F5 to get to the network tab, it should be a clickable tab that is always on the TUI" and "I have to specifically use rtk daemon network command to boot up the daemon with the network tab, this is redundant. The network tab should always be present upon boot up. So rtk daemon command should already include network tab". This section supersedes the F5-only and lazy-fetch parts above. Status: **implemented in the working tree on top of 0203c59 (2026-11-07), never run; see "As built" below.**
+
+**Source diagnosis (read, not run).**
+- `rtk daemon` already starts the reporter at boot (`network.start` in `internal/daemon/daemon.go`). It needs no flag and no CLI. `rtk daemon network` is an inspection command, and nothing requires it.
+- What the owner saw has a source reason. The window becomes a fetch consumer only on its **first F5** (`acquireNetwork`, "a window that never asks never fetches", from this contract's own rule above), so the first F5 shows an empty view while the first fetch runs. `rtk daemon network` makes the daemon a consumer too, which pre-warms it. That made the CLI look like a boot step. It was an artifact of laziness, not a requirement.
+- The tab is reachable only through F5, and the window cannot open with zero sessions (`internal/tui/daemon.go`: "a window with no sessions cannot be rendered"), so with no agents there is no tab at all.
+
+**Required behaviour.**
+1. **A persistent tab strip** on every daemon window: `Terminals` and `Network`, always drawn, Network clickable with the mouse. F5 stays as an optional shortcut and is never needed to find the tab.
+2. **Clicks on the strip are consumed by the UI.** They are never forwarded to a harness, never counted as drafting, and never change input ownership. The pane layout, resize maths and mouse-coordinate offsets must account for the strip's row(s).
+3. **The window is a fetch consumer from attach to close**, not from the first F5. The Network tab then fills as soon as the first fetch lands, and `rtk daemon network` stays an optional inspection and `--watch` tool. The daemon still fetches only while some window or `--watch` exists.
+4. **The tab shows a clear state when there is nothing**: local sessions none, gateway `not_configured`, `unreachable` (with the kept snapshot's age), `unsupported`, or "waiting for the first answer". Never blank.
+5. **A window may open with zero sessions** and then shows the Network tab (Terminals says how to start agents). This resolves the empty-session restriction without starting anything: `rtk attach` still never starts a daemon, still starts agents only with `--agents`, and still exits 4 with no daemon. It also removes the SSH-return dead end ("no session runs, so exit"): the return window can always open. **This is the one design choice that changes an earlier rule, and it is the owner's to veto.**
+6. **Unchanged:** SSH entry (exact session, `hosts.json`, the plan kinds, the handover, the signals), local-only plain `rtk`, the explicit daemon start policy, wire protocol 2, and the reporter. No new daemon flag.
+
+**Cost to state:** a window always fetching means one parked long-poll per attached window (and per `--watch`) while open, which is the no-cap limit above. It is bounded by the owner's own windows.
+
+### As built: the always-visible tab (2026-11-07, static review only)
+
+- `[Terminals] [Network]` is drawn first on the existing title row (22 cells, `[T] [N]` under that, clipped only below 8). The active tab has a `>` marker and bold inverse. No row was added: `chromeRows` stays 7 and `screenTop` 2, and row 0 never held a pane, so mouse offsets are unchanged. The renderer and hit test share `tabLayout`.
+- A left press on a tab switches it and queues no child input, marks no draft and changes no ownership. Its release is swallowed. Other buttons, wheel and motion over the strip do nothing. A drag a child already owns continues over the strip and the child still gets its release.
+- A window is a fetch consumer from a successful attach to close, including empty and exact-session windows. It sends its first query at start and keeps one long poll (8 s wait, 250 ms floor) on either tab. A refused attach never acquires.
+- States: `waiting for the first answer`, `no local sessions`, `not_configured`, `unsupported`, and `unreachable` with the kept snapshot's age. The too-small Network view shows them too.
+- Zero-session window: plain `rtk attach` with nothing running, and the SSH return with nothing running, open on the Network tab. Terminals reads "No sessions in this window. Start agents: rtk attach --agents claude,codex. Sessions started later need a reattach." F1/F2/F4/F6 send nothing; F3 works; one Ctrl+C or F10 detaches; Enter on a remote row still gives its plan. `--agents` with every start failing exits non-zero and opens no window.
+- **Styling (round 2)** is specified in [tui-styling-spec.md](tui-styling-spec.md): two touching tab blocks (` Terminals ` 11 cells + ` Network ` 9, or ` T  N ` 6 cells under width 20) on a `#1e1f1c` bar; active tab bold `#272822` on `#a6e22e`, inactive `#a6a28c`; the whole block including padding is clickable, and the `>` appears only with colour off, replacing the left padding cell so hit boxes never move. Monokai palette throughout (`#272822`, `#f8f8f2`, `#e6db74`, `#fd971f`, `#f92672`, `#66d9ef`, `#ae81ff`); unknown is purple, never green. Harness cells untouched, no new rows. Colour off: bold and reverse (an ASCII profile keeps attributes; no terminal strips them). The first frame may show the colour-off form until Bubble Tea's profile message lands. Herdr was read from its install files only: no prefix keys, no new/close/rename/move, no overflow, two fixed categories. 256/16-colour mapping was reasoned from library source, not executed. Never drawn.
+- Limits: mouse unproven on a real terminal (including release-without-button); the zero-session window never run through the socket or the ssh return; one parked long-poll per window while open on both tabs, no cap; pane frames for every session reach every window, now including empty ones; at very narrow widths undrawn cells aren't clickable.
+
 ## As built (2026-11-07, static review only)
 
 Differences and additions relative to the design above. The code is the lead's accepted candidate; none of it has run.

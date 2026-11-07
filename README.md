@@ -491,7 +491,11 @@ Tell the team if a command or message differs from this, especially step 7, or a
 > [!WARNING]
 > **Written, never run.** This was implemented in the working tree on top of commit f411629 and checked only by `gofmt`, `go vet` and `go build` (darwin and linux). No test, `rtk`, gateway, daemon or `ssh` has been run for it, and nothing is committed or pushed. Expect defects. The tests that exist have never executed. Rebuild `rtk` before you try anything: any `./rtk` already in the repo predates the final code.
 
-The Network tab is an extra view inside any attached window, not a dashboard. Press **F5** to switch to it and F5 or Esc to return to your terminals.
+The Network tab is an extra view inside any attached window, not a dashboard. Every window shows a `[Terminals] [Network]` strip on its top row (`[T] [N]` when narrow). **Click Network** to open it and Terminals to go back; F5 is an optional shortcut and Esc also returns. You don't need `rtk daemon network` first: that command is only for inspecting or watching the data in a terminal. The window starts fetching as soon as it attaches (so a daemon with a window open keeps one long poll to the gateway running), and the tab first says `waiting for the first answer`. Clicks on the strip never reach an agent.
+
+**How it looks (never drawn).** The top row is a dark bar with two touching tab blocks, ` Terminals ` and ` Network `, in a Monokai-style palette: the active tab is a filled green block with dark bold text, the other is muted. They are written to look and click like Herdr's tabs (read from Herdr's install files only; Herdr's own keys are prefix-based, so `rtk` adds none), and narrow terminals show ` T  N `. Click anywhere in a tab, padding included; F5 and Esc still work. With no colour the active tab is bold and reverse with a `>` (a non-terminal output strips the attributes, leaving the `>`), and the first frame may show that form before colour appears. Network rows show a symbol and a word for each state (`● idle`, `◐ busy`, `▲ needs you`, `? unknown`, `○ exited`, `… starting`), stale facts are orange with their age, and the selected row is highlighted. Colour is never the only cue, and harness panes are not restyled. Without a UTF-8 locale the symbols become `o * ! ? x .`. The bars are dark on a light terminal theme too, so expect a seam against the panes there, and a 256- or 16-colour terminal may map the greens and greys differently. Differences from the HTML mockups: no rounded corners, pills, hover or badge. There are two fixed tabs, not one per agent.
+
+A plain `rtk attach` with no agents running opens a window on the Network tab instead of exiting (the Terminals tab says `rtk attach --agents claude,codex`). It still never starts a daemon, and starts agents only with `--agents`. If you pass `--agents` and every start fails, it exits with the reasons and opens no window. A window's sessions are fixed when it attaches, so agents started later need a reattach. With no daemon at all, `rtk attach` still exits with `no daemon`.
 
 **Where the data comes from.** Each daemon reports its own sessions to the gateway (`PUT /v1/report`). The gateway joins the reports with its directory of paired hosts. Your daemon reads that through `GET /v1/network` and hands it to your window and to `rtk daemon network`. Nothing polls a host over SSH, and the gateway never carries a terminal, keystrokes, prompts, screens, environments or credentials. Reports are kept in the gateway's memory only, so a gateway restart empties them until the daemons report again.
 
@@ -503,7 +507,7 @@ The Network tab is an extra view inside any attached window, not a dashboard. Pr
 - A host with no report reads "no report", which is not the same as having no sessions.
 - A gateway older than this build gives only bare peer addresses with no live flag.
 
-**Keys in the tab:** arrows and PgUp/PgDn select, **Enter** enters the session, **R** refreshes, **F6** takes input, **F10** detaches.
+**Keys in the tab (clicking works for the strip; the rest are keys):** arrows and PgUp/PgDn select, **Enter** enters the session, **R** refreshes, **F6** takes input, **F10** detaches.
 
 **Commands**
 
@@ -555,7 +559,7 @@ Enter needs a host map on the machine you enter from, `<state dir>/hosts.json` (
 
 The gateway now routes with [chi](https://github.com/go-chi/chi) v5.5.0. Two behaviours differ from before: `HEAD` on a `GET` route returns 405, and a request with an unclean path gets 404 instead of a redirect.
 
-**First things worth testing, once you say so:** the terminal after each way `ssh` can end (clean exit, 255, `kill` of `rtk`, `kill -9` of `ssh`); typeahead and late terminal replies at the handover; Ctrl+C during the connection; F10 returning to the same row; exit 3 and 4 through `ssh`; ages moving on a quiet network; and live and stale flips while a poll is parked. The step-by-step version is scenario 4 in [`docs/testing/`](docs/testing/).
+**First things worth testing, once you say so:** the terminal after each way `ssh` can end (clean exit, 255, `kill` of `rtk`, `kill -9` of `ssh`); typeahead and late terminal replies at the handover; Ctrl+C during the connection; F10 returning to the same row; exit 3 and 4 through `ssh`; ages moving on a quiet network; and live and stale flips while a poll is parked. The tab strip checks (clicks, drag over the strip, the empty window, `--agents` all failing) are there too. The step-by-step version is scenario 4 in [`docs/testing/`](docs/testing/).
 
 ## Architecture decisions
 
