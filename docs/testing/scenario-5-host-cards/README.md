@@ -135,7 +135,7 @@ ls -l "<MAC_STATE>/daemon/card.yaml"
 
 Expect:
 
-- The file exists from the first start, mode 0600, as a commented template. Until `description` is filled in, nothing is served and the status says **needs description**.
+- The file exists from the first start, mode 0600, as a commented template. **The card is served at once:** with `description` empty it carries `Ratatoskr host daemon on <name>. The owner has not written a description.`, and the status says **defaulted**. Check the file's bytes are unchanged (the default is never written to it).
 - Fill in `description` and save. Within about 2 seconds the card is served. Add a skill with an id, name, description and at least one tag.
 - Save something broken (an unknown key, a bad indent, a value that looks like a token, or a path in the description): the daemon keeps serving the **last good card**, and the Graph tab shows the error and its line, without repeating the value. The word "bearer" alone also blocks, which is a known false positive.
 
@@ -154,7 +154,8 @@ curl -i http://<MAC_IP>:7778/other
 
 Expect:
 
-- GET returns the card with an `ETag`; repeating it with `If-None-Match` gives **304**. HEAD works. **POST gives 405**, any other path **404**, and while the file still needs a description **503**. `agent.json` returns the same bytes as a compatibility alias.
+- GET returns the full card as **200** with `Cache-Control: no-store` and **no `ETag`**. Sending `If-None-Match: "anything"` still gives 200 with the full body, never 304. HEAD gives the same status and headers with no body. **POST gives 405** and any other path **404**. `agent.json` returns the same bytes as a compatibility alias.
+- **A fresh daemon answers 200.** This is the case the user hit, which used to be a blank 503. To see a 503, save `card.yaml` broken (for example an unknown key), then restart the daemon so no good card has been served. A missing file doesn't do it, because the daemon writes the template at start. Expect `Content-Type: application/json`, `Retry-After: 5`, `Cache-Control: no-store` and `{"error":"card_unavailable","reason":"owner_file_invalid", ...}` with a fixed `action` sentence. It must contain no path, line number or anything from the file. HEAD gives the same status with no body.
 - Read the JSON for anything that should not be public: no tokens, credentials, skill bodies, absolute paths, usernames or environment values, and **nothing from `drafting:`** (no preset, argv or pass_env). Its one interface points at the card's own URL with binding `RATATOSKR-CARD`. The card document follows the v1.0.0 AgentCard field set; the host is not an A2A service.
 
 ## 9. Tell the gateway where to poll
@@ -176,7 +177,7 @@ Expect:
 
 ## 10. Polling with nothing watching
 
-The gateway polls on a schedule (default 60 seconds, `--card-poll-interval` from 10 seconds to 1 hour), whether or not any window is open.
+The gateway polls on a schedule (default **5 seconds**, `--card-poll-interval` from 2 seconds to 1 hour), whether or not any window is open. Every poll is a plain GET for the full card, with no `If-None-Match`.
 
 **G2 gateway admin**
 
@@ -186,8 +187,10 @@ rtk gateway card-target show
 
 Expect:
 
-- After a minute or two, without opening any tab, each host shows a recent good poll and a stored card.
-- Stop VM-B's card listener (stop that daemon): the card goes **stale**, then **offline** after the larger of 15 minutes and four intervals. **The connection signal (stream and heartbeat) must not change because of it.** And stopping VM-B's heartbeat must not change the card signal. A timeout means the poll failed. It does not prove the process died.
+- Within a few seconds, without opening any tab, each host shows a recent good poll and a stored card. Its "polled" age stays under about 5 s.
+- **Hosts stay fresh and never read `redirect`.** The committed build showed `redirect` for every host after its first poll, which is the bug you hit. After rebuilding and restarting the gateway with this build, the next poll (within about 5 s) reads fresh. The stored cards are still in the database: nothing is rewritten and there's no migration.
+- An unchanged card adds no new revision. Edit the Mac's `card.yaml` description and exactly one new revision appears within a poll or two.
+- Stop VM-B's card listener (stop that daemon): the last good card is kept, and the card goes **stale** after about 15 s (the larger of two intervals and 15 s), then **offline** after the larger of 15 minutes and four intervals. **The connection signal (stream and heartbeat) must not change because of it.** And stopping VM-B's heartbeat must not change the card signal. A timeout means the poll failed. It does not prove the process died.
 
 ## 11. Restart the gateway
 
