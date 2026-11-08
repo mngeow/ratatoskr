@@ -22,12 +22,13 @@ Ratatoskr is an **agent network written in Go**. One binary, `rtk`, runs Claude 
 | **Network and SSH entry** | The Network tab lists every host's sessions with how fresh each fact is. **Enter** on a remote session opens it over your own `ssh`. `rtk daemon network` prints the same data. |
 | **Host cards** | Each daemon serves a public, read-only A2A-style card from a file you edit, `card.yaml`. The gateway polls the cards every 5 seconds, stores them in SQLite, and the Graph tab draws the hosts. |
 | **Model-drafted cards** | In the Graph tab you can ask your installed Claude or Codex to draft the card. You see the exact command and payload first, and nothing is written without your approval. |
-| **Documentation** | `docs/index.html` links to everything, including Testing scenarios 1 to 5. |
+| **A2A tasks (this branch only)** | On the branch `feat/a2a-participants`: a standard A2A v1.0 endpoint per participant on the gateway, tasks with a clarification and a result between managed sessions, and registration of an external A2A service. **Written and compile-checked, never run**, including a database migration. See [ADR-0006](docs/adr/0006-a2a-routing-and-identity/index.html) section 1c and [scenario 6](docs/testing/scenario-6-a2a-participants/README.md). |
+| **Documentation** | `docs/index.html` links to everything, including Testing scenarios 1 to 6. |
 
 **Limits worth knowing before you start**
 
 - Only the harnesses **Claude Code and Codex** are supported, with session names fixed as `claude` and `codex`: **one of each per daemon, and a daemon is one per state directory.** In normal use that is one of each per machine; the [one-Mac test guide](docs/testing/scenario-1-local/README.md) runs several state directories on one Mac to simulate more. Pi, OpenCode and other harnesses are not implemented.
-- The host card is **A2A-style discovery metadata, not an A2A service.** There is no task API, no A2A routing and no discovery tool today.
+- The host card is **A2A-style discovery metadata, not an A2A service.** On `main` there is no task API and no A2A routing. The branch `feat/a2a-participants` adds them (written, never run, no conformance claimed). There is no discovery tool anywhere.
 - There is no worker spawning, no teams, and no remote dispatch.
 - OpenRig is a separate system. There is no bridge to it.
 - HTTPS over a tailnet is not supported (Tailscale already encrypts the link, so `rtk` uses plain HTTP there). On a LAN you choose pinned HTTPS or plain HTTP explicitly.
@@ -293,7 +294,7 @@ These are decision records, not features. None is implemented, and none authoris
 
 | Proposal | What it would add |
 | --- | --- |
-| [ADR-0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A reduced A2A first delivery: message, clarification, result and polled task retrieval between **participants** (managed sessions and externally managed services), with an exact endpoint per participant and a proven sender |
+| [ADR-0006](docs/adr/0006-a2a-routing-and-identity/index.html) | **First delivery written on the branch `feat/a2a-participants`, never run.** A reduced A2A first delivery: message, clarification, result and polled task retrieval between **participants** (managed sessions and externally managed services), with an exact endpoint per participant and a proven sender |
 | [ADR-0007](docs/adr/0007-openrig-operator-integration/index.html) | Only the main OpenRig operator on the network, through a small bridge; OpenRig keeps its lifecycle and queues |
 | [ADR-0008](docs/adr/0008-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search |
 
@@ -301,7 +302,7 @@ Not on the list yet: worker spawning, teams, Pi and OpenCode adapters, remote di
 
 ## Testing
 
-The step-by-step guides are in [`docs/testing/`](docs/testing/) (full HTML guide: [`index.html`](docs/testing/index.html)): [one Mac](docs/testing/scenario-1-local/README.md), [LAN, plain HTTP](docs/testing/scenario-2-lan-http/README.md), [tailnet](docs/testing/scenario-3-tailnet/README.md), [Network tab and SSH entry](docs/testing/scenario-4-network-tab/README.md) and [host cards and the Graph tab](docs/testing/scenario-5-host-cards/README.md). Their expected results come from reading the code, so tell the team where reality differs. **No automated test has ever been run**, and the only run-time evidence is the owner's hand-testing noted above, at the scopes they reported. Running `go test -race ./...` is not part of the quickstart.
+The step-by-step guides are in [`docs/testing/`](docs/testing/) (full HTML guide: [`index.html`](docs/testing/index.html)): [one Mac](docs/testing/scenario-1-local/README.md), [LAN, plain HTTP](docs/testing/scenario-2-lan-http/README.md), [tailnet](docs/testing/scenario-3-tailnet/README.md), [Network tab and SSH entry](docs/testing/scenario-4-network-tab/README.md), [host cards and the Graph tab](docs/testing/scenario-5-host-cards/README.md) and [A2A participants](docs/testing/scenario-6-a2a-participants/README.md) (branch only). Their expected results come from reading the code, so tell the team where reality differs. **No automated test has ever been run**, and the only run-time evidence is the owner's hand-testing noted above, at the scopes they reported. Running `go test -race ./...` is not part of the quickstart.
 
 ## Architecture decisions
 
@@ -314,7 +315,7 @@ Decisions are kept in [`docs/adr/`](docs/adr/), one folder and one self-containe
 | [0003](docs/adr/0003-per-host-daemon/index.html) | A long-lived daemon on each machine with attachable windows. Plain `rtk` stays local | Accepted; built, owner-tested with one open bug; workers not built |
 | [0004](docs/adr/0004-network-tab/index.html) | A Network tab and SSH entry, following agent-net | Proposed; implemented, not run by the team |
 | [0005](docs/adr/0005-host-agent-cards-and-graph/index.html) | Public A2A-style host cards from `card.yaml`, polled by the gateway and drawn in a Graph tab | Proposed; implemented, not run by the team; the gateway database needs a migration |
-| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A routing and identity, reduced first delivery, managed and external participants | Proposal only |
+| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A routing and identity, reduced first delivery, managed and external participants | Proposed; first delivery written on `feat/a2a-participants`, never run |
 | [0007](docs/adr/0007-openrig-operator-integration/index.html) | OpenRig operator integration | Proposal only |
 | [0008](docs/adr/0008-agent-discovery-tool/index.html) | Agent discovery tool | Proposal only |
 

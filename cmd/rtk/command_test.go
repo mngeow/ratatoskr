@@ -606,6 +606,11 @@ func TestParseCardForms(t *testing.T) {
 			args: []string{"gateway", "card-target", "set", "vmb", "http://100.64.0.5:7778"},
 			want: command{kind: kindGatewayAdmin, admin: []string{"card-target", "set", "vmb", "http://100.64.0.5:7778"}},
 		},
+		{
+			name: "gateway participant passes through",
+			args: []string{"gateway", "participant", "register", "svc", "--url", "http://127.0.0.1:7790/"},
+			want: command{kind: kindGatewayAdmin, admin: []string{"participant", "register", "svc", "--url", "http://127.0.0.1:7790/"}},
+		},
 	}
 
 	for _, tc := range tests {

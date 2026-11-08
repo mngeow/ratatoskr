@@ -148,6 +148,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, host strin
 		internalError(w)
 		return
 	}
+	s.a2aReceipt(writeCtx, id, report.State)
 	s.sendReportFrame(writeCtx, id)
 	w.WriteHeader(http.StatusNoContent)
 }

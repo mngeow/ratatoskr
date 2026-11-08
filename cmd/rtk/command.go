@@ -87,6 +87,7 @@ var adminCommands = map[string]bool{
 	"show":   true,
 
 	"card-target": true,
+	"participant": true,
 }
 
 // parseCommand turns the command line into one command.

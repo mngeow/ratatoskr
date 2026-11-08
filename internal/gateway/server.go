@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mngeow/ratatoskr/internal/a2a"
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
@@ -82,6 +83,11 @@ type Options struct {
 	// AckWait is how long a send waits for the recipient host's acknowledgement
 	// before it records delivery_uncertain.
 	AckWait time.Duration
+	// A2ABaseURL is the gateway's own URL as clients reach it, written into A2A endpoint cards. Empty
+	// means endpoint cards answer 503; it is never taken from a request header.
+	A2ABaseURL string
+	// Logf reports a startup problem once (never a body, a credential or a header). Nil is silent.
+	Logf func(format string, args ...any)
 }
 
 // Server is the gateway's HTTP surface. It holds no listener of its own: Serve
@@ -120,6 +126,11 @@ type Server struct {
 	// cards is the card poller, nil until StartCardPoller. A nil poller leaves every stored card
 	// "restored" and measures freshness against the default interval.
 	cards *cardPoller
+	// a2a serves the A2A participant routes under /a2a/agents/. It sits outside the Ratatoskr wire-version
+	// check and authenticates for itself.
+	a2a *a2a.Handler
+	// a2aService applies reports and system events; the receipt, report and session-end paths use it too.
+	a2aService *a2a.Service
 	// closing is closed once when Shutdown begins, so a parked long poll leaves before
 	// the HTTP server is asked to stop.
 	closing   chan struct{}
@@ -168,6 +179,16 @@ func NewServer(store *Store, opts Options) *Server {
 	server.networkTick = defaultNetworkTick
 	server.closing = make(chan struct{})
 	server.onDirectoryChanged = server.pushDirectory
+	// A construction failure here is a wiring bug in the SDK options, not a runtime condition: the A2A
+	// routes are then simply absent and the rest of the gateway is unaffected.
+	server.a2aService = &a2a.Service{
+		Store: store.A2AStore(), Dispatcher: a2aDispatcher{server: server}, Notifier: a2aWake{server: server}, Now: opts.Now,
+	}
+	if handler, err := newA2AHandler(store, opts.A2ABaseURL, server.a2aService); err == nil {
+		server.a2a = handler
+	} else if opts.Logf != nil {
+		opts.Logf("the A2A routes are not available: %v", err)
+	}
 	server.http = &http.Server{
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
@@ -232,10 +253,11 @@ func (s *Server) Handler() http.Handler {
 	router.Post("/v1/messages/{id}/status", s.withAuth(s.handleStatus))
 	router.Get("/v1/messages/{id}", s.withAuth(s.handleGetMessage))
 	router.Put(protocol.ReportPath, s.withAuth(s.handleReport))
+	router.Post(protocol.TaskReportPathPrefix+"{id}/report", s.withAuth(s.handleTaskReport))
 	router.Get(protocol.NetworkPath, s.withAuth(s.handleNetwork))
 	router.Get(protocol.GraphPath, s.withAuth(s.handleGraph))
 
-	return s.withVersion(rewriteBareErrors(router))
+	return withA2A(s.a2a, s.withVersion(rewriteBareErrors(router)))
 }
 
 // pathParam returns one path parameter, unescaped.
@@ -396,6 +418,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request, host stri
 	}
 
 	writeJSON(w, http.StatusOK, protocol.ConnectResponse{Host: host, Directory: directory})
+	s.a2aSessionsChanged(r.Context())
 	if s.onDirectoryChanged != nil {
 		s.onDirectoryChanged()
 	}
@@ -440,6 +463,7 @@ func (s *Server) handleAddSession(w http.ResponseWriter, r *http.Request, host s
 		},
 		Directory: directory,
 	})
+	s.a2aSessionsChanged(r.Context())
 	if s.onDirectoryChanged != nil {
 		s.onDirectoryChanged()
 	}
@@ -467,6 +491,7 @@ func (s *Server) handleEndSession(w http.ResponseWriter, r *http.Request, host s
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	s.a2aSessionsChanged(r.Context())
 	if s.onDirectoryChanged != nil {
 		s.onDirectoryChanged()
 	}
@@ -480,6 +505,7 @@ func (s *Server) handleEndSessions(w http.ResponseWriter, r *http.Request, host 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	s.a2aSessionsChanged(r.Context())
 	if s.onDirectoryChanged != nil {
 		s.onDirectoryChanged()
 	}

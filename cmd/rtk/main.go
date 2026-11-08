@@ -34,6 +34,8 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway hosts                      list paired hosts and their state
        rtk gateway log [--follow] [--limit N] read the gateway's ledger
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
+       rtk gateway participant enrol|register|list|revoke|delete-tasks
+                                              enrol external A2A services and manage their tasks (see: rtk gateway participant)
        rtk gateway --listen ADDR [--card-poll-interval 5s]
                                               how often the gateway polls registered card targets (2s to 1h, default 5s)
        rtk gateway show ID                    show one message in full

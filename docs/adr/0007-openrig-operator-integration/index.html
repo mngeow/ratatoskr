@@ -454,7 +454,7 @@ pre.wire .c { color: #a6a28c; }
   <tr><td>3</td><td>Inbound delivery verb</td><td>A supported OpenRig verb to the exact current session</td><td><span class="tag t-unv">OPEN</span> which verb; reliability unverified</td></tr>
   <tr><td>4</td><td>Outbound form</td><td>A tool or command; shape not chosen</td><td><span class="tag t-unv">OPEN</span></td></tr>
   <tr><td>5</td><td>Where the bridge runs, how the gateway reaches it, and what restarts it</td><td>Near OpenRig; transport per ADR-0006 (registered URL baseline); supervision not designed</td><td><span class="tag t-unv">OPEN</span></td></tr>
-  <tr><td>6</td><td>Who may message the operator</td><td>Your own paired hosts only; outsiders denied</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>6</td><td>Who may message the operator</td><td>Your own managed sessions and enrolled external participants, as for any session; no per-destination grants</td><td><span class="tag t-user">USER</span> decided for all sessions in <a href="../0006-a2a-routing-and-identity/index.html#decided">ADR-0006 section 1b</a>; enrolment stays owner-authorised</td></tr>
   <tr><td>7</td><td>Build any of it</td><td>Not before ADR-0006 phase 1 is proved</td><td><span class="tag t-user">USER</span> no build authorised</td></tr>
 </table></div>
 <ul class="prose">

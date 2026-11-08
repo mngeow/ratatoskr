@@ -241,6 +241,8 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	connector := newConnector(client, log)
 	sessions := newSessionManager(client, srv, r, log, connector, env, rtkPath, sessionDir)
 	connector.setPending(sessions)
+	// The A2A task tools reach the gateway as the agent's own gateway session.
+	srv.SetTasks(&taskBridge{client: client, sessions: sessions})
 
 	// The hub owns the windows and is the ONLY consumer of the router's events. Its gate is
 	// created here because the hub's notifications are what tell windows about a holder.

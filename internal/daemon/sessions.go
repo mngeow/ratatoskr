@@ -828,3 +828,14 @@ func peersFor(directory []protocol.DirectoryEntry, own string) []string {
 	}
 	return peers
 }
+
+// gatewaySessionFor is the gateway session id of a running session by its local name.
+func (m *sessionManager) gatewaySessionFor(name string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, ok := m.sessions[name]
+	if !ok || entry.gateway == "" || entry.exited {
+		return "", false
+	}
+	return entry.gateway, true
+}

@@ -71,6 +71,7 @@ type Server struct {
 	mu     sync.RWMutex
 	tokens map[[sha256.Size]byte]*agentEntry
 	byID   map[protocol.AgentID]*agentEntry
+	tasks  Tasks
 
 	addr string
 
@@ -179,6 +180,9 @@ func (s *Server) addAgent(id protocol.AgentID, name, address string, peers []str
 	}
 	s.tokens[key] = entry
 	s.byID[id] = entry
+	if connected {
+		addTaskTools(entry.srv.srv, id, name, s.currentTasks)
+	}
 	return token
 }
 

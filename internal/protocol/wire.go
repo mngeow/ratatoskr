@@ -110,6 +110,32 @@ type Offer struct {
 	At        time.Time `json:"at"`
 }
 
+// TaskReportPathPrefix is the route prefix a managed session uses to report on a task it was dispatched
+// (POST /v1/tasks/{id}/report). The acting session is named in the A2A session header; the gateway checks it
+// is a current session of the authenticated host AND the task's bound target.
+const TaskReportPathPrefix = "/v1/tasks/"
+
+// TaskReportRequest is a target's explicit report on a task: input_required, completed or failed, with text
+// and an optional result. It is the only way a managed target moves a task to those states.
+type TaskReportRequest struct {
+	State  string `json:"state"`
+	Text   string `json:"text,omitempty"`
+	Result string `json:"result,omitempty"`
+}
+
+// TaskView is what a managed session sees of an A2A task through its task tools. State is the A2A name without
+// the TASK_STATE_ prefix. Text is the latest status message; Result is the artifact text, if any. Delivery,
+// Connection and Reconciled are the gateway's separate observations (never states).
+type TaskView struct {
+	ID         string `json:"task_id"`
+	State      string `json:"state"`
+	Text       string `json:"text,omitempty"`
+	Result     string `json:"result,omitempty"`
+	Delivery   string `json:"delivery,omitempty"`
+	Connection string `json:"connection,omitempty"`
+	Reconciled string `json:"reconciled,omitempty"`
+}
+
 // StreamFrame is one line of the long-lived stream. Exactly one of Offer,
 // Directory or Report is set for those types; ping carries none.
 type StreamFrame struct {

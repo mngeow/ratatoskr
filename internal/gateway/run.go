@@ -91,7 +91,16 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 		listener = tls.NewListener(listener, serverTLSConfig(cert))
 	}
 
-	srv := NewServer(store, Options{})
+	// The A2A endpoint cards name this gateway by the address it was told to listen on, not by any
+	// request header.
+	scheme := schemeHTTP
+	if plan.Transport == TransportHTTPS {
+		scheme = schemeHTTPS
+	}
+	srv := NewServer(store, Options{
+		A2ABaseURL: scheme + "://" + plan.Addr.String(),
+		Logf:       func(format string, args ...any) { fmt.Fprintf(status, format+"\n", args...) },
+	})
 
 	// The card poller runs for the life of the gateway, after the bind and independent of any viewer.
 	// It is built and started BEFORE Serve begins, so the server's reference to it is written before
@@ -102,6 +111,10 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 		fmt.Fprintf(status, format+"\n", args...)
 	})
 	defer stopCardPoller()
+
+	// The A2A mirror reads external services' tasks. It stops before the store closes, like the poller.
+	stopA2AMirror := srv.StartA2AMirror(ctx)
+	defer stopA2AMirror()
 
 	serveErr := make(chan error, 1)
 	go func() {

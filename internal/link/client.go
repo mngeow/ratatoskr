@@ -314,6 +314,11 @@ func waitContext(ctx context.Context, d time.Duration) error {
 //
 // UNTESTED.
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) (status int, wrote bool, payload []byte, err error) {
+	return c.doHeaders(ctx, method, path, nil, body, out)
+}
+
+// doHeaders is do with extra request headers (the A2A tools name the acting session in one).
+func (c *Client) doHeaders(ctx context.Context, method, path string, extra map[string]string, body any, out any) (status int, wrote bool, payload []byte, err error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -331,6 +336,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	request.Header.Set("Authorization", "Bearer "+c.pairing.Credential)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range extra {
+		request.Header.Set(name, value)
 	}
 
 	// WroteRequest runs on the transport's own goroutine, not this one, so the
