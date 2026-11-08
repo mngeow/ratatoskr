@@ -555,11 +555,38 @@ Enter needs a host map on the machine you enter from, `<state dir>/hosts.json` (
 - The terminal handover (a 600 ms wait that drops typeahead) rests on reading Bubble Tea's source, not on observation. Whether a terminal is left clean after each way `ssh` can end is exactly what still needs your testing.
 - SSH entry works on macOS and Linux only.
 
-**Upgrading.** Either machine can be upgraded first. The full tab needs the gateway and each daemon on this build, and a window must match its own daemon's build, as before. There is no database change and the wire protocol stays at 2. Restarting a daemon with `rtk daemon stop --yes` ends its sessions, as before. Nothing is added for HTTPS over a tailnet.
+**Upgrading.** Either machine can be upgraded first. The full tab needs the gateway and each daemon on this build, and a window must match its own daemon's build, as before. There is no database change from the Network tab itself (the host-card feature below does change the gateway database); the Network tab needs no database change and the wire protocol stays at 2. Restarting a daemon with `rtk daemon stop --yes` ends its sessions, as before. Nothing is added for HTTPS over a tailnet.
 
 The gateway now routes with [chi](https://github.com/go-chi/chi) v5.5.0. Two behaviours differ from before: `HEAD` on a `GET` route returns 405, and a request with an unclean path gets 404 instead of a redirect.
 
 **First things worth testing, once you say so:** the terminal after each way `ssh` can end (clean exit, 255, `kill` of `rtk`, `kill -9` of `ssh`); typeahead and late terminal replies at the handover; Ctrl+C during the connection; F10 returning to the same row; exit 3 and 4 through `ssh`; ages moving on a quiet network; and live and stale flips while a poll is parked. The tab strip checks (clicks, drag over the strip, the empty window, `--agents` all failing) are there too. The step-by-step version is scenario 4 in [`docs/testing/`](docs/testing/).
+
+## Host cards and the Graph tab
+
+**Written in the working tree, never run, not committed.** The code has passed only `gofmt`, `go vet` and `go build`. See [ADR-0005](docs/adr/0005-host-agent-cards-and-graph/index.html) and [the contract](docs/implementation/host-cards-contract.md).
+
+Each daemon can publish a **read-only, unauthenticated "host card"** describing its host: a name, a description you write, and the skills you choose to declare. It is an A2A-style card, **not an A2A implementation**: the host has none of A2A's task operations, and the card says so (its one interface is the card's own URL, binding `RATATOSKR-CARD`). The official v1.0.0 proto was read on 2026-11-07; three of its REQUIRED fields (the card description, and each skill's description and tags) are now required at publish in the code, which has never run, so `rtk daemon card publish` without a description stops and asks for `--description-file`. The gateway polls each registered host's card on a schedule, keeps the cards and poll history in its database, and a third **Graph** tab draws the hosts.
+
+| Command | What it does |
+| --- | --- |
+| `rtk daemon --card-listen ADDR` | Serves the card at `/.well-known/agent-card.json` (and the alias `/.well-known/agent.json`). **Off unless you pass it**, and turning it on later means `rtk daemon stop`, which ends every session. Loopback and Tailscale addresses are plain HTTP; a LAN address needs `--allow-lan` (and `--insecure-http` for plain HTTP). No public address. |
+| `rtk daemon card show\|validate\|publish\|history\|rollback` | Edit and publish this host's card from the command line. `publish` takes `--name` and `--description-file`. Declaring skills is done only in the Graph tab's editor. |
+| `rtk gateway card-target set HOST URL [--fingerprint sha256:...] [--insecure-http]`, `show`, `clear` | You tell the gateway where to poll each host. IP literals only (no hostnames), http only on loopback and Tailscale, https with a fingerprint on a LAN. |
+| `rtk gateway --listen ... --card-poll-interval 60s` | The poll interval, 10 s to 1 h. 60 s is a default I chose, not one you selected. |
+
+**What it means and does not mean.**
+
+- **Public.** Anyone who can reach the listener can read the card. It is built from an allow-list and holds no tokens, credentials, skill bodies, paths, usernames, environment or session text. The check is a block-list of shapes, not a guarantee.
+- **Local editing only.** There is no way to change a card from the gateway or another host. To edit a remote host's card, enter a session on it (the SSH entry above) and use its own window. Any process of yours on that host can still call its socket, so this is not protection against same-user agents.
+- **A poll proves little.** A good poll shows the card endpoint answered. A 304 shows it answered and nothing changed. A timeout is a failed poll, not proof the process died, and none of it says anything about sessions. The existing heartbeat and stream remain what say a host is connected; the Graph tab shows the two signals separately.
+- **A stored card is not live proof.** After a gateway restart the Graph tab shows each host as restored from the database until it is polled again.
+- **Edges** are `messages_seen`: sends the gateway decided in the last 24 hours, computed from the message log, failed ones included. They never mean delivered, trust or capability.
+- **Drafting.** **Not implemented.** There is only a "not configured" screen: no provider, no payload builder and no model call. A minimal design that needs your choice is in [the ADR](docs/adr/0005-host-agent-cards-and-graph/index.html#drafting-design).
+- **Skills.** Found on disk, declared in the card, allowed and verified are four different things; only the first two exist. Only user-scope directories are scanned, by the daemon, at start, even with the listener off. `$CODEX_HOME/skills` is not documented as a skill directory by Codex.
+
+**Upgrading needs care: the gateway database changes.** The first `rtk gateway --listen` on this build migrates an existing gateway database to schema version 2 after taking a `VACUUM INTO` backup next to it (`...bak-v1-<time>`, mode 0600), and it does so before binding. Admin commands such as `rtk gateway hosts` refuse an old database and tell you to start the gateway. An older gateway binary then refuses the migrated database; roll back by stopping the gateway, restoring the backup and running the older binary. **The migration has never run.** Copy the whole gateway state directory first and try a copy. Wire protocol 2 is unchanged; an older gateway answers 404 on `/v1/graph` and the window says so.
+
+**Known limits.** `100.100.100.200` is on the deny list but unverified. Not built: an `rtk daemon graph` command, a cap on parked long polls, retention settings. Light themes, mouse on real terminals and narrow widths are undrawn. [Test scenario 5](docs/testing/scenario-5-host-cards/README.md) lists the checks, every one marked written, not verified.
 
 ## Architecture decisions
 
@@ -571,6 +598,8 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | [0002](docs/adr/0002-cross-machine-messaging/index.html) | Agents on different machines message through a central gateway on your tailnet or, by opt-in, your LAN, with pairing, full message storage and immediate failure when a machine is unreachable. The owner reports that it worked in their testing on 2026-11-06, before the daemon replaced `rtk runtime` | Accepted |
 | [0003](docs/adr/0003-per-host-daemon/index.html) | Move from `rtk runtime` to a long-lived daemon on each machine, with attachable windows, as the basis for sessions that spawn workers. Plain `rtk` stays local. The daemon is built, and the owner reports that it works in their testing on 2026-11-06, with one open bug. Workers aren't built, and some questions about them remain open | Accepted |
 | [0004](docs/adr/0004-network-tab/index.html) | A Network tab inside the attached window, following agent-net: a gateway API lists every host's sessions with how fresh each fact is, and Enter on a remote session opens a direct SSH connection from your own terminal. Not a dashboard. The API, tab and SSH entry are written but have never been run; the open choices in the record are proposals, not decisions | Proposed |
+| [0005](docs/adr/0005-host-agent-cards-and-graph/index.html) | A public, unauthenticated A2A-style Agent Card per host daemon, edited only on its own host, polled by the gateway on a preset schedule, stored with the graph in the gateway SQLite database and drawn as a graph of hosts in a third Graph tab. Written in the working tree but never run, not committed; the polling interval is a default I chose, the gateway database needs a migration, and a card is not an A2A implementation | Proposed |
+| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | Full A2A through the gateway, as a proposal with animated diagrams: one endpoint per exact session, how the sender is proven, and tasks with questions and results. Proposal only: nothing is built or run, and ADR-0005's card is not this | Proposed |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 

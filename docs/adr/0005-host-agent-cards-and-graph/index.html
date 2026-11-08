@@ -1,0 +1,1391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0005 Host Cards and Graph</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
+
+/* ADR-0005 additions */
+.nojs-box { margin: 8px 0; }
+html.js .nojs-box { display: none; }
+.mock .gctl { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; color: #a6a28c; }
+.mock .gctl label { display: inline-flex; gap: 6px; align-items: center; }
+.mock .gctl select { background: #1e1f1c; color: #f8f8f2; border: 1px solid #3e3d32; border-radius: 4px; font: inherit; padding: 1px 4px; }
+.mock .pick { background: #1e1f1c; color: #a6a28c; border: 1px solid #3e3d32; border-radius: 4px; padding: 2px 12px; font: inherit; cursor: pointer; }
+.mock .pick[aria-pressed="true"] { background: #a6e22e; color: #272822; font-weight: 700; }
+.mock .pick:focus-visible { outline: 2px solid #66d9ef; outline-offset: 1px; }
+.gwrap { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.gsvg { width: 100%; height: auto; background: #1e1f1c; border: 1px solid #3e3d32; border-radius: 6px; }
+.gnode { cursor: pointer; }
+.gnode rect { fill: #272822; stroke: #75715e; stroke-width: 1.5; }
+.gnode:hover rect { stroke: #f8f8f2; }
+.gnode:focus { outline: none; }
+.gnode:focus-visible rect { stroke: #66d9ef; stroke-width: 3; }
+.gnode[aria-pressed="true"] rect { fill: #49483e; stroke: #66d9ef; stroke-width: 3; }
+.gnode text { text-anchor: middle; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pointer-events: none; }
+.gnode .t1 { fill: #f8f8f2; font-size: 14px; font-weight: 700; }
+.gnode .t2 { fill: #a6a28c; font-size: 11px; }
+.gnode.st-fresh .t2 { fill: #a6e22e; }
+.gnode.st-stale rect { stroke: #fd971f; }
+.gnode.st-stale .t2 { fill: #fd971f; }
+.gnode.st-none rect { stroke: #ae81ff; }
+.gnode.st-none .t2 { fill: #ae81ff; }
+.gnode.st-off { opacity: .55; }
+.gnode.hidden { opacity: .12; pointer-events: none; }
+.ml { stroke: #66d9ef; stroke-width: 2; fill: none; }
+.ml.old { opacity: .35; stroke-dasharray: 2 4; }
+.pl { stroke-width: 2; fill: none; }
+.pl.ok { stroke: #a6e22e; }
+.pl.stale { stroke: #fd971f; stroke-dasharray: 6 5; }
+.pl.err { stroke: #f92672; stroke-dasharray: 3 5; }
+.gsvg:not([data-msg="on"]) .layer-msg { display: none; }
+.gsvg:not([data-poll="on"]) .layer-poll { display: none; }
+.legend p { margin: 0 0 6px; color: #c9c8b8; font-size: .8rem; line-height: 1.4; }
+.legend .g { color: #a6e22e; } .legend .o { color: #fd971f; } .legend .p { color: #ae81ff; } .legend .r { color: #f92672; } .legend .c { color: #66d9ef; }
+.gdetail { background: #1e1f1c; border: 1px solid #3e3d32; border-radius: 6px; padding: 8px 12px; min-height: 64px; }
+.gdetail .ttl { color: #f8f8f2; font-weight: 700; }
+.gdetail .rdonly, .rdonly { background: #3e3d32; color: #e6db74; border-radius: 3px; padding: 0 6px; font-size: .76rem; }
+.gdetail .own { background: #a6e22e; color: #272822; border-radius: 3px; padding: 0 6px; font-size: .76rem; font-weight: 700; }
+.mock .sec { display: grid; gap: 4px; padding: 8px 4px; }
+.mock .sec h4 { margin: 4px 0 0; color: #e6db74; font-size: .85rem; }
+.mock .sk { border: 1px solid #3e3d32; border-radius: 6px; padding: 5px 10px; background: #1e1f1c; }
+.mock .sk b { color: #f8f8f2; }
+.mock .sk .ev { color: #a6a28c; font-size: .8rem; }
+.mock .pill { display: inline-block; border: 1px solid #75715e; border-radius: 10px; padding: 0 7px; font-size: .74rem; color: #c9c8b8; margin-right: 4px; }
+.mock .pill.det { border-color: #66d9ef; color: #66d9ef; }
+.mock .pill.dec { border-color: #a6e22e; color: #a6e22e; }
+.mock .pill.imp { border-color: #a6e22e; color: #a6e22e; }
+.mock .pill.prop { border-color: #ae81ff; color: #ae81ff; }
+.mock .rawj { margin: 0; max-height: 300px; overflow: auto; background: #0f100e; border: 1px solid #3e3d32; border-radius: 6px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: #e6db74; }
+.mock .copyrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mock .copybtn { background: #1e1f1c; color: #f8f8f2; border: 1px solid #75715e; border-radius: 4px; font: inherit; padding: 1px 10px; cursor: pointer; }
+.mock .diff .ad { color: #a6e22e; } .mock .diff .rm { color: #f92672; } .mock .diff .d { color: #a6a28c; }
+.mock .diff { display: block; }
+@media (max-width: 720px) { .gwrap { grid-template-columns: 1fr; } .mock .grid { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0005</p>
+  <h1>Host Agent Cards, local editing, gateway polling and a Graph tab</h1>
+  <p class="prose">Every host's daemon publishes one A2A-style Agent Card that describes the host as a whole. The owner writes or edits that card on the host itself, optionally starting from an LLM draft built from the Claude and Codex skills found there. The gateway polls the cards of the hosts paired with it and draws them as a graph in a new third tab, <b>Graph</b>, beside Terminals and Network. <b>The code is written and has passed only <code>gofmt</code>, <code>go vet</code> and <code>go build</code> (darwin and linux). Nothing has been run, no migration has touched any database, and this page has not been opened in a browser. The mockups below are drawings with sample data, not screenshots.</b></p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-07; revised with the user's decisions the same day. Implementation was authorised and is <u>written in the working tree but never run</u>.</b> <a href="#built">Section 1a</a> says what was built and where it differs from the proposals below. Items marked <span class="tag t-arch">PROPOSAL</span> are the architect's suggestions, not decisions. Items marked <span class="tag t-user">USER</span> are the user's own decisions as relayed by the operator. The second batch (see <a href="#decided">section 1</a>) <b>supersedes</b> the first draft's proposals for an authenticated-only card, a secret poll key, backoff-driven polling and an in-memory cache.</dd></div>
+    <div><dt>Corrects</dt><dd>The request named the discovery path <code>/.well-known/agent.json</code>. The current A2A specification names <code>/.well-known/agent-card.json</code>. <a href="#correction">Section 1</a> shows the evidence and proposes the canonical path plus an optional legacy alias.</dd></div>
+    <div><dt>Source inspected</dt><dd>The A2A v1.0.0 specification page, read on 2026-11-07. Ratatoskr at <code>2f65bf0</code> through its authoritative docs and tab code. agent-net under <code>~/Projects/compare/agent-net</code>, read only.</dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>): not Ratatoskr, not agent-net, no model, no network fetch of any card, no migration, no browser. About 90 new test functions were written and only type-checked. The mockups use invented sample data.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#summary">1. Short answer</a> · <a href="#decided">decisions</a> · <a href="#built">1a. What was built</a> ·
+  <a href="#mockups">2. Mockups</a> ·
+  <a href="#a2a">3. What the card is</a> ·
+  <a href="#today">4. What exists today</a> ·
+  <a href="#polling">5. Gateway polling</a> ·
+  <a href="#editing">6. Editing boundary</a> ·
+  <a href="#skills">7. Skills and drafts</a> ·
+  <a href="#edges">8. Graph edges</a> ·
+  <a href="#tab">9. The Graph tab</a> ·
+  <a href="#scenarios">10. Scenarios</a> ·
+  <a href="#gaps">11. Gaps</a> ·
+  <a href="#decisions">12. Decisions</a> ·
+  <a href="#sources">13. Sources</a>
+</nav>
+
+<p class="prose small"><b>Labels.</b>
+  <span class="tag t-user">USER</span> the user's own requirement.
+  <span class="tag t-code">CODE</span> read in source, never seen running.
+  <span class="tag t-doc">SPEC</span> read in the A2A specification page.
+  <span class="tag t-arch">PROPOSAL</span> the architect's suggestion.
+  <span class="tag t-unv">OPEN</span> undecided.
+  <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+</p>
+<p class="prose small muted">With JavaScript off, every tab and step is shown in full and the graph mockup falls back to a table.</p>
+
+<h2 id="summary">1. Short answer</h2>
+<div class="note">
+  <p><b>A host card describes the host, not a session.</b> One card per daemon, covering the host's agent service as a whole: its name, which harnesses and skills its owner declares, how to reach it, and how it must be authenticated. <span class="tag t-user">USER</span> wants the node to be the host. <span class="tag t-arch">PROPOSAL</span> for the card shape.</p>
+  <p><b>The owner edits the card on the host that owns it, and nowhere else.</b> There is no remote write path. The gateway and every other host see the card read-only. <span class="tag t-user">USER</span></p>
+  <p><b>The gateway polls each paired host's card on a preset schedule</b>, whether or not anyone is looking at a tab, from an address the owner controls. It stores the cards and the consolidated graph in its own SQLite database. <span class="tag t-user">USER</span> This is the first time a Ratatoskr daemon would listen on a network, and the first time the gateway database gets a new migration for this purpose, so <a href="#polling">section 5</a> designs both honestly.</p>
+  <p><b>The card is public.</b> The canonical well-known card is an unauthenticated, read-only endpoint, readable by anyone who can reach the address. <span class="tag t-user">USER</span> So it carries no secrets (<a href="#a2a">section 3</a>).</p>
+  <p><b>Publishing a card is not an A2A implementation.</b> The spec requires a set of operations (SendMessage, GetTask and others) that Ratatoskr does not have. The card therefore declares only the interface that exists. <a href="#a2a">Section 3</a>.</p>
+</div>
+
+<h3 id="decided">Decisions from the user, second batch</h3>
+<p class="prose">Quoted as relayed by the operator on 2026-11-07: "I still prefer the gateway to poll on some preset schedule, this is because the gateway needs to check that the daemon is alive anyway. So we will keep that. well-known agent card will be an unauthenticated endpoint. The consolidate graph and each agents agent-card info will be stored in the gateways sql-lite db."</p>
+<div class="table-wrap"><table>
+  <tr><th>The user decided <span class="tag t-user">USER</span></th><th>What it replaces in the first draft</th></tr>
+  <tr><td>The gateway polls on a preset schedule, not only when a tab is open</td><td>The first draft proposed a 60 s default with exponential backoff and a card cache that lived in memory. The user's decision makes a preset schedule the mechanism, and failures keep the schedule (section 5).</td></tr>
+  <tr><td>The well-known card is an unauthenticated, read-only endpoint</td><td>The authenticated-only card and the separate secret poll key are <b>withdrawn</b>.</td></tr>
+  <tr><td>The consolidated graph and each host's card are stored in the gateway's SQLite database</td><td>The in-memory cache and the owner-edited file are <b>withdrawn</b>. A new migration is required (section 5).</td></tr>
+</table></div>
+<p class="prose"><b>Not decided, and not changed by this batch:</b> the exact polling interval (a default is proposed and labelled not selected); the graph edge meanings; whether and which model drafts cards; the discovery-path alias; the Graph key. The node stays the <b>host</b>. The phrase "each agents agent-card" is read as <b>each host daemon's card</b>, as in the first draft. <span class="tag t-unv">OPEN</span> If you meant a card per agent session, that is a different design (many more nodes, privacy and churn consequences) and I have not drawn it.</p>
+
+<h3 id="correction">Correction: the discovery path</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Path</th><th>Where it comes from</th></tr>
+  <tr><td>As requested</td><td><code>/.well-known/agent.json</code></td><td><span class="tag t-user">USER</span> as relayed.</td></tr>
+  <tr><td>A2A v1.0.0</td><td><code>/.well-known/agent-card.json</code></td><td><span class="tag t-doc">SPEC</span> Section 8.2: "Accessing <code>https://{server_domain}/.well-known/agent-card.json</code>". The operator read sections 8.2 and 14.3 and found the same. My own read of the page agrees: 8.2 verbatim, and 14.3 (well-known URI registration) only as a model summary of the page, so 14.3 is not independently confirmed.</td></tr>
+  <tr><td>Proposed here</td><td><code>/.well-known/agent-card.json</code> as the canonical path, plus an <b>optional</b> alias at <code>/.well-known/agent.json</code> that returns the same bytes</td><td><span class="tag t-arch">PROPOSAL</span> The alias exists only because the request used that name. Earlier A2A releases may have used it; the page I read lists versions 0.3.0, 0.2.6 and 0.1.0 but I did not read those, so that history is <span class="tag t-unv">UNVERIFIED</span>. Nothing in this design calls the old path current.</td></tr>
+</table></div>
+<p class="prose">The spec page carries small inconsistencies (its table says <code>securityRequirements</code>, a sample and one operation description say <code>security</code>). <b>Resolved 2026-11-07 by reading the normative source,</b> <code>specification/a2a.proto</code> at the <code>v1.0.0</code> tag of the official repository: there is no <code>security</code> field and no <code>preferred_transport</code>; the fields are <code>security_schemes</code> and <code>security_requirements</code> (lowerCamel in JSON). The proto marks these AgentCard fields REQUIRED: <code>name</code>, <code>description</code>, <code>supported_interfaces</code>, <code>version</code>, <code>capabilities</code>, <code>default_input_modes</code>, <code>default_output_modes</code> and <code>skills</code>; and these on a skill: <code>id</code>, <code>name</code>, <code>description</code>, <code>tags</code>. <span class="tag t-doc">SPEC</span> I did not resolve the tag to a commit hash.</p>
+
+<div class="table-wrap"><table>
+  <tr><th>What the user asked</th><th>What this design does</th></tr>
+  <tr><td>Each daemon has a well-known endpoint following A2A <span class="tag t-user">USER</span></td><td>Yes, at the canonical path, with the shape of the A2A card and only the interface Ratatoskr really has (section 3).</td></tr>
+  <tr><td>Generate with an LLM from autodetected Claude and Codex skills, or edit by hand <span class="tag t-user">USER</span> (the model choice itself is still open)</td><td>Both, but the model call is explicit, previewed and never publishes by itself (section 7).</td></tr>
+  <tr><td>Edit only on the host that owns the daemon <span class="tag t-user">USER</span></td><td>A local-socket operation reached from the window on that host. No gateway write route (section 6).</td></tr>
+  <tr><td>Gateway polls across paired hosts to build an interactive graph, following agent-net <span class="tag t-user">USER</span></td><td>Poll only paired hosts on a preset schedule at owner-controlled addresses; store cards and graph in the gateway database; build the graph from the cards plus observed messages (sections 5 and 8).</td></tr>
+  <tr><td>New Graph tab beside Terminals and Network <span class="tag t-user">USER</span></td><td>Three touching tab blocks, click-first (section 9).</td></tr>
+  <tr><td>Each node is a host; selecting it shows a nicely formatted card <span class="tag t-user">USER</span></td><td>Yes. The card view has Card, Skills, Security, Capabilities and Raw JSON (mockups 1 and 2).</td></tr>
+</table></div>
+
+<h2 id="built">1a. What was built (2026-11-07, written, never run)</h2>
+<p class="prose">Source: <a href="../../implementation/host-cards-contract.md">the contract</a>, where the exact names and rules live. The review was static only. The lead read the migrator, the card server, the poller, the dialer, the graph route and the tab code in full and relied on the owning seniors' review for the rest; I spot-read the migrator, its SQL and the dialer and found no defect.</p>
+<div class="table-wrap"><table>
+  <tr><th>Piece</th><th>As built</th></tr>
+  <tr><td>Card listener</td><td>Off by default. <code>rtk daemon --card-listen ADDR</code> turns it on at start (the address classes and <code>--allow-lan</code>/<code>--insecure-http</code> rules follow the gateway's). Serves GET and HEAD of <code>/.well-known/agent-card.json</code> and the <code>agent.json</code> alias, with ETag and 304. <b>Turning it on later means <code>rtk daemon stop</code>, which ends every session.</b></td></tr>
+  <tr><td>Card</td><td>Strict when published, tolerant when polled (unknown fields are ignored and counted). The interface is the card's own URL with binding <code>RATATOSKR-CARD</code>. No <code>securitySchemes</code>: the endpoint is unauthenticated, so there is no scheme to declare. <b>Checked against the proto on 2026-11-07:</b> every REQUIRED field is emitted and the JSON names match, and three gaps found by that check (the card <code>description</code>, each skill's <code>description</code> and each skill's <code>tags</code> are REQUIRED by the proto) are now required at publish in the code, still never run. The published revision on disk has no URL by design; the served card gets its own URL when it is served. <code>protocolVersion</code> means "the A2A version this interface exposes", and this interface exposes none, so <code>"1"</code> is our own card-interface version. Even then the host is not an A2A service, so the card never claims one.</td></tr>
+  <tr><td>Editing</td><td>Local socket operations and <code>rtk daemon card show|validate|publish|history|rollback</code>, plus the editor in the Graph tab. The CLI cannot declare skills; only the editor can. No remote write path. The same-user limit stands.</td></tr>
+  <tr><td>Skills</td><td>User-scope directories only, read never executed. <b>The scan runs by itself at daemon start</b>, whether or not the listener is on, and runs the existing <code>&lt;harness&gt; --version</code> for a harness with something found. Nothing is published by it. <b>Checked against the official docs on 2026-11-07:</b> <code>~/.claude/skills</code> is documented as Claude Code's personal (user) location. <code>~/.agents/skills</code> is documented as Codex's user location (from the tail of the page, which was summarised, so lower confidence). <b><code>$CODEX_HOME/skills</code> and <code>~/.codex/skills</code> are not documented as skill directories</b> on any page read; the environment-variable page says <code>CODEX_HOME</code> is the root for "config, auth, logs, sessions, skills", which is an inference, not a statement. They stay as <code>location_verified: false</code>. Both harnesses follow symlinked skill folders; the scanner does not, and lists them as "symlink not followed", so the inventory can be shorter than what a harness loads.</td></tr>
+  <tr><td>Drafting</td><td><b>Not implemented.</b> The only thing built is a fixed status "not configured", a source label for a future model draft and an editor screen that says so. <b>There is no provider, no payload builder, no confirmation step, no model call and no draft parser or diff.</b> The first report called this "plumbing"; that overstated it. A concrete minimal design and the choice it needs from you are in <a href="#drafting-design">section 7</a>.</td></tr>
+  <tr><td>Gateway database</td><td>A real versioned migrator and four additive tables (<code>host_card_targets</code>, <code>host_cards</code>, <code>card_revisions</code>, <code>poll_attempts</code>). Only <code>rtk gateway --listen</code> migrates an existing database, after a <code>VACUUM INTO</code> backup at mode 0600; admin commands refuse and say to start the gateway. The migration runs before the gateway binds, so a gateway that migrates and then fails to bind stays migrated, and an older binary then needs the backup.</td></tr>
+  <tr><td>Targets and poller</td><td><code>rtk gateway card-target set|show|clear</code>. IP literals only (no DNS, so a Tailscale MagicDNS name does not work). http on loopback and Tailscale; a LAN target needs https with <code>--fingerprint</code>, or <code>--insecure-http</code>. A deny list refuses metadata and Tailscale service addresses; <b><code>100.100.100.200</code> is on it but unverified</b>. Poll default 60 s (<code>--card-poll-interval</code>, 10 s to 1 h), jitter, no overlap, no redirects, no proxy, no credentials. Fresh within 2 intervals; offline after max(15 minutes, 4 intervals). Changing a target clears that host's stored card.</td></tr>
+  <tr><td>Graph route</td><td><code>GET /v1/graph</code> (long poll, like <code>/v1/network</code>). Connection (stream and heartbeat) and card (poll) are separate objects with their own source and age. 768 KiB limit; over it, card bodies are dropped largest first and <code>card_omitted</code> and <code>truncated</code> say so. An older gateway answers 404 and the window says "gateway too old".</td></tr>
+  <tr><td>Edges</td><td><code>messages_seen</code> only, <b>computed from the message ledger</b>; there is no edges table. A count is sends the gateway decided (failed ones included), never "delivered"; <code>host_stored</code> is the subset that reached a host.</td></tr>
+  <tr><td>Graph tab</td><td>A third touching block, 27 cells wide or <code> T  N  G </code> narrow, click first, F7 optional. A 3 by 4 grid needs 120 by 26; smaller, or more than 12 hosts, shows a list. A fifth mark <code>✗ rejected</code> (ASCII <code>X</code>). <code>rejected</code> is wider than first worded: the newest poll was refused for an invalid card, an oversize body or a changed certificate, the last good card is kept, and the reason says which. The curves in this page's mockup are simplified.</td></tr>
+</table></div>
+<h3 id="built-limits">Known limits</h3>
+<ul class="prose">
+  <li>The public-content check is a block-list of shapes, not a guarantee. It has false positives (the word "bearer" alone blocks a publish) and no username check beyond home-path shapes.</li>
+  <li>Not built: an <code>rtk daemon graph</code> command, a cap on parked long polls, retention settings.</li>
+  <li>The migration, <code>VACUUM INTO</code> on a pre-created empty file, the poller, the listener, the graph route and every screen are <b>unrun</b>. The user chose to test first, so every check in the <a href="../../testing/index.html">test guide</a> is marked written, not verified.</li>
+  <li>Light themes, mouse on real terminals, narrow widths and the 256/16-colour mapping for the new tab are undrawn, as for the other tabs.</li>
+</ul>
+
+<h2 id="mockups">2. Mockups</h2>
+<p class="prose">Sample data throughout: five invented hosts. Nothing here was drawn by the real program. A terminal cannot reproduce the rounded boxes, hover colours or smooth lines of this page; the real tab would use box-drawing characters in the same Monokai palette as the existing tabs. <span class="tag t-arch">PROPOSAL</span></p>
+<div data-tabs class="mockset">
+  <div role="tablist" aria-label="Mockups">
+    <button role="tab" id="k0" aria-controls="kp0">0. Window and three tabs</button>
+    <button role="tab" id="k1" aria-controls="kp1">1. Graph overview</button>
+    <button role="tab" id="k2" aria-controls="kp2">2. Selected host card</button>
+    <button role="tab" id="k3" aria-controls="kp3">3. Local editor</button>
+    <button role="tab" id="k4" aria-controls="kp4">4. Detect, draft, diff, publish</button>
+    <button role="tab" id="k5" aria-controls="kp5">5. A remote host: read-only</button>
+    <button role="tab" id="k6" aria-controls="kp6">6. Polling, stale, offline</button>
+    <button role="tab" id="k7" aria-controls="kp7">7. Stored in the gateway database</button>
+  </div>
+
+  <div role="tabpanel" id="kp0" aria-labelledby="k0">
+    <h3>The strip grows from two blocks to three</h3>
+    <p class="prose">The existing strip is two touching blocks on the title row. <span class="tag t-code">CODE</span> committed in <code>d6d100d</code>, never run; see <a href="../../implementation/tui-styling-spec.md">the styling spec</a>. This adds <code> Graph </code> as a third block. Pick a width.</p>
+    <div class="mock" role="group" aria-label="Mockup of the tab strip at three widths">
+      <div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · tab strip</div>
+      <div data-tabs class="inner">
+        <div role="tablist" aria-label="Widths" class="tabstrip">
+          <button role="tab" id="s1" aria-controls="sp1">Wide (27+ cells)</button>
+          <button role="tab" id="s2" aria-controls="sp2">Narrow (9 to 26)</button>
+          <button role="tab" id="s3" aria-controls="sp3">No sessions</button>
+        </div>
+        <div role="tabpanel" id="sp1" aria-labelledby="s1" class="screen">
+          <p class="strip" aria-hidden="true"><span>Terminals</span><span>Network</span><span class="on">Graph</span></p>
+          <p class="dim">27 cells: ` Terminals ` (11) + ` Network ` (9) + ` Graph ` (7). Click any block. The whole block is the hit box, padding included.</p>
+        </div>
+        <div role="tabpanel" id="sp2" aria-labelledby="s2" class="screen">
+          <p class="strip" aria-hidden="true"><span>T</span><span>N</span><span class="on">G</span></p>
+          <p class="dim">9 cells: ` T  N  G `. Under 9 cells the strip is clipped, as today.</p>
+        </div>
+        <div role="tabpanel" id="sp3" aria-labelledby="s3" class="screen">
+          <p class="strip" aria-hidden="true"><span>Terminals</span><span class="on">Network</span><span>Graph</span></p>
+          <p class="dim">A window with no sessions still opens on Network, as built. Graph is one click away. The Graph tab needs no session, because it reads the gateway, not a terminal.</p>
+        </div>
+        <p class="status">Click a block · <b>F5</b> Network (existing) · <b>F7</b> Graph <i>proposed</i> · Esc leaves a tab</p>
+      </div>
+    </div>
+    <ul class="prose">
+      <li><b>Rows do not change.</b> The strip stays on the title row, so the chrome stays seven rows. <span class="tag t-code">CODE</span> from the contract; the tab code was never run.</li>
+      <li><b>No prefix mode and no per-agent tabs.</b> Same as the two-tab decision. A new key is only a shortcut, never the only way. <span class="tag t-arch">PROPOSAL</span> F7. <span class="tag t-unv">OPEN</span> F6 and F10 are taken; F7 to F9 were unused when last read.</li>
+      <li><b>Colour off:</b> the active block is bold and reverse with a leading <code>&gt;</code>, as for the existing tabs.</li>
+    </ul>
+  </div>
+
+  <div role="tabpanel" id="kp1" aria-labelledby="k1">
+    <h3>Graph overview</h3>
+    <p class="prose">Each box is a <b>host</b>. Lines are explicit: two layers you can switch. Click or press Enter on a host; arrow keys move to the nearest host in that direction; Tab cycles; Esc clears. Try the freshness filter.</p>
+    <div class="mock" role="group" aria-label="Mockup of the Graph tab">
+      <div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac</div>
+      <p class="strip" aria-hidden="true"><span>Terminals</span><span>Network</span><span class="on">Graph</span></p>
+      <div class="screen" data-graph>
+        <p class="hd">Graph · gateway on vma · 5 hosts paired · polled on a schedule (default proposed: every 60 s, not selected) · loaded from the database, then live</p>
+        <div class="gctl">
+          <label><input type="checkbox" data-layer="msg" checked> messages seen (last 24h)</label>
+          <label><input type="checkbox" data-layer="poll"> gateway polling state</label>
+          <label>show <select data-filter><option value="all">all hosts</option><option value="fresh">fresh only</option><option value="hidestale">hide stale and offline</option></select></label>
+        </div>
+        <div class="gwrap">
+          <svg class="gsvg" viewBox="0 0 640 290" role="group" aria-label="Host graph. Nodes are hosts." data-msg="on">
+            <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#66d9ef"/></marker></defs>
+            <g class="layer layer-poll">
+              <line x1="320" y1="52" x2="108" y2="128" class="pl ok"/><line x1="320" y1="52" x2="212" y2="248" class="pl ok"/>
+              <line x1="320" y1="52" x2="428" y2="248" class="pl stale"/><line x1="320" y1="52" x2="532" y2="128" class="pl err"/>
+            </g>
+            <g class="layer layer-msg">
+              <line x1="108" y1="128" x2="212" y2="248" class="ml" marker-end="url(#arr)" marker-start="url(#arr)"><title>mac and vmb: 23 messages, last 14:02</title></line>
+              <line x1="108" y1="128" x2="428" y2="248" class="ml old" marker-end="url(#arr)"><title>mac to vmc: 2 messages, last 11:20</title></line>
+              <line x1="212" y1="248" x2="320" y2="52" class="ml" marker-end="url(#arr)"><title>vmb to vma: 3 messages, last 13:48</title></line>
+            </g>
+            <g class="gnode" tabindex="0" role="button" aria-pressed="false" data-host="vma" data-x="320" data-y="52" transform="translate(260,30)"><rect width="120" height="44" rx="6"/><text x="60" y="19" class="t1">vma</text><text x="60" y="35" class="t2">● live · gateway</text></g>
+            <g class="gnode" tabindex="0" role="button" aria-pressed="false" data-host="mac" data-x="108" data-y="128" transform="translate(48,106)"><rect width="120" height="44" rx="6"/><text x="60" y="19" class="t1">mac</text><text x="60" y="35" class="t2">● live · this host</text></g>
+            <g class="gnode" tabindex="0" role="button" aria-pressed="false" data-host="vmd" data-x="532" data-y="128" transform="translate(472,106)"><rect width="120" height="44" rx="6"/><text x="60" y="19" class="t1">vmd</text><text x="60" y="35" class="t2">? no card</text></g>
+            <g class="gnode" tabindex="0" role="button" aria-pressed="false" data-host="vmb" data-x="212" data-y="248" transform="translate(152,226)"><rect width="120" height="44" rx="6"/><text x="60" y="19" class="t1">vmb</text><text x="60" y="35" class="t2">● live · 12s</text></g>
+            <g class="gnode" tabindex="0" role="button" aria-pressed="false" data-host="vmc" data-x="428" data-y="248" transform="translate(368,226)"><rect width="120" height="44" rx="6"/><text x="60" y="19" class="t1">vmc</text><text x="60" y="35" class="t2">… stale 4m</text></g>
+          </svg>
+          <div class="legend" aria-label="Legend">
+            <p><b>Node</b> = one host. Its mark is card freshness only: <span class="g">● fresh</span> <span class="o">… stale</span> <span class="p">? no card</span> <span class="r">○ offline</span>. It says nothing about whether agents there are busy or idle.</p>
+            <p><b class="c">&mdash;&gt;</b> messages the gateway routed between two hosts in 24h. Arrow = direction. Faint = nothing in the last hour.</p>
+            <p><b>spoke</b> (polling layer) = the gateway's last poll of that host: solid ok, dashed stale, red failed. It links no two hosts to each other, and a good poll proves only that the card endpoint answered.</p>
+            <p class="dim">No edge is inferred from skills, names or card text.</p>
+          </div>
+        </div>
+        <div class="gdetail" data-detail aria-live="polite"><p class="dim">No host selected. Click a host or press Tab then Enter.</p></div>
+        <p class="status"><b>Tab</b> next · <b>arrows</b> nearest · <b>Enter</b> select · <b>r</b> raw JSON · <b>e</b> edit (this host only) · Esc clear</p>
+      </div>
+    </div>
+    <div class="nojs-box"><p class="prose">Without JavaScript: hosts are vma (gateway), mac, vmb, vmc, vmd. Edges seen: mac and vmb exchange messages (23), vmb to vma (3), mac to vmc (2, old). vmc is stale (last good card 4 minutes ago). vmd has no card.</p></div>
+  </div>
+
+  <div role="tabpanel" id="kp2" aria-labelledby="k2">
+    <h3>A host's card, formatted</h3>
+    <p class="prose">What opening a node shows. Pick a host, then a section. The sample data is the same as in the overview.</p>
+    <div class="mock" role="group" aria-label="Mockup of the card view">
+      <div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · host card</div>
+      <p class="strip" aria-hidden="true"><span>Terminals</span><span>Network</span><span class="on">Graph</span></p>
+      <div class="screen" data-cardview>
+        <div class="gctl" role="group" aria-label="Host"><button class="pick" data-pick="mac" aria-pressed="true">mac</button><button class="pick" data-pick="vmb" aria-pressed="false">vmb</button><button class="pick" data-pick="vmc" aria-pressed="false">vmc</button><button class="pick" data-pick="vmd" aria-pressed="false">vmd</button></div>
+        <div data-tabs class="inner2">
+          <div role="tablist" aria-label="Card sections" class="tabstrip">
+            <button role="tab" id="c1" aria-controls="cp1">Card</button>
+            <button role="tab" id="c2" aria-controls="cp2">Skills</button>
+            <button role="tab" id="c3" aria-controls="cp3">Security</button>
+            <button role="tab" id="c4" aria-controls="cp4">Capabilities</button>
+            <button role="tab" id="c5" aria-controls="cp5">Raw JSON</button>
+          </div>
+          <div role="tabpanel" id="cp1" aria-labelledby="c1" data-sec="card"></div>
+          <div role="tabpanel" id="cp2" aria-labelledby="c2" data-sec="skills"></div>
+          <div role="tabpanel" id="cp3" aria-labelledby="c3" data-sec="security"></div>
+          <div role="tabpanel" id="cp4" aria-labelledby="c4" data-sec="caps"></div>
+          <div role="tabpanel" id="cp5" aria-labelledby="c5" data-sec="raw"></div>
+        </div>
+        <p class="status"><b>c</b> copy card URL · <b>r</b> raw · <b>e</b> edit (only where the card is owned) · Esc back to the graph</p>
+      </div>
+    </div>
+    <div class="nojs-box"><p class="prose">Without JavaScript the card view is not drawn. The same fields are in sections 3 and 7, and the mac sample card is printed in full in section 3.</p></div>
+  </div>
+
+  <div role="tabpanel" id="kp3" aria-labelledby="k3">
+    <h3>The local editor and its validation</h3>
+    <p class="prose">Only on the host that owns the daemon, opened from that host's own window. Three states.</p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Editor states">
+        <button role="tab" id="e1" aria-controls="ep1">Valid, unpublished</button>
+        <button role="tab" id="e2" aria-controls="ep2">Invalid: last good stays</button>
+        <button role="tab" id="e3" aria-controls="ep3">Edited elsewhere meanwhile</button>
+      </div>
+      <div role="tabpanel" id="ep1" aria-labelledby="e1"><div class="mock" role="group" aria-label="Mockup, valid"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · edit card</div>
+        <div class="screen">
+          <p class="hd">Edit the card of mac · you own this host · published rev 7 · working copy differs by 2 fields</p>
+          <dl class="kv"><dt>name</dt><dd>mac</dd><dt>description</dt><dd>Ratatoskr host daemon on mac. Review and ADR drafting agents.<span class="cursor"></span></dd><dt>skills</dt><dd>3 declared (4 detected, 1 not declared)</dd><dt>interface</dt><dd>https://mac.example.ts.net:7443/ratatoskr/v1 <i>derived, not editable</i></dd><dt>version</dt><dd>8 <i>set on publish</i></dd></dl>
+          <p>✓ <b>Valid.</b> 0 errors, 1 note: "description is 71 characters; cards are shown cut at 120."</p>
+          <p class="dim">Fields marked <i>derived</i> come from the running daemon and cannot be typed over, so a card cannot advertise an endpoint that is not listening.</p>
+        </div>
+        <p class="note-s">The hint line: <b>Ctrl-S</b> validate and save the working copy · <b>P</b> publish rev 8 (shows the diff first) · <b>D</b> discard working copy · Esc close.</p></div></div>
+      <div role="tabpanel" id="ep2" aria-labelledby="e2"><div class="mock" role="group" aria-label="Mockup, invalid"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · edit card</div>
+        <div class="screen bad">
+          <p class="hd">Edit the card of mac · published rev 7 stays live</p>
+          <p>✗ <b>Cannot publish: 2 errors.</b> Nothing was changed. Rev 7 is still what the gateway sees.</p>
+          <p>1. <code>skills[2].tags</code> is required and empty. Add at least one tag, for example <code>detected</code>.</p>
+          <p>2. <code>supportedInterfaces[0].url</code> is derived and was edited by hand. Reset it with <b>U</b>.</p>
+          <p class="dim">Errors are shown with the field and the fix, never as a raw schema dump. The checks run on this host; there is no model in the loop.</p>
+        </div></div></div>
+      <div role="tabpanel" id="ep3" aria-labelledby="e3"><div class="mock" role="group" aria-label="Mockup, edited elsewhere"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · edit card</div>
+        <div class="screen bad">
+          <p class="hd">Another editor changed the working copy</p>
+          <p>▲ The card on this host moved from rev 7 to rev 8 while you were editing (a second window on this host published at 14:09, source <code>window</code>). Your base was rev 7.</p>
+          <p>Choose: <b>M</b> merge by field (you decide each conflict) · <b>V</b> view theirs · <b>K</b> keep yours and publish as rev 9 · Esc keep editing.</p>
+          <p class="dim">Same user, same host, two windows is the only way this happens. It is stated so the editor never silently overwrites a revision.</p>
+        </div></div></div>
+    </div>
+  </div>
+
+  <div role="tabpanel" id="kp4" aria-labelledby="k4">
+    <h3>Detect, optionally draft with a model, diff, publish</h3>
+    <p class="prose">Five screens, one per step. The model call is step 2 and happens only if you press the key. Steps 1, 4 and 5 involve no model.</p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Draft flow">
+        <button role="tab" id="f1" aria-controls="fp1">1. Detected here</button>
+        <button role="tab" id="f2" aria-controls="fp2">2. Confirm what is sent</button>
+        <button role="tab" id="f3" aria-controls="fp3">3. Draft arrives</button>
+        <button role="tab" id="f4" aria-controls="fp4">4. Diff and validate</button>
+        <button role="tab" id="f5" aria-controls="fp5">5. Published</button>
+      </div>
+      <div role="tabpanel" id="fp1" aria-labelledby="f1"><div class="mock" role="group" aria-label="Mockup, detected"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · skills found</div>
+        <div class="screen">
+          <p class="hd">Found on this host at 14:05 (scan took 40 ms, nothing was executed)</p>
+          <div class="grid head" aria-hidden="true"><span>SKILL</span><span>HARNESS</span><span>SCOPE</span><span>EVIDENCE</span><span>DECLARE</span></div>
+          <div class="grid"><span>review-diff</span><span>Claude Code 2.x</span><span>user</span><span>SKILL.md, hash 3f9a…</span><span>[x]</span></div>
+          <div class="grid"><span>write-adr</span><span>Claude Code 2.x</span><span>user</span><span>SKILL.md, hash b71c…</span><span>[x]</span></div>
+          <div class="grid"><span>summarize</span><span>Codex 0.x</span><span>user</span><span>SKILL.md, hash 9d02…</span><span>[x]</span></div>
+          <div class="grid"><span>release-notes</span><span>Claude Code 2.x</span><span>project: ratatoskr</span><span>SKILL.md, hash 51e8…</span><span>[ ] not host-wide</span></div>
+          <p class="dim">A skill found is a candidate, not a claim. Project skills are listed but are not declared host-wide unless you choose to. <b>D</b> draft with a model · <b>M</b> write by hand · <b>Space</b> toggle.</p>
+        </div></div></div>
+      <div role="tabpanel" id="fp2" aria-labelledby="f2"><div class="mock" role="group" aria-label="Mockup, confirm"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · draft with a model</div>
+        <div class="screen">
+          <p class="hd">This will call a model. Review exactly what leaves this host.</p>
+          <dl class="kv"><dt>provider</dt><dd>Claude Code, headless <i>chosen by you; none is pre-selected</i></dd><dt>model</dt><dd>claude-sonnet-5-5 <i>your choice</i></dd><dt>sends</dt><dd>host name · 3 skill names · 3 front-matter descriptions · harness names and versions · scope words (user/project)</dd><dt>never sends</dt><dd>skill bodies · file paths · usernames · environment · credentials · session text · your existing card unless you tick "improve my current card"</dd><dt>size</dt><dd>1.2 KB, shown below</dd><dt>may cost</dt><dd>tokens on your account with that provider</dd></dl>
+          <pre class="cmdbox">{"host":"mac","skills":[{"name":"review-diff","description":"Review a diff for…","harness":"Claude Code 2.x","scope":"user"}, … 2 more]}</pre>
+          <p><b>Y</b> send · <b>N</b> cancel. Nothing has been sent yet.</p>
+        </div></div></div>
+      <div role="tabpanel" id="fp3" aria-labelledby="f3"><div class="mock" role="group" aria-label="Mockup, draft arrives"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · draft</div>
+        <div class="screen">
+          <p class="hd">Draft received · 11 s · source: model · not yet your card</p>
+          <p>The draft is a suggestion in a working copy. It does not replace anything. Edit it, or go on to the diff. Fields you edited by hand earlier are kept, and the draft cannot overwrite them without your say.</p>
+          <p class="dim">The model returned text. It was parsed as a card; the endpoint, security and version fields in it were ignored because those are derived from the running daemon.</p>
+        </div></div></div>
+      <div role="tabpanel" id="fp4" aria-labelledby="f4"><div class="mock" role="group" aria-label="Mockup, diff"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · publish rev 8</div>
+        <div class="screen">
+          <p class="hd">Changes against published rev 7</p>
+          <pre class="cmdbox diff"><span class="d">  "name": "mac",</span>
+<span class="rm">- "description": "Ratatoskr host daemon on mac.",</span>
+<span class="ad">+ "description": "Ratatoskr host daemon on mac. Review and ADR drafting agents.",</span>
+<span class="d">  "skills": [</span>
+<span class="ad">+   {"id": "codex:user:summarize", "name": "summarize", …, "tags": ["codex","user","detected"]},</span>
+<span class="d">    … 2 unchanged</span>
+<span class="d">  ]</span></pre>
+          <p>✓ Valid · 1 source note: description came from the <b>model draft</b>, skills from <b>detection</b>, name from <b>you</b>.</p>
+          <p><b>P</b> publish rev 8 · Esc back</p>
+        </div></div></div>
+      <div role="tabpanel" id="fp5" aria-labelledby="f5"><div class="mock" role="group" aria-label="Mockup, published"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · published</div>
+        <div class="screen">
+          <p class="hd">Published rev 8 at 14:09 by window on mac</p>
+          <p>Served now, to anyone who can reach it. The gateway still shows rev 7 until its next scheduled poll (default proposed 60 s, not selected); the graph says "polled 14 s ago, rev 7" until then. <b>Before publishing, the editor checked the card for token-like strings, absolute paths and skill bodies and found none</b>, because the published card is public.</p>
+          <p class="dim">Revisions 1 to 8 are kept with who or what changed each field (you, detection, model draft) and when. <b>H</b> history · <b>B</b> roll back to rev 7 as rev 9.</p>
+        </div></div></div>
+    </div>
+  </div>
+
+  <div role="tabpanel" id="kp5" aria-labelledby="k5">
+    <h3>A remote host's card: read-only, with a way to the owner</h3>
+    <div class="mock" role="group" aria-label="Mockup, remote"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · vmb</div>
+      <p class="strip" aria-hidden="true"><span>Terminals</span><span>Network</span><span class="on">Graph</span></p>
+      <div class="screen">
+        <p class="hd">vmb · rev 5 · fetched by the gateway 12 s ago · <span class="rdonly">READ-ONLY HERE</span></p>
+        <p>The owner of this card is the daemon on vmb. <b>There is no edit key on this screen.</b> The gateway has no write route, and neither does your Mac.</p>
+        <dl class="kv"><dt>to change it</dt><dd>Open a session on vmb from the Network tab (Enter starts <code>ssh -t …</code> as ADR-0004 designs), then use vmb's own window, Graph tab, key <b>e</b>.</dd><dt>or</dt><dd>Run the same on the machine itself.</dd></dl>
+        <p class="dim">This is the SSH entry of ADR-0004 and stays separate. This design adds no new way to reach vmb.</p>
+      </div>
+    </div>
+  </div>
+
+  <div role="tabpanel" id="kp6" aria-labelledby="k6">
+    <h3>Scheduled polling: fresh, stale, offline and the failures</h3>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Poll states">
+        <button role="tab" id="p1" aria-controls="pp1">Fresh</button>
+        <button role="tab" id="p2" aria-controls="pp2">Stale</button>
+        <button role="tab" id="p3" aria-controls="pp3">Offline</button>
+        <button role="tab" id="p4" aria-controls="pp4">Failures</button>
+      </div>
+      <div role="tabpanel" id="pp1" aria-labelledby="p1"><div class="mock" role="group" aria-label="Mockup, fresh"><div class="mock-title"><span class="dots" aria-hidden="true"></span>Graph · polling</div><div class="screen">
+        <div class="grid head" aria-hidden="true"><span>HOST</span><span>LAST POLL</span><span>RESULT</span><span>CARD</span><span>NEXT</span></div>
+        <div class="grid"><span>vmb</span><span>12 s ago</span><span>200 changed</span><span>rev 5</span><span>in 48 s</span></div>
+        <div class="grid"><span>mac</span><span>20 s ago</span><span>304 unchanged</span><span>rev 7</span><span>in 40 s</span></div>
+        <p class="dim">A 200 means the endpoint answered at that time. A 304 confirms the endpoint is reachable and the card has not changed. Neither says a single session is active.</p></div></div></div>
+      <div role="tabpanel" id="pp2" aria-labelledby="p2"><div class="mock" role="group" aria-label="Mockup, stale"><div class="mock-title"><span class="dots" aria-hidden="true"></span>Graph · polling</div><div class="screen">
+        <div class="grid head" aria-hidden="true"><span>HOST</span><span>LAST GOOD</span><span>LAST TRY</span><span>CARD</span><span>NEXT</span></div>
+        <div class="grid stale"><span>vmc</span><span>4 min ago</span><span>timeout after 5 s</span><span>rev 3 (last good)</span><span>next on schedule</span></div>
+        <p>… <b>Stale:</b> no good poll for more than 2 intervals. The last good card stays visible, labelled with its age. A timeout means <b>the poll failed</b>. It does not prove the daemon process died, and it says nothing about the agents. The graph never infers idle or down.</p></div></div></div>
+      <div role="tabpanel" id="pp3" aria-labelledby="p3"><div class="mock" role="group" aria-label="Mockup, offline"><div class="mock-title"><span class="dots" aria-hidden="true"></span>Graph · polling</div><div class="screen bad">
+        <div class="grid head" aria-hidden="true"><span>HOST</span><span>LAST GOOD</span><span>LAST TRY</span><span>CARD</span><span>NEXT</span></div>
+        <div class="grid"><span>vme</span><span>3 h ago</span><span>connection refused</span><span>rev 2 (3 h old)</span><span>next on schedule</span></div>
+        <p>○ <b>Offline</b> after 15 minutes without a good poll (proposed, not selected). Kept, dimmed, with the age. Unpairing deletes it at once. The existing heartbeat and stream are what say whether the host is connected to the gateway; this view adds a second, separate signal.</p></div></div></div>
+      <div role="tabpanel" id="pp4" aria-labelledby="p4"><div class="mock" role="group" aria-label="Mockup, failures"><div class="mock-title"><span class="dots" aria-hidden="true"></span>Graph · polling errors</div><div class="screen bad">
+        <p>✗ <b>vmx:</b> the certificate does not match the fingerprint the owner pinned for this host. Polling for it stops and is reported, never retried silently. (Only if pinning is configured for that host.)</p>
+        <p>✗ <b>vmy:</b> it answered with a redirect to another address. Redirects are not followed. Polling continues at the old address and the redirect is reported.</p>
+        <p>✗ <b>vmz:</b> the card is larger than the 256 KiB cap. The poll is rejected, the last good card is kept, and nothing is stored from the oversized body.</p>
+        <p>✗ <b>vmw:</b> the card failed validation (<code>skills[0].id</code> missing). The last good card is kept and marked "newer card rejected, 2 min ago".</p>
+        <p>? <b>vmd:</b> 404. The host is paired but has published no card. This is shown as "no card", not as an error.</p></div></div></div>
+    </div>
+  </div>
+
+  <div role="tabpanel" id="kp7" aria-labelledby="k7">
+    <h3>What the gateway keeps in SQLite, and what a restart shows</h3>
+    <p class="prose">A view of the stored rows, plus the same Graph tab right after a gateway restart. Sample data. The table names are proposals, not a schema. <span class="tag t-arch">PROPOSAL</span></p>
+    <div data-tabs class="inner2">
+      <div role="tablist" aria-label="Storage views">
+        <button role="tab" id="q1" aria-controls="qp1">Rows</button>
+        <button role="tab" id="q2" aria-controls="qp2">Revisions and failed polls</button>
+        <button role="tab" id="q3" aria-controls="qp3">After a restart</button>
+      </div>
+      <div role="tabpanel" id="qp1" aria-labelledby="q1"><div class="mock" role="group" aria-label="Mockup, stored rows"><div class="mock-title"><span class="dots" aria-hidden="true"></span>gateway database · host_cards and the ledger</div><div class="screen">
+        <p class="hd">host_cards · one current row per paired host</p>
+        <div class="grid head" aria-hidden="true"><span>HOST</span><span>REV · ETAG</span><span>LAST OK</span><span>LAST TRY</span><span>RESULT</span></div>
+        <div class="grid"><span>mac</span><span>7 · a73f…</span><span>14:09:02</span><span>14:09:02</span><span>304</span></div>
+        <div class="grid"><span>vmb</span><span>5 · 5d20…</span><span>14:08:50</span><span>14:08:50</span><span>200</span></div>
+        <div class="grid stale"><span>vmc</span><span>3 · 0b6e…</span><span>14:05:11</span><span>14:09:00</span><span>timeout</span></div>
+        <div class="grid"><span>vmd</span><span>none</span><span>never</span><span>14:09:01</span><span>404</span></div>
+        <p class="hd">edges · computed from the message ledger, not stored twice</p>
+        <div class="grid head" aria-hidden="true"><span>FROM</span><span>TO</span><span>KIND</span><span>24 H · DECIDED / HOST_STORED</span><span>SOURCE</span></div>
+        <div class="grid"><span>mac</span><span>vmb</span><span>messages_seen</span><span>23 / 21</span><span>gateway ledger</span></div>
+        <div class="grid"><span>vmb</span><span>vma</span><span>messages_seen</span><span>3 / 3</span><span>gateway ledger</span></div>
+        <p class="dim">The nodes are not stored separately. A count means sends the gateway decided, including failed ones; <code>host_stored</code> is the subset that reached a host. No message bodies in the graph, no session text, no skill bodies.</p>
+      </div></div></div>
+      <div role="tabpanel" id="qp2" aria-labelledby="q2"><div class="mock" role="group" aria-label="Mockup, revisions"><div class="mock-title"><span class="dots" aria-hidden="true"></span>gateway database · card_revisions, poll_attempts</div><div class="screen">
+        <p class="hd">card_revisions · vmb · only when the card changed, newest 20 kept</p>
+        <div class="grid"><span>rev 5</span><span>fetched 14:02</span><span>etag 5d20…</span><span>4,812 bytes</span><span>valid</span></div>
+        <div class="grid"><span>rev 4</span><span>fetched 11:40</span><span>etag 2c91…</span><span>4,700 bytes</span><span>valid</span></div>
+        <p class="hd">poll_attempts · vmc · newest first, last 7 days or 1,000 rows</p>
+        <div class="grid stale"><span>14:09:00</span><span>timeout</span><span>5,000 ms</span><span>no card change</span><span>last good kept</span></div>
+        <div class="grid"><span>14:08:00</span><span>timeout</span><span>5,000 ms</span><span>no card change</span><span>last good kept</span></div>
+        <div class="grid"><span>14:05:11</span><span>200</span><span>84 ms</span><span>rev 3</span><span>valid</span></div>
+        <p class="dim">A rejected card is recorded as a failed poll with the reason. It never replaces the last good revision.</p>
+      </div></div></div>
+      <div role="tabpanel" id="qp3" aria-labelledby="q3"><div class="mock" role="group" aria-label="Mockup, after restart"><div class="mock-title"><span class="dots" aria-hidden="true"></span>rtk attach · mac · Graph · gateway just restarted</div>
+        <p class="strip" aria-hidden="true"><span>Terminals</span><span>Network</span><span class="on">Graph</span></p>
+        <div class="screen">
+          <p class="hd">Graph · gateway on vma restarted 8 s ago · showing the stored graph</p>
+          <p>? Every host reads <b>"from the database, not yet polled"</b> with the time the row was last confirmed: mac 14:09:02, vmb 14:08:50, vmc 14:05:11 (last good).</p>
+          <p>The first scheduled poll runs within one interval, and each host changes to fresh, stale or offline <b>only from that poll</b>. Nothing is shown as live from a row alone.</p>
+          <p class="dim">A stored row is a record of what the gateway saw, not proof that anything is up now. The heartbeat and stream remain what say whether a host is connected.</p>
+        </div></div></div>
+    </div>
+  </div>
+</div>
+
+<h2 id="a2a">3. What the card is, and what it is not</h2>
+<h3>It is a host's aggregate service card, not a session card</h3>
+<p class="prose">One card per daemon. The node in the graph is the host, so the card says what the host's Ratatoskr service offers. It does not describe one session, and a session does not get a card. <span class="tag t-user">USER</span> node = host. Session detail stays in the Network tab.</p>
+
+<h3>Publishing a card is not implementing A2A</h3>
+<p class="prose">The spec's operations table lists, among others, <code>SendMessage</code>, <code>SendStreamingMessage</code>, <code>GetTask</code>, <code>ListTasks</code>, <code>CancelTask</code> and <code>SubscribeToTask</code>, and says all implementations must support them independent of binding. <span class="tag t-doc">SPEC</span> Section 3.1, 5.3. The spec does not define "complete implementation" as a phrase; the list above is its closest statement. Ratatoskr has none of these operations: it has its own gateway wire protocol (version 2) for messages. So:</p>
+<ul class="prose">
+  <li><b>No fake endpoint.</b> The card lists only an interface that is really listening. It does not point at a SendMessage URL that does not exist.</li>
+  <li><b>An honest custom binding.</b> <code>protocolBinding</code> is an "open form" string whose core values are <code>JSONRPC</code>, <code>GRPC</code> and <code>HTTP+JSON</code>. <span class="tag t-doc">SPEC</span> 4.4.6. <b>As built:</b> <code>RATATOSKR-CARD</code> with <code>protocolVersion</code> <code>1</code>, and the interface's <code>url</code> is <b>the card's own URL</b>, the one thing that really exists. It means "discovery metadata only; no task operations". (The first draft showed <code>RATATOSKR-GATEWAY</code> and a <code>/ratatoskr/v1</code> URL; that advertised an endpoint the daemon does not have and was dropped.) <span class="tag t-unv">UNVERIFIED</span> How third-party A2A clients treat an unknown binding; they may ignore the interface, which is the intent.</li>
+  <li><b>The card is public and read-only.</b> <span class="tag t-user">USER</span> It answers GET at the canonical path without authentication. Any party that can reach the address can read it, so it is written as a public document (below). <span class="tag t-doc">SPEC</span> 8.1 says a server MUST make an Agent Card available, which a public card satisfies; it still does not make the host an A2A server.</li>
+  <li><b>Capabilities say false.</b> <code>streaming</code>, <code>pushNotifications</code> and <code>extendedAgentCard</code> are <code>false</code>, because none exists.</li>
+  <li><b>Future A2A service.</b> A real A2A server (SendMessage and the rest, mapped onto the existing message ledger) is a separate ADR. It would add a <code>JSONRPC</code> or <code>HTTP+JSON</code> interface to the same card. This design leaves room for it and does not authorize it.</li>
+  <li><b>It does not replace the current transport.</b> MCP, hooks, gates, pairing, TLS pinning and the gateway's message routes are untouched. <span class="tag t-user">USER</span> / existing constraints.</li>
+</ul>
+
+<h3>The card fields we would publish</h3>
+<p class="prose">From the spec's AgentCard table (4.4.1), with required marks as the page gave them. <span class="tag t-doc">SPEC</span></p>
+<div class="table-wrap"><table>
+  <tr><th>Field</th><th>Req.</th><th>Source in this design</th><th>State</th></tr>
+  <tr><td><code>name</code></td><td>Yes</td><td>The host name the gateway lists (from pairing), editable label</td><td>owner-written</td></tr>
+  <tr><td><code>description</code></td><td>Yes</td><td>Owner text, or an explicitly accepted draft</td><td>owner or draft</td></tr>
+  <tr><td><code>supportedInterfaces</code></td><td>Yes</td><td><b>Derived</b>: the card's own URL, binding <code>RATATOSKR-CARD</code>, version <code>1</code>. Not editable.</td><td>discovered at run time</td></tr>
+  <tr><td><code>version</code></td><td>Yes</td><td>The published revision number, as a string</td><td>set on publish</td></tr>
+  <tr><td><code>capabilities</code></td><td>Yes</td><td>Honest booleans (all false today) plus one extension, <code>urn:ratatoskr:host-card:v1</code>, carrying evidence per skill</td><td>derived plus extension</td></tr>
+  <tr><td><code>defaultInputModes</code>, <code>defaultOutputModes</code></td><td>Yes</td><td><code>text/plain</code></td><td>fixed</td></tr>
+  <tr><td><code>skills</code></td><td>Yes</td><td>Owner-declared entries chosen from detected candidates (section 7)</td><td>owner-declared</td></tr>
+  <tr><td><code>securitySchemes</code>, <code>securityRequirements</code></td><td>No</td><td><b>Not emitted.</b> Their shapes were not verified against the A2A source, so they are left out rather than guessed. Nothing in the card grants or describes access.</td><td>absent</td></tr>
+  <tr><td><code>provider</code>, <code>documentationUrl</code>, <code>iconUrl</code>, <code>signatures</code></td><td>No</td><td>Not used at first. Signing is possible later; the TLS pin covers the channel.</td><td>absent</td></tr>
+</table></div>
+<p class="prose">Per-skill provenance has no home in <code>AgentSkill</code> (its fields are <code>id</code>, <code>name</code>, <code>description</code>, <code>tags</code>, <code>examples</code>, modes and <code>securityRequirements</code>), so it lives in the extension's <code>params</code>, keyed by skill id. <span class="tag t-arch">PROPOSAL</span> The shapes of <code>SecurityScheme</code> and <code>SecurityRequirement</code> were not read in full; the Raw JSON in the mockups shows them only as an illustration. <span class="tag t-unv">UNVERIFIED</span></p>
+
+<h3>A public card must contain no secrets</h3>
+<p class="prose">Because anyone with network reachability can read the card, the daemon builds it from an allow-list and refuses to publish anything else. <span class="tag t-arch">PROPOSAL</span></p>
+<ul class="prose">
+  <li><b>Never in the card:</b> tokens, keys, pairing credentials, poll or session secrets, full skill bodies, absolute file paths or usernames, environment values, session text, prompts, working directories, or the contents of any config file.</li>
+  <li><b>In the card, deliberately public:</b> host name, a description the owner wrote, skill names and the short descriptions the owner chose to declare, harness names and versions, the interface URL. The owner sees this list in the editor and a "this card is public" notice before publishing.</li>
+  <li><b>A best-effort check at publish time</b> looks for token-like strings, path-like strings and oversized skill text and blocks the publish with a readable reason. It is a safety net, not a guarantee; the allow-list is the real control.</li>
+  <li><b>Honest cost.</b> A public card reveals which hosts run Ratatoskr, what they call themselves and which skills they declare, to anyone who can reach the port. That is reconnaissance value on a shared network. The listener is therefore off until the owner turns it on, and it should be bound to an address the owner picked.</li>
+</ul>
+
+<h3>Four different things that all get called a "skill"</h3>
+<div class="table-wrap"><table>
+  <tr><th>Thing</th><th>What it proves</th><th>What it does not prove</th></tr>
+  <tr><td>A <b>SKILL.md</b> found on disk</td><td>A file with that name existed at a scan time, in a scope, with a content hash</td><td>That any session loads it, that it works, or that anyone approved it</td></tr>
+  <tr><td>An A2A <b>skill</b> in the card</td><td>The owner declared this capability to others</td><td>That a SKILL.md exists, or that the capability works</td></tr>
+  <tr><td>An enforced <b>permission</b></td><td>(Nothing here. The card grants no permission.)</td><td>The card is information, not a gate. Hooks and gates are unchanged.</td></tr>
+  <tr><td>A verified <b>ability</b></td><td>(Nothing here. No test or probe is run by this feature.)</td><td>Nothing in the graph says an agent can do it</td></tr>
+</table></div>
+<p class="prose">The Graph UI uses these four words separately and never merges them: "found", "declared", "allowed", "verified". Only the first two exist in this design.</p>
+
+<h2 id="today">4. What exists today</h2>
+<div class="two">
+  <div class="card does"><h3>It can</h3><ul>
+    <li>Pair a host with the gateway and authenticate it with a credential. Every daemon dials the gateway; the gateway never dials a daemon. <span class="tag t-code">CODE</span> ADR-0002 and the network contract.</li>
+    <li>Hold each host's network report in memory with a revision, long-polled by <code>GET /v1/network</code>, and drop it on unpair. Reports are not in the database; cards will be. <span class="tag t-code">CODE</span> <a href="../../implementation/network-api-contract.md">network contract</a> (committed 2f65bf0).</li>
+    <li>Route messages between paired hosts through the gateway.</li>
+  </ul></div>
+  <div class="card doesnt"><h3>It can't</h3><ul>
+    <li><b>Listen on a network.</b> A daemon serves a local Unix socket only. <span class="tag t-code">CODE</span> the ADR-0004 section "what exists today".</li>
+    <li>Be reached by the gateway. Reachability today runs outward only; a host behind NAT works because it dials out.</li>
+    <li>Detect or list skills, or store a card. No such code exists.</li>
+    <li>Say which host messaged which, beyond routing each message. Whether the gateway keeps a per-pair count is <span class="tag t-unv">UNVERIFIED</span>.</li>
+  </ul></div>
+</div>
+<p class="prose">Same-user limit, unchanged: agents run as the owner's OS user, so any of them can read credential files or call the daemon socket. This design does not claim to isolate them. <span class="tag t-code">CODE</span> contract, "Honest limit".</p>
+
+<h2 id="polling">5. Scheduled polling, liveness and storage</h2>
+<p class="prose">Polling reverses the direction of every connection in the system. Today hosts dial out. With polling, <b>the gateway dials in</b>, on a schedule. That is a new network listener on every polled daemon, with its own address, TLS and firewall story, and none of it exists today. <span class="tag t-user">USER</span> chose a preset schedule because the gateway needs to check that a daemon is alive anyway.</p>
+<div class="table-wrap"><table>
+  <tr><th>Question</th><th>Answer</th></tr>
+  <tr><td>Who decides to poll?</td><td><span class="tag t-user">USER</span> The gateway, on a preset schedule, for every paired host that has the card listener enabled. Not only while a Graph tab is open.</td></tr>
+  <tr><td>What interval?</td><td><span class="tag t-arch">PROPOSAL</span> Default <b>60 seconds</b>, <b>not selected by the user</b>. Configurable on the gateway, bounded to between 10 seconds and 1 hour. The user has not given a number, so this is a starting point to confirm.</td></tr>
+  <tr><td>Overlap, jitter, deadlines?</td><td><span class="tag t-arch">PROPOSAL</span> At most one poll in flight per host (no overlap). Start times jittered by up to 10 percent so hosts are not all hit together. Connect deadline 3 s and total deadline 5 s. A body above 256 KiB is rejected. <span class="tag t-unv">UNVERIFIED</span> These numbers have never been tried.</td></tr>
+  <tr><td>Failure handling?</td><td><span class="tag t-arch">PROPOSAL</span> A failed poll is recorded and the schedule continues at the same interval, because a regular liveness check is the point. Hammering is prevented by the interval floor and no-overlap rule, not by exponential backoff. <span class="tag t-unv">OPEN</span> Whether a long-dead host should drop to a slower schedule.</td></tr>
+  <tr><td>Redirects?</td><td>None are followed. A 3xx is a failed poll that is reported.</td></tr>
+  <tr><td>Who listens?</td><td>The daemon, only when the owner turns the card listener on. It serves GET on the canonical path (and the optional alias) and nothing else: no sessions, no control, no writes. <span class="tag t-arch">PROPOSAL</span> Off by default.</td></tr>
+  <tr><td>Authentication?</td><td><span class="tag t-user">USER</span> <b>None.</b> The card endpoint is unauthenticated and read-only. The first draft's separate secret poll key is withdrawn, so polling needs no secret and there is no credential to rotate or leak.</td></tr>
+  <tr><td>Which address is polled?</td><td><span class="tag t-arch">PROPOSAL</span> Only an address the owner entered on the gateway side for that paired host. It is never read from a card, a message, a skill or the host's own report, so a host cannot make the gateway poll somewhere new by editing its card. Only paired hosts are polled; there are no arbitrary URLs.</td></tr>
+  <tr><td>SSRF and reachability policy?</td><td><span class="tag t-arch">PROPOSAL</span> The stored address is checked when entered: the resolved IP must be in a range the owner allowed for that host (LAN, tailnet or an explicit address). Loopback, link-local and cloud-metadata addresses are refused unless that exact host is set so. The gateway sends no credential to it.</td></tr>
+  <tr><td>Transport security?</td><td><span class="tag t-arch">PROPOSAL</span> HTTPS with an owner-controlled certificate fingerprint pinned for that host, as the recommendation. <span class="tag t-doc">SPEC</span> A2A says an interface URL must be absolute HTTPS in production (4.4.6) and production traffic must be encrypted (7.1). Because the card is public, the confidentiality of the body matters less than its <b>integrity</b>: without TLS a network attacker could alter the card on the way to the gateway. <span class="tag t-unv">OPEN</span> Whether plain HTTP is allowed on a trusted LAN. <b>No tailnet HTTPS support exists today and none is claimed.</b></td></tr>
+  <tr><td>Cache and revalidation?</td><td>Conditional requests with <code>If-None-Match</code> and the card's ETag, a hash of the canonical card. <span class="tag t-doc">SPEC</span> 8.6: servers SHOULD send ETag, clients SHOULD use conditional requests.</td></tr>
+  <tr><td>Revocation?</td><td>Unpair removes the host's card, revisions and edges from the database in the same transaction. A changed certificate stops polling for that host and is reported, never retried silently.</td></tr>
+</table></div>
+
+<h3>Four kinds of evidence, kept apart</h3>
+<p class="prose">The user's reason for polling is liveness, so the page is exact about what each poll result proves. <span class="tag t-user">USER</span> / standing rule: never infer idle or alive from the wrong thing.</p>
+<div class="table-wrap"><table>
+  <tr><th>What the gateway saw</th><th>What it shows</th><th>What it does not show</th></tr>
+  <tr><td><b>200 with a valid card</b></td><td>The card endpoint answered at that time, and the card is that content</td><td>That the daemon is healthy beyond answering, or that any session is active</td></tr>
+  <tr><td><b>304 Not Modified</b></td><td>The endpoint is reachable and the card has not changed</td><td>Anything about sessions; it also refreshes no card content</td></tr>
+  <tr><td><b>Timeout, refusal, 4xx/5xx, redirect, invalid card</b></td><td>That poll failed, with the reason</td><td>That the daemon process died. A sleeping laptop, a closed port, a firewall or a route can all look the same.</td></tr>
+  <tr><td><b>Endpoint alive</b></td><td>The listener is up</td><td>That harness sessions are running, busy or idle. Session state stays in the existing report and the Network tab.</td></tr>
+</table></div>
+
+<h3>The existing heartbeat and stream stay authoritative</h3>
+<p class="prose">The user's rationale does not delete or replace any health mechanism. Today the gateway counts a host live while its stream is open and its heartbeat is under 15 seconds old. <span class="tag t-code">CODE</span> <code>internal/gateway/liveness.go</code> as cited in ADR-0004. That mechanism is <b>unchanged</b> and remains what says whether a host is connected. The scheduled poll adds a second signal about the card endpoint. The Graph tab shows the two separately; where they disagree (stream alive, card endpoint down, for example) it says so rather than picking one. Replacing the heartbeat with polling would need its own reviewed design. <span class="tag t-unv">OPEN</span> Whether poll results should ever feed the "live" flag; this ADR does not propose it.</p>
+
+<h3>Gateway database: what is stored</h3>
+<p class="prose"><span class="tag t-user">USER</span> The consolidated graph and each host's card are stored in the gateway's SQLite database. This <b>replaces</b> the first draft's in-memory cache and its "no migration" position. <b>A new schema migration is required.</b> The earlier network report stays in memory and is not stored. Names below are proposals, not a schema. <span class="tag t-arch">PROPOSAL</span></p>
+<div class="table-wrap"><table>
+  <tr><th>Proposed table</th><th>One row per</th><th>Holds</th><th>Retention</th></tr>
+  <tr><td><code>host_cards</code></td><td>paired host</td><td>The last good card (JSON text), revision, ETag, content hash, <code>last_ok_at</code>, <code>last_attempt_at</code>, last result and a short error. The current projection.</td><td>Deleted with the host on unpair</td></tr>
+  <tr><td><code>card_revisions</code></td><td>changed card</td><td>Older good cards, the revision number, ETag, hash, fetched time, size</td><td>Newest 20 per host (proposed)</td></tr>
+  <tr><td><code>poll_attempts</code></td><td>poll</td><td>Time, outcome (200, 304, timeout, refused, redirect, invalid, oversize, certificate), status, duration, and a short reason</td><td>7 days or 1,000 rows per host, whichever is smaller (proposed)</td></tr>
+  <tr><td><i>no edges table</i></td><td>host pair</td><td>Edges are a query over the existing <code>messages</code> table: one rolling 24-hour count per ordered host pair, <code>count</code> (sends the gateway decided, failed ones included) and <code>host_stored</code> (the subset that reached a host). Durable because the ledger is.</td><td>The ledger has no retention code today</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Never stored:</b> message bodies, session text, skill bodies, environment, credentials. Only what the public card already contains, plus metadata about polling.</li>
+  <li><b>Integrity.</b> A card is validated and size-checked before it is written. An invalid or oversized card is recorded as a failed poll and <b>never replaces</b> the last good row. Updates of the current row and the new revision go in one transaction. Rows reference the paired host and are removed with it. Total size is bounded by the caps above.</li>
+  <li><b>Migration.</b> New tables are additive, but a gateway that has run the migration cannot be opened by an older gateway build. Downgrade is not supported by this design. ADR-0004 and the first draft of this ADR said "no DB change". That does not carry over to this feature. <span class="tag t-unv">OPEN</span> Which schema number, and how a failed migration is reported, are for the backend to propose.</li>
+  <li><b>Backup and privacy.</b> The database already holds pairing data. Card rows are public information, but the file also holds credentials, so it stays as protected as before. <span class="tag t-unv">OPEN</span> Whether graph-edge counts are sensitive enough to prune sooner.</li>
+  <li><b>Not live proof.</b> After a restart, the Graph tab shows the stored projection labelled "from the database, not yet polled". A host becomes fresh only from a new poll. Stored rows say what the gateway last saw, never that anything is up now (mockup 7).</li>
+  <li><b>Edges come from the ledger.</b> As built there is no edges table. Counts assume the ledger's <code>created_at</code> follows its sequence, so a clock set backwards can undercount.</li>
+</ul>
+
+<h3>Poll, push or relay</h3>
+<p class="prose"><span class="tag t-user">USER</span> chose polling and the reason holds: a push that stops is silent, while a missed scheduled poll is itself a signal. The comparison stays so the cost is visible.</p>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Poll (chosen)</th><th>Push over the existing link</th><th>Relay through the gateway</th></tr>
+  <tr><td>New listener on each host</td><td><b>Yes</b></td><td>No</td><td>No</td></tr>
+  <tr><td>Works behind NAT</td><td>No, needs LAN or tailnet reach</td><td>Yes</td><td>Yes</td></tr>
+  <tr><td>Direction</td><td>Gateway to host (new)</td><td>Host to gateway (as today)</td><td>Both over the existing link</td></tr>
+  <tr><td>Generic A2A discovery</td><td>Yes, the card is public</td><td>No URL to fetch</td><td>No URL to fetch</td></tr>
+  <tr><td>A missing signal</td><td>Visible: a poll fails</td><td>Silent unless a timer is added</td><td>Silent unless a timer is added</td></tr>
+</table></div>
+<p class="prose"><b>Consequence to accept:</b> a host that has the listener on but cannot be reached from the gateway shows as stale or offline for the card even while its stream is connected. The card format does not depend on how it is delivered, so a later push variant would not change cards. <span class="tag t-arch">PROPOSAL</span></p>
+
+<h2 id="editing">6. Who may edit, and the honest limit</h2>
+<ol class="prose">
+  <li><b>One owner per card.</b> The card is a file on the host plus its revisions, written only by the daemon on that host, on request from a window on that host over the local socket. <span class="tag t-user">USER</span></li>
+  <li><b>No remote write path.</b> The gateway has no route to change a card; the polling listener serves GET only; a window attached remotely does not edit. Reading is the only thing that crosses the network.</li>
+  <li><b>To edit a remote card</b>, you go to that host the way you already would: SSH from the Network tab (ADR-0004), then its window. This design adds no other way in.</li>
+  <li><b>Honest limit.</b> The editing request travels over the same local socket every same-user process can reach, and the "not a descendant of an agent" check is best effort. <span class="tag t-code">CODE</span> An agent running as the owner could edit the card. What the design does: every revision records who made it (window, or a socket client), the field and the time; the diff is shown before publish; the previous revision can be restored. It does not claim the card is tamper-proof against same-user agents.</li>
+  <li><b>Trust of what you read.</b> The gateway and other hosts treat a polled card as untrusted text. It is escaped for display, bounded, and its skills never become permissions or instructions to another agent.</li>
+</ol>
+
+<h2 id="skills">7. Skills, evidence, and draft generation</h2>
+<h3>Detecting skills</h3>
+<p class="prose">The daemon scans known locations on its own host only. agent-net's research table lists Claude Code user skills at <code>~/.claude/skills/&lt;name&gt;/SKILL.md</code> and project skills at <code>.claude/skills</code>, and Codex at <code>~/.agents/skills</code> and <code>$CODEX_HOME/skills</code> with project <code>.agents/skills</code>. <span class="tag t-code">CODE</span> <span class="src ext">agent-net docs/decisions/0027-skills-and-mcp-management.md, "Research: native sources"</span>. It says those were checked against particular versions (Claude Code 2.1.314, Codex 0.163.0) on 2026-10-30 and warns not to infer another release's behaviour. <span class="tag t-unv">UNVERIFIED</span> Nothing in this ADR confirms what the Claude and Codex versions on any Ratatoskr host actually load. That needs a scan on the real hosts, which is a future run, not done here.</p>
+<div class="table-wrap"><table>
+  <tr><th>Evidence kept per detected skill</th><th>Why</th></tr>
+  <tr><td>harness name and version (from the harness itself, run by the daemon at scan time)</td><td>Discovery rules differ by release</td></tr>
+  <tr><td>scope: user, project or plugin, and the project's name if any</td><td>A project skill works only in that project</td></tr>
+  <tr><td>source kind and a relative label, not a path with a username</td><td>Provenance without leaking the account name</td></tr>
+  <tr><td>content hash of <code>SKILL.md</code> only</td><td>Tell variants apart; equal hash means equal bytes, nothing more</td></tr>
+  <tr><td>scan time and any "could not read" notes</td><td>An incomplete scan is shown as incomplete</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Never executed.</b> Detection reads files. It does not run a skill or a server.</li>
+  <li><b>Host inventory versus project inventory.</b> The host card lists user-scope skills. Project-scope skills are listed in the editor but are not declared host-wide by default. The card never says that every detected skill is usable in every session.</li>
+  <li><b>Plugin, managed and unreadable sources</b> are shown read-only with an "incomplete scan" note rather than hidden.</li>
+</ul>
+
+<h3>Generating a draft with a model (designed, not built)</h3>
+<ul class="prose">
+  <li><b>Explicit.</b> A key press, then a confirmation screen naming the provider and model and showing the exact payload and its size (mockup 4, step 2). No default provider. No call on scan, on open, on a timer or in the background.</li>
+  <li><b>What is sent:</b> host name, skill names and front-matter descriptions, harness names and versions, scope words. <b>Not sent by default:</b> skill bodies, paths, usernames, environment, credentials, session text, or the current card. Sending the current card (to "improve" it) is a separate tick.</li>
+  <li><b>What comes back is a suggestion.</b> It is parsed, schema-checked, and shown as a diff. Endpoint, security and version fields in a draft are ignored because they are derived. A draft never overwrites a field the owner edited by hand unless they choose it in the diff.</li>
+  <li><b>Records.</b> Each revision keeps its source per field: you, detection, or model draft (provider, model, time). The prompt and the reply are not kept unless the owner asks.</li>
+  <li><b>Failure.</b> A model error, an invalid draft or no answer leaves the published card untouched, with a plain message. The last good card keeps being served.</li>
+  <li><b>Cost and consent.</b> A call may cost money on the owner's account; the screen says so. <span class="tag t-unv">OPEN</span> Which provider is offered: the installed Claude Code or Codex in headless mode, or a configured API. Running either is a future decision and was not tried here.</li>
+</ul>
+
+<h3 id="drafting-design">Drafting as it stands, and a minimal design that needs your choice</h3>
+<p class="prose"><b>Today:</b> drafting is <b>unimplemented</b>. A fixed "not configured" status, a source label and an editor screen exist; nothing can call a model or turn an answer into a draft. Manual editing is complete without it. <span class="tag t-code">CODE</span> <code>internal/daemon/cardsvc.go</code>, <code>internal/tui/card_editor.go</code>.</p>
+<p class="prose"><b>Proposed minimal design</b> <span class="tag t-arch">PROPOSAL</span>, not built, no provider chosen: a small <b>drafter adapter</b> and a <b>command adapter</b> as the one built-in, so the daemon never needs to know a vendor.</p>
+<ul class="prose">
+  <li><b>Configuration</b> is an owner-edited file in the daemon's card directory (mode 0600), absent means "not configured": a display <code>provider</code> and <code>model</code> label (for the confirmation screen only) and an <code>argv</code> list. No shell, no API key in the file.</li>
+  <li><b>The command contract:</b> the daemon writes the payload to the command's stdin and reads one JSON object from stdout. It runs in an empty temporary directory with a minimal environment (only variables the file names), a 120 s limit and a 64 KiB output cap. The payload is host name, skill names, owner-visible descriptions, harness versions and scope words, never skill bodies, paths, usernames, environment or the current card unless ticked.</li>
+  <li><b>Flow:</b> key, confirmation screen (resolved binary, provider and model labels, the exact payload and size, a cost warning), explicit yes, run, parse, validate, diff, per-field attribution as <code>model-draft</code>, nothing published until you publish. Errors keep the published card.</li>
+  <li><b>What this avoids:</b> choosing a vendor or a paid model for you, storing a key, and running a harness that would load your own skills, hooks and MCP servers. A recipe for a specific provider can be added later as a documented command line.</li>
+</ul>
+<table><tr><th>Your choice</th><th>What it means</th></tr>
+<tr><td><b>A. Command adapter only</b> (recommended)</td><td>You supply the command. Ratatoskr chooses no provider or model. Works with any CLI or a local model.</td></tr>
+<tr><td>B. A built-in call to an installed harness (<code>claude -p</code> or <code>codex exec</code>)</td><td>Uses your existing login and quota. The headless flags that keep it from loading your skills, hooks and tools were <b>not verified</b>; I would not build this until they are.</td></tr>
+<tr><td>C. A built-in direct API call</td><td>Needs you to name the provider and model, pays per token, and needs a key read from an environment variable you name.</td></tr>
+<tr><td>D. None for now</td><td>Drafting stays "not configured".</td></tr></table>
+
+<h2 id="edges">8. What an edge means</h2>
+<p class="prose">Hosts as nodes do not determine edges. agent-net's graph has <b>repository and service nodes with charters</b>, and edges the owner sets: <i>depends</i>, <i>governs</i> (with advisor, arbiter or owner mode) and <i>deploys</i>. <span class="tag t-code">CODE</span> <span class="src ext">agent-net docs/decisions/0022-component-graph-and-cto.md</span> and <span class="src ext">internal/protocol/graph.go</span>. Those edges say how work and authority flow between projects, and an owner edits them through a CTO agent. The requested graph is different: nodes are machines. Copying agent-net's edge kinds onto hosts would be wrong, since a host has no "depends" relationship to another host.</p>
+<div class="table-wrap"><table>
+  <tr><th>agent-net</th><th>This design</th></tr>
+  <tr><td>Node = repository, service or architect, with a charter</td><td>Node = host, with an Agent Card</td></tr>
+  <tr><td>Edges are declared by the owner (depends, governs, deploys)</td><td>Edges are <b>observed</b> or <b>structural</b>, not declared</td></tr>
+  <tr><td>Edits go through a CTO agent in the TUI</td><td>Card edits are made by the owner, on the host, in the window</td></tr>
+</table></div>
+<p class="prose"><b>Proposal for the first edges.</b> <span class="tag t-arch">PROPOSAL</span> Two layers, both with a visible legend, and nothing inferred:</p>
+<ol class="prose">
+  <li><b>Messages seen.</b> A directed line from host A to host B means: in the last 24 hours the gateway routed at least one message from an agent on A to an agent on B. Width or label shows the count; faint means none in the last hour. Source: the gateway's routing. <span class="tag t-unv">UNVERIFIED</span> The gateway may not keep per-pair counts today; if not, a small in-memory counter is new work.</li>
+  <li><b>Gateway polling.</b> A spoke from the gateway's host to each paired host, coloured by the last poll result. It means "the gateway can or cannot read that card". It is not a relationship between two hosts.</li>
+</ol>
+<p class="prose">Not drawn: edges inferred from skill overlap, naming, charters or card text. Not claimed: that a line means trust, permission or that anything is up. Each layer can be switched off. Filters: freshness (all, fresh only, hide stale and offline). Every node and line states its source and age in its detail. No idle inference: the only state a node shows is the card's freshness. <span class="tag t-user">USER</span> the standing rule: never infer idle from unknown.</p>
+<p class="prose"><span class="tag t-unv">OPEN</span> Whether the owner should be able to declare edges later (an agent-net-style "depends"). Not proposed now.</p>
+
+<h2 id="tab">9. The Graph tab</h2>
+<ul class="prose">
+  <li><b>A third block, always present.</b> <code> Graph </code> after Network, same style, click first. <span class="tag t-user">USER</span> tabs persistent and clickable. The Terminals and Network tabs stay two categories of content; Graph is the third. <span class="tag t-arch">PROPOSAL</span> F7 as an optional shortcut.</li>
+  <li><b>Consumes gateway data</b> the way the Network tab does (a long poll on a gateway route). <span class="tag t-arch">PROPOSAL</span> a read route, something like <code>GET /v1/graph</code> returning hosts, per-host card summaries with ETag and age, and edges with counts. The window never polls a daemon itself; only the gateway does.</li>
+  <li><b>Layout.</b> With up to about 12 hosts, positions are fixed from a stable order, not animated, so nothing jitters. Above that the tab falls back to a list. Narrow terminals use the list too.</li>
+  <li><b>Mouse.</b> Click a block to switch; click a host box to select it; the hit box is the whole box, like the tab blocks. <span class="tag t-unv">UNVERIFIED</span> On real terminals.</li>
+  <li><b>Keyboard.</b> Tab cycles hosts, arrows move to the nearest host in that direction, Enter selects, r raw JSON, e edit (shown only on the host that owns the card), c copy URL, Esc clears or leaves.</li>
+  <li><b>Zero-session mode.</b> A window with no sessions still opens on Network. Graph works there too.</li>
+  <li><b>Copy URL.</b> Terminals may not allow clipboard writes. The URL is always shown selectable and copy is a convenience. <span class="tag t-unv">UNVERIFIED</span></li>
+</ul>
+
+<h2 id="scenarios">10. Scenarios and data flow</h2>
+<p class="prose">Four scenarios as steps. The diagram lights the parts involved.</p>
+<div class="topo five" id="mapg">
+  <div class="host"><p class="host-l">Your Mac</p>
+    <div class="node" data-k="win">rtk window<small>Terminals, Network, Graph</small></div>
+    <div class="node" data-k="md">rtk daemon<small>owns the Mac card</small></div>
+    <div class="node" data-k="card">card store<small>working copy and revisions</small></div>
+    <div class="node" data-k="llm">your chosen model<small>only when you press D</small></div></div>
+  <div class="mid"><div class="wire rev" data-k="poll1">poll (new)</div><div class="wire" data-k="up">reports, heartbeat, messages</div><p class="mid-l">gateway dials in on a schedule to read the public card; the daemon still dials out for everything else</p></div>
+  <div class="host hub"><p class="host-l">Ubuntu VM: gateway</p><div class="node" data-k="gw">Poller and graph builder<small>cards and graph in SQLite</small></div></div>
+  <div class="mid"><div class="wire rev" data-k="poll2">poll (new)</div><p class="mid-l">owner-set address, scheduled, no redirects</p></div>
+  <div class="host"><p class="host-l">Ubuntu VM-B</p>
+    <div class="node" data-k="vd">rtk daemon<small>owns the VM-B card</small></div>
+    <div class="node" data-k="vc">card listener<small>GET only</small></div></div>
+</div>
+
+<div data-tabs>
+  <div role="tablist" aria-label="Scenarios">
+    <button role="tab" id="n1" aria-controls="np1">A. Write the first card</button>
+    <button role="tab" id="n2" aria-controls="np2">B. Gateway builds the graph</button>
+    <button role="tab" id="n3" aria-controls="np3">C. A host goes quiet</button>
+    <button role="tab" id="n4" aria-controls="np4">D. Edit a remote host</button>
+    <button role="tab" id="n5" aria-controls="np5">E. Gateway restarts</button>
+  </div>
+  <div role="tabpanel" id="np1" aria-labelledby="n1">
+    <div data-stepper data-map="mapg"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win,md"><button class="step-h">You open the editor on your Mac</button><div class="step-d"><p>The window asks its own daemon over the local socket. A scan finds skills; nothing is executed.</p></div></li>
+      <li data-lit="md,llm"><button class="step-h">Optionally you ask for a draft</button><div class="step-d"><p>A confirmation shows provider, model and the exact payload. Nothing leaves the host until you confirm.</p></div></li>
+      <li data-lit="win,card"><button class="step-h">You review the diff and validate</button><div class="step-d"><p>The draft is a working copy. Errors are readable and the published card is untouched.</p></div></li>
+      <li data-lit="card,md"><button class="step-h">You publish revision 1</button><div class="step-d"><p>The daemon writes the revision with who or what made each field, then serves it at the next poll.</p></div></li>
+    </ol></div>
+  </div>
+  <div role="tabpanel" id="np2" aria-labelledby="n2">
+    <div data-stepper data-map="mapg"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="gw,poll1,md"><button class="step-h">The scheduled poll reaches the Mac</button><div class="step-d"><p>A conditional GET, no credential, to the address the owner set for this host. A 200 shows the endpoint answered; a 304 shows it answered and nothing changed.</p></div></li>
+      <li data-lit="gw,poll2,vc"><button class="step-h">And VM-B</button><div class="step-d"><p>Same, to VM-B's own stored address. Each host is polled independently.</p></div></li>
+      <li data-lit="gw"><button class="step-h">The gateway validates and stores</button><div class="step-d"><p>An invalid card is rejected and the last good row kept. The card, the poll attempt and the edge counts are written to SQLite in one transaction.</p></div></li>
+      <li data-lit="gw,win,up"><button class="step-h">Your Graph tab updates</button><div class="step-d"><p>The window reads the graph from the gateway, as the Network tab reads its data.</p></div></li>
+    </ol></div>
+  </div>
+  <div role="tabpanel" id="np3" aria-labelledby="n3">
+    <div data-stepper data-map="mapg"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="gw,poll2"><button class="step-h">VM-B stops answering</button><div class="step-d"><p>The laptop sleeps or the port is closed. Polls time out after 5 s and back off.</p></div></li>
+      <li data-lit="gw"><button class="step-h">After 2 intervals it is stale</button><div class="step-d"><p>The last good card stays, labelled with its age. Each missed poll is recorded. The node is marked stale, not idle or down, and the stream and heartbeat still say separately whether it is connected.</p></div></li>
+      <li data-lit="gw,win"><button class="step-h">After 15 minutes it is offline</button><div class="step-d"><p>The node is dimmed and kept. A failed poll does not prove the process died, and agents there may still be working: the card cannot say.</p></div></li>
+    </ol></div>
+  </div>
+  <div role="tabpanel" id="np4" aria-labelledby="n4">
+    <div data-stepper data-map="mapg"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="win,gw"><button class="step-h">You select VM-B in the Graph</button><div class="step-d"><p>The card is read-only here. There is no edit key.</p></div></li>
+      <li data-lit="win,vd"><button class="step-h">You enter a session there over SSH</button><div class="step-d"><p>ADR-0004's entry, unchanged. It runs from your own terminal with your own keys.</p></div></li>
+      <li data-lit="vd,card"><button class="step-h">You edit on VM-B's own window</button><div class="step-d"><p>VM-B's daemon owns the card. The edit is a local-socket request on that host.</p></div></li>
+    </ol></div>
+  </div>
+  <div role="tabpanel" id="np5" aria-labelledby="n5">
+    <div data-stepper data-map="mapg"><div class="ctl"><button class="btn" data-prev>Back</button><button class="btn" data-next>Next</button><span class="pos" data-pos aria-live="polite"></span></div>
+    <ol class="steps">
+      <li data-lit="gw"><button class="step-h">The gateway restarts</button><div class="step-d"><p>Its in-memory network reports are gone and refill as hosts reconnect, as today.</p></div></li>
+      <li data-lit="gw,win"><button class="step-h">The Graph tab shows the stored graph</button><div class="step-d"><p>Every host reads "from the database, not yet polled", with the time its row was last confirmed. Nothing is shown as live.</p></div></li>
+      <li data-lit="gw,poll1,poll2"><button class="step-h">The schedule polls each host</button><div class="step-d"><p>Each host becomes fresh, stale or offline only from its new poll.</p></div></li>
+    </ol></div>
+  </div>
+</div>
+
+<h2 id="gaps">11. Gaps, limits and compatibility</h2>
+<ul class="prose">
+  <li><b>New network surface and public data.</b> A listener per host and a card readable by anyone who can reach it are the biggest changes. The card is built from an allow-list so it holds no secrets, but it does disclose that Ratatoskr runs there and what the owner declared.</li>
+  <li><b>Not a complete A2A implementation, on purpose.</b> The card is public and read-only, so card discovery works, but the host offers none of A2A's required operations and uses a custom binding. A generic A2A client can find and read the card and can do nothing else.</li>
+  <li><b>Spec validation.</b> The normative proto was read for the AgentCard messages (section 1a). Not read: the OAuth flow messages, section 13 and 12.8 of the page in full, and earlier versions. The 14.3 registration is only a page summary. The tag was not resolved to a commit hash. Card JSON in the mockups is illustrative sample data.</li>
+  <li><b>Gateway data.</b> Whether per-pair message counts exist is unverified. Table names, the migration number and retention numbers are proposals.</li>
+  <li><b>Address entry.</b> How the owner records each host's card address and optional certificate fingerprint on the gateway side is not designed here. It is not a pairing secret exchange any more, since nothing secret is needed to poll.</li>
+  <li><b>Wire and schema.</b> Wire protocol 2 is unchanged. <b>The gateway database needs a new migration</b> (section 5); this replaces the earlier no-migration position. A graph read route is additive. Older gateway builds cannot open a migrated database.</li>
+  <li><b>Unchanged.</b> MCP, hooks, gates, pairing, the existing heartbeat and stream (still the authority on connection), the 15 s liveness window, SSH entry (ADR-0004), local-only editing with no remote write, no worker dispatch, no Herdr dependency, no HTTPS-over-tailnet claim, no offline replay.</li>
+  <li><b>Not verified.</b> Terminal rendering of the graph, mouse on real terminals, clipboard, narrow widths, any harness's skill loading, any model call, any poll.</li>
+</ul>
+
+<h2 id="decisions">12. Decisions and recommendations</h2>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>Recommendation</th><th>Status</th></tr>
+  <tr><td>1</td><td>Discovery path</td><td>Canonical <code>/.well-known/agent-card.json</code>; optional legacy <code>agent.json</code> alias</td><td><span class="tag t-arch">PROPOSAL</span> user to confirm</td></tr>
+  <tr><td>2</td><td>Card public or authenticated</td><td>Public, unauthenticated, read-only, allow-listed contents</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>3</td><td>Interface binding</td><td>Custom <code>RATATOSKR-CARD</code> pointing at the card's own URL, no A2A operations claimed</td><td><span class="tag t-arch">PROPOSAL</span>, built</td></tr>
+  <tr><td>4</td><td>Poll authentication and TLS</td><td>No secret needed. HTTPS with an owner-controlled fingerprint recommended; no redirects; plain HTTP on a LAN is open</td><td><span class="tag t-arch">PROPOSAL</span> / <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>5</td><td>Where cards and the graph are stored</td><td>Gateway SQLite, new migration; poll address as an owner-entered gateway-side field</td><td><span class="tag t-user">USER</span> decided the SQLite storage</td></tr>
+  <tr><td>5a</td><td>Polling schedule and interval</td><td>Preset schedule, regardless of tab viewing (decided). Default 60 s, 10 s to 1 h, jitter, no overlap, no redirects (proposed)</td><td><span class="tag t-user">USER</span> schedule / <span class="tag t-arch">PROPOSAL</span> numbers, not selected</td></tr>
+  <tr><td>5b</td><td>Heartbeat and stream</td><td>Unchanged and authoritative; polling adds a separate card-endpoint signal</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>6</td><td>Model provider for drafts</td><td>Explicit, none pre-selected; installed harness headless or API</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>7</td><td>First edge meanings</td><td>Messages seen and gateway polling, no inferred edges</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>8</td><td>Graph shortcut key</td><td>F7, click first</td><td><span class="tag t-arch">PROPOSAL</span>, built; takes a key a pane received before</td></tr>
+  <tr><td>9</td><td>Project skills on the host card</td><td>Listed in the editor, not declared host-wide by default</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>10</td><td>Polling vs push</td><td>Polling decided; the cost is hosts behind NAT showing stale for the card</td><td><span class="tag t-user">USER</span> decided</td></tr>
+</table></div>
+<p class="prose">Decisions the user already made: cards at each daemon, editing only on the owning host, scheduled polling by the gateway, an unauthenticated read-only card, storage in the gateway SQLite database, a Graph tab, node = host, a formatted card on selection. <span class="tag t-user">USER</span> Everything else above is the architect's recommendation.</p>
+
+<h2 id="sources">13. Sources</h2>
+<ul class="prose small">
+  <li><b>A2A:</b> <a href="https://a2a-protocol.org/v1.0.0/specification/">the v1.0.0 specification page</a>, read 2026-11-07, and the normative <a href="https://raw.githubusercontent.com/a2aproject/A2A/v1.0.0/specification/a2a.proto"><code>specification/a2a.proto</code> at the v1.0.0 tag</a>, read 2026-11-07 (AgentCard, AgentInterface, AgentCapabilities, AgentExtension, AgentSkill, AgentCardSignature, SecurityScheme, SecurityRequirement). Not read: the OAuth flow messages, section 13 and 12.8 in full, earlier versions.</li>
+  <li><b>Skill locations:</b> Claude Code <code>https://code.claude.com/docs/en/skills</code>; Codex skills and configuration pages (the old <code>developers.openai.com</code> addresses now redirect to <code>learn.chatgpt.com/docs/...</code>), read 2026-11-07. Some Codex page tails were summarised, not read verbatim, and neither page gives a date.</li>
+  <li><b>agent-net:</b> <code>docs/decisions/0022-component-graph-and-cto.md</code>, <code>0027-skills-and-mcp-management.md</code>, <code>internal/protocol/graph.go</code> and <code>internal/tui/map_view.go</code>, in <code>~/Projects/compare/agent-net</code>. Read, not run.</li>
+  <li><b>Ratatoskr:</b> <a href="../0004-network-tab/index.html">ADR-0004</a>, <a href="../0003-per-host-daemon/index.html">ADR-0003</a>, <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a>, the <a href="../../implementation/network-api-contract.md">network contract</a>, the <a href="../../implementation/tui-styling-spec.md">styling spec</a> and <a href="../../design/ground-rules.md">GR-3</a>.</li>
+  <li><b>The request:</b> the user's words as relayed by the operator on 2026-11-07, including its note on the corrected path.</li>
+</ul>
+</div>
+
+<script>
+
+
+
+
+
+
+
+
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll(':scope > [role="tablist"] > [role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  function setupListbox(box) {
+    var rows = Array.prototype.slice.call(box.querySelectorAll('[role="option"]'));
+    function pick(i, focus) {
+      rows.forEach(function (r, n) {
+        var on = n === i;
+        r.setAttribute('aria-selected', on ? 'true' : 'false');
+        r.tabIndex = on ? 0 : -1;
+        var d = document.getElementById(r.getAttribute('data-detail'));
+        if (d) d.hidden = !on;
+      });
+      if (focus) rows[i].focus();
+    }
+    rows.forEach(function (r, i) {
+      r.addEventListener('click', function () { pick(i, false); });
+      r.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowDown') n = Math.min(i + 1, rows.length - 1);
+        if (e.key === 'ArrowUp') n = Math.max(i - 1, 0);
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = rows.length - 1;
+        if (n !== null) { e.preventDefault(); pick(n, true); }
+      });
+    });
+    pick(0, false);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-listbox]'), setupListbox);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+}());
+
+(function () {
+  'use strict';
+  var HOSTS = {
+    vma: { label: 'vma', state: 'fresh', own: false, gateway: true, age: '9s', rev: 4, etag: 'e91c…', url: 'https://vma.example.ts.net:7443/.well-known/agent-card.json',
+      desc: 'Ratatoskr host daemon on vma, which also runs the gateway.', sessions: 1,
+      skills: [['summarize', 'Codex 0.x', 'user', 'declared', '9d02…']], detected: 1, errs: '' },
+    mac: { label: 'mac', state: 'fresh', own: true, age: '20s', rev: 7, etag: 'a73f…', url: 'https://mac.example.ts.net:7443/.well-known/agent-card.json',
+      desc: 'Ratatoskr host daemon on mac. Review and ADR drafting agents.', sessions: 2,
+      skills: [['review-diff', 'Claude Code 2.x', 'user', 'declared', '3f9a…'], ['write-adr', 'Claude Code 2.x', 'user', 'declared', 'b71c…'], ['summarize', 'Codex 0.x', 'user', 'declared', '9d02…']], detected: 4, errs: '' },
+    vmb: { label: 'vmb', state: 'fresh', own: false, age: '12s', rev: 5, etag: '5d20…', url: 'https://vmb.example.ts.net:7443/.well-known/agent-card.json',
+      desc: 'Ratatoskr host daemon on vmb. Build and test agents.', sessions: 2,
+      skills: [['run-tests', 'Claude Code 2.x', 'user', 'declared', '77ab…'], ['triage', 'Codex 0.x', 'user', 'declared', 'c410…']], detected: 3, errs: '' },
+    vmc: { label: 'vmc', state: 'stale', own: false, age: '4 min', rev: 3, etag: '0b6e…', url: 'https://vmc.example.ts.net:7443/.well-known/agent-card.json',
+      desc: 'Ratatoskr host daemon on vmc.', sessions: 1,
+      skills: [['deploy-notes', 'Claude Code 2.x', 'user', 'declared', '12fe…']], detected: 1, errs: 'The last scheduled poll timed out after 5 s. That fails the poll; it does not show the process died. Showing the last good card (rev 3), as stored in the gateway database.' },
+    vmd: { label: 'vmd', state: 'none', own: false, age: '', rev: 0, etag: '', url: 'https://vmd.example.ts.net:7443/.well-known/agent-card.json',
+      desc: '', sessions: 1, skills: [], detected: 0, errs: 'Paired and reachable, but it has published no card (404). That is not an error.' }
+  };
+  var STATE_TXT = { fresh: '● fresh', stale: '… stale', none: '? no card', off: '○ offline' };
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function cardJson(h) {
+    if (h.state === 'none') return null;
+    var skills = h.skills.map(function (s) {
+      var id = s[1].split(' ')[0].toLowerCase() + ':' + s[2] + ':' + s[0];
+      return { id: id, name: s[0], description: 'Declared by the owner from a detected SKILL.md.', tags: [s[1].split(' ')[0].toLowerCase(), s[2], 'detected'] };
+    });
+    var params = { skills: {} };
+    h.skills.forEach(function (s) {
+      var id = s[1].split(' ')[0].toLowerCase() + ':' + s[2] + ':' + s[0];
+      params.skills[id] = { source: 'detected', harness: s[1], scope: s[2], contentHash: s[4], declaredBy: 'owner' };
+    });
+    return {
+      name: h.label, description: h.desc,
+      supportedInterfaces: [{ url: h.url, protocolBinding: 'RATATOSKR-CARD', protocolVersion: '1' }],
+      version: String(h.rev),
+      capabilities: { streaming: false, pushNotifications: false, extendedAgentCard: false, extensions: [{ uri: 'urn:ratatoskr:host-card:v1', description: 'Evidence per skill; host facts', required: false, params: params }] },
+      defaultInputModes: ['text/plain'], defaultOutputModes: ['text/plain'], skills: skills
+    };
+  }
+
+  function stateBadge(h) { return '<span class="pill">' + STATE_TXT[h.state] + (h.age ? ' · ' + esc(h.age) : '') + '</span>'; }
+
+  function summary(h) {
+    var own = h.own ? '<span class="own">YOU OWN THIS CARD</span>' : '<span class="rdonly">READ-ONLY HERE</span>';
+    var out = '<p><span class="ttl">' + esc(h.label) + '</span> ' + stateBadge(h) + ' ' + own + '</p>';
+    if (h.state === 'none') {
+      out += '<p>No card published. ' + esc(h.errs) + '</p><p class="dim">Sessions there: ' + h.sessions + ' (see the Network tab).</p>';
+      return out;
+    }
+    out += '<p>' + esc(h.desc) + '</p>';
+    out += '<p class="dim">rev ' + h.rev + ' · ' + h.skills.length + ' declared skills of ' + h.detected + ' detected · polled ' + esc(h.age) + ' ago</p>';
+    if (h.errs) out += '<p>' + esc(h.errs) + '</p>';
+    out += '<p class="dim">r raw JSON' + (h.own ? ' · e edit' : ' · no edit key: edit on ' + esc(h.label)) + '</p>';
+    return out;
+  }
+
+  function section(h, sec) {
+    var c = cardJson(h);
+    if (!c) return '<div class="sec"><p>? <b>' + esc(h.label) + '</b> has no card. ' + esc(h.errs) + '</p><p class="dim">Nothing to show in this section. The gateway does not invent one.</p></div>';
+    if (sec === 'card') {
+      return '<div class="sec"><p><b>' + esc(h.label) + '</b> ' + stateBadge(h) + ' ' + (h.own ? '<span class="own">YOU OWN THIS CARD</span>' : '<span class="rdonly">READ-ONLY HERE</span>') + '</p>' +
+        '<p>' + esc(h.desc) + '</p>' +
+        '<dl class="kv"><dt>revision</dt><dd>' + h.rev + ' <i>etag ' + esc(h.etag) + '</i></dd><dt>fetched</dt><dd>' + esc(h.age) + ' ago by the gateway' + (h.own ? ' (and served from this host)' : '') + '</dd>' +
+        '<dt>interface</dt><dd><code>' + esc(c.supportedInterfaces[0].url) + '</code> <span class="pill imp">implemented</span> <i>binding ' + esc(c.supportedInterfaces[0].protocolBinding) + ': discovery metadata only, no task operations</i></dd>' +
+        '<dt>card URL</dt><dd class="copyrow"><code>' + esc(h.url) + '</code><button class="copybtn" data-copy="' + esc(h.url) + '">Copy URL</button><span class="dim" data-copied></span></dd>' +
+        '<dt>sessions</dt><dd>' + h.sessions + ' on this host <i>(not part of the card)</i></dd></dl>' +
+        (h.errs ? '<p>… ' + esc(h.errs) + '</p>' : '') + '</div>';
+    }
+    if (sec === 'skills') {
+      var o = '<div class="sec"><h4>Declared by the owner: ' + h.skills.length + ' · found on the host: ' + h.detected + '</h4>';
+      h.skills.forEach(function (s) {
+        o += '<div class="sk"><b>' + esc(s[0]) + '</b> <span class="pill dec">declared</span><span class="pill det">found: SKILL.md</span><br><span class="ev">' + esc(s[1]) + ' · scope ' + esc(s[2]) + ' · hash ' + esc(s[4]) + ' · not verified, not a permission</span></div>';
+      });
+      o += '<p class="dim">"Declared" is the owner\'s statement. It does not mean every session on this host can use the skill, and the card grants nothing.</p></div>';
+      return o;
+    }
+    if (sec === 'security') {
+      return '<div class="sec"><h4>Who can read this card</h4><p>Anyone who can reach ' + esc(h.label) + '\'s card address. It is unauthenticated and read-only, so it holds no tokens, no skill bodies and no paths. <span class="pill dec">decided</span></p>' +
+        '<h4>Declared authentication</h4><p>None. As built, the card emits no securitySchemes or securityRequirements, because their shapes were not verified against the A2A source. Nothing in the card describes or grants access.</p>' +
+        '<h4>What this card is not</h4><p>Not a permission, not proof that anything is idle or reachable, not signed (no JWS signature today).</p>' +
+        '<h4>Same-user limit</h4><p>Agents on ' + esc(h.label) + ' run as its owner and could change this card. Revisions record who. They do not prevent it.</p></div>';
+    }
+    if (sec === 'caps') {
+      return '<div class="sec"><h4>Capabilities</h4>' +
+        '<p>streaming <b>false</b> <span class="pill">not implemented</span> · pushNotifications <b>false</b> <span class="pill">not implemented</span> · extendedAgentCard <b>false</b></p>' +
+        '<p>extension <code>urn:ratatoskr:host-card:v1</code> <span class="pill prop">proposed</span> carries per-skill evidence.</p>' +
+        '<h4>Not offered</h4><p>SendMessage, GetTask, ListTasks, CancelTask and the rest of A2A\'s required operations. This host publishes a card; it is not an A2A server.</p></div>';
+    }
+    return '<div class="sec"><pre class="rawj">' + esc(JSON.stringify(c, null, 2)) + '</pre><p class="dim">Sample data in the shape the built card uses (not a conformance claim).</p></div>';
+  }
+
+  function wireCopy(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('[data-copy]'), function (b) {
+      b.addEventListener('click', function () {
+        var note = b.parentNode.querySelector('[data-copied]');
+        var text = b.getAttribute('data-copy');
+        function say(t) { if (note) note.textContent = t; }
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () { say('copied'); }, function () { say('select the URL to copy'); });
+          } else { say('select the URL to copy'); }
+        } catch (e) { say('select the URL to copy'); }
+      });
+    });
+  }
+
+  function setupGraph(root) {
+    var svg = root.querySelector('.gsvg');
+    var nodes = Array.prototype.slice.call(root.querySelectorAll('.gnode'));
+    var detail = root.querySelector('[data-detail]');
+    var cur = -1;
+    nodes.forEach(function (n) {
+      var h = HOSTS[n.getAttribute('data-host')];
+      n.classList.add('st-' + h.state);
+    });
+    function select(i, focus) {
+      cur = i;
+      nodes.forEach(function (n, k) { n.setAttribute('aria-pressed', k === i ? 'true' : 'false'); n.tabIndex = (k === i || (i < 0 && k === 0)) ? 0 : -1; });
+      if (i < 0) { detail.innerHTML = '<p class="dim">No host selected. Click a host or press Tab then Enter.</p>'; return; }
+      var h = HOSTS[nodes[i].getAttribute('data-host')];
+      detail.innerHTML = summary(h);
+      if (focus) nodes[i].focus();
+    }
+    function nearest(i, dx, dy) {
+      var ox = +nodes[i].getAttribute('data-x'), oy = +nodes[i].getAttribute('data-y');
+      var best = -1, bd = 1e9;
+      nodes.forEach(function (n, k) {
+        if (k === i || n.classList.contains('hidden')) return;
+        var x = +n.getAttribute('data-x') - ox, y = +n.getAttribute('data-y') - oy;
+        var along = x * dx + y * dy;
+        if (along <= 0) return;
+        var across = Math.abs(x * dy - y * dx);
+        var d = along + 2 * across;
+        if (d < bd) { bd = d; best = k; }
+      });
+      return best;
+    }
+    nodes.forEach(function (n, i) {
+      n.addEventListener('click', function () { select(i, false); });
+      n.addEventListener('keydown', function (e) {
+        var t = null;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i, false); return; }
+        if (e.key === 'Escape') { select(-1, false); return; }
+        if (e.key === 'ArrowRight') t = nearest(i, 1, 0);
+        if (e.key === 'ArrowLeft') t = nearest(i, -1, 0);
+        if (e.key === 'ArrowDown') t = nearest(i, 0, 1);
+        if (e.key === 'ArrowUp') t = nearest(i, 0, -1);
+        if (t !== null) { e.preventDefault(); if (t >= 0) { select(t, true); } }
+        if (e.key === 'r' && cur >= 0) {
+          var h = HOSTS[nodes[cur].getAttribute('data-host')], c = cardJson(h);
+          detail.innerHTML = summary(h) + (c ? '<pre class="rawj">' + esc(JSON.stringify(c, null, 2)) + '</pre>' : '<p class="dim">No card, so no raw JSON.</p>');
+        }
+        if (e.key === 'e' && cur >= 0) {
+          var h2 = HOSTS[nodes[cur].getAttribute('data-host')];
+          detail.innerHTML = summary(h2) + '<p>' + (h2.own ? 'The editor would open here (mockup 3).' : 'Not available: ' + esc(h2.label) + ' owns this card. Edit it from ' + esc(h2.label) + ' itself.') + '</p>';
+        }
+      });
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-layer]'), function (cb) {
+      function apply() { svg.setAttribute('data-' + cb.getAttribute('data-layer'), cb.checked ? 'on' : 'off'); }
+      cb.addEventListener('change', apply); apply();
+    });
+    var filter = root.querySelector('[data-filter]');
+    if (filter) {
+      filter.addEventListener('change', function () {
+        nodes.forEach(function (n) {
+          var s = HOSTS[n.getAttribute('data-host')].state, v = filter.value;
+          var hide = (v === 'fresh' && s !== 'fresh') || (v === 'hidestale' && (s === 'stale' || s === 'off'));
+          n.classList.toggle('hidden', hide);
+        });
+        if (cur >= 0 && nodes[cur].classList.contains('hidden')) select(-1, false);
+      });
+    }
+    select(-1, false);
+  }
+
+  function setupCardView(root) {
+    var picks = Array.prototype.slice.call(root.querySelectorAll('[data-pick]'));
+    var panels = Array.prototype.slice.call(root.querySelectorAll('[data-sec]'));
+    function draw(id) {
+      picks.forEach(function (p) { p.setAttribute('aria-pressed', p.getAttribute('data-pick') === id ? 'true' : 'false'); });
+      panels.forEach(function (p) { p.innerHTML = section(HOSTS[id], p.getAttribute('data-sec')); wireCopy(p); });
+    }
+    picks.forEach(function (p) { p.addEventListener('click', function () { draw(p.getAttribute('data-pick')); }); });
+    draw('mac');
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-graph]'), setupGraph);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-cardview]'), setupCardView);
+}());
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@
 | [1. One Mac](scenario-1-local/README.md) | Gateway and two daemons on loopback, with two of each harness | Supported |
 | [2. LAN, plain HTTP](scenario-2-lan-http/README.md) | Gateway on an Ubuntu VM, daemons on a second VM and your Mac | Supported |
 | [3. Tailnet](scenario-3-tailnet/README.md) | The same machines over Tailscale | Supported **without HTTPS**. `rtk` refuses HTTPS on a Tailscale address |
-| [4. Network tab and SSH entry](scenario-4-network-tab/README.md) | The Network tab and SSH entry, on the machines of scenario 2 or 3 | Written, **never run** |
+| [4. Network tab and SSH entry](scenario-4-network-tab/README.md) | The Network tab and SSH entry, on the machines of scenario 2 or 3 |
+| [5. Host cards and the Graph tab](scenario-5-host-cards/README.md) | Public host cards, scheduled polling, the gateway migration and the Graph tab, on the machines of scenario 2 or 3 | Written, **never run** |
 
 Everything lives under `~/rtk-test`, so your normal `rtk` binary, pairing and database aren't touched.
