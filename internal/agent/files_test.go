@@ -35,6 +35,9 @@ func TestClaudeSpecArgv(t *testing.T) {
 		"--mcp-config", mcpPath,
 		"--settings", settingsPath,
 		"--allowedTools", "mcp__ratatoskr__ratatoskr_send",
+		"mcp__ratatoskr__ratatoskr_task_send",
+		"mcp__ratatoskr__ratatoskr_task_get",
+		"mcp__ratatoskr__ratatoskr_task_report",
 	}
 	if len(spec.Argv) != len(want) {
 		t.Fatalf("argv has %d elements, want %d: %v", len(spec.Argv), len(want), spec.Argv)
@@ -186,6 +189,9 @@ func TestCodexSpecArgv(t *testing.T) {
 		"-c", `mcp_servers.ratatoskr.url="http://127.0.0.1:4100/mcp"`,
 		"-c", `mcp_servers.ratatoskr.bearer_token_env_var="RATATOSKR_TOKEN"`,
 		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode="approve"`,
+		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_task_send.approval_mode="approve"`,
+		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_task_get.approval_mode="approve"`,
+		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_task_report.approval_mode="approve"`,
 	}
 	for _, event := range HookEvents {
 		want = append(want, "-c", `hooks.`+event+
@@ -418,8 +424,12 @@ func TestClaudeIgnoresPeers(t *testing.T) {
 			t.Fatalf("Claude's argv carries a startup prompt: %q", arg)
 		}
 	}
-	if last := with.Argv[len(with.Argv)-1]; last != claudeToolName {
-		t.Fatalf("last argv element = %q, want the --allowedTools value %q", last, claudeToolName)
+	// --allowedTools is variadic and last: the send tool and the three task tools follow it.
+	if tail := with.Argv[len(with.Argv)-4:]; tail[0] != claudeToolName ||
+		tail[1] != claudeToolPrefix+"ratatoskr_task_send" ||
+		tail[2] != claudeToolPrefix+"ratatoskr_task_get" ||
+		tail[3] != claudeToolPrefix+"ratatoskr_task_report" {
+		t.Fatalf("argv tail = %q, want the four --allowedTools values", tail)
 	}
 	if string(mcpWith) != string(mcpWithout) {
 		t.Fatalf("%s changed when peers were set", claudeMCPFileName)

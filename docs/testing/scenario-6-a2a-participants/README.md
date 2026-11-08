@@ -219,6 +219,7 @@ Expect:
 - Codex's pane receives a labelled prompt: **from claude@mac, verified by the gateway**, with the sender's text quoted between marker lines.
 - Codex calls `ratatoskr_task_report` with `input_required`. Claude's pane is **woken** (through the normal readiness gates) with a short "needs input" note, not only a database row. `ratatoskr_task_get` shows `INPUT_REQUIRED` and the question.
 - Claude answers with `ratatoskr_task_send` **using the task id**; Codex receives the answer, reports `completed` with a result, and Claude is woken again. `ratatoskr_task_get` shows `COMPLETED` and the result.
+- If the answer was refused with `-32004 execution already in progress`, that is the lock bug fixed on the branch after the first run (uncommitted): stop and start the gateway on the rebuilt binary, then repeat the answer step.
 - The task became `WORKING` only after Codex's harness accepted the prompt. A turn ending without a report does not complete it. Write down anything that differs.
 
 The three task tools are `ratatoskr_task_send`, `ratatoskr_task_get` and `ratatoskr_task_report`. `ratatoskr_send` is unchanged.

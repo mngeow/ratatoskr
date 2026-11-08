@@ -24,6 +24,9 @@ const (
 	// is intended: the server is ratatoskr and the tool is now ratatoskr_send,
 	// so a harness with its own send_message cannot be mistaken for ours.
 	claudeToolName = "mcp__ratatoskr__ratatoskr_send"
+	// claudeToolPrefix precedes a task tool's name; the task tools are
+	// pre-approved beside ratatoskr_send so a task never waits on a prompt.
+	claudeToolPrefix = "mcp__ratatoskr__"
 )
 
 // claudeMCPFile is the --mcp-config document: one HTTP MCP server, authenticated
@@ -97,6 +100,9 @@ func claudeSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Lau
 		"--mcp-config", mcpPath,
 		"--settings", settingsPath,
 		"--allowedTools", claudeToolName,
+	}
+	for _, tool := range taskToolNames {
+		spec.Argv = append(spec.Argv, claudeToolPrefix+tool)
 	}
 	return spec, nil
 }

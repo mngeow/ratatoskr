@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -80,9 +81,18 @@ func NewHandler(cfg Config) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	request := a2asrv.NewHandler(&Executor{Svc: cfg.Service},
-		a2asrv.WithTaskStore(NewSDKStore(cfg.Store)),
+	executor := &Executor{Svc: cfg.Service}
+	tasks := NewSDKStore(cfg.Store)
+	request := a2asrv.NewHandler(executor,
+		a2asrv.WithTaskStore(tasks),
 		a2asrv.WithCallInterceptors(enforcer))
+	// SendMessage runs here, not in the SDK's execution manager (send.go). The InterceptedHandler stays,
+	// so the A2A-Version check and the card enforcer still run first; every other method is the SDK's.
+	intercepted, ok := request.(*a2asrv.InterceptedHandler)
+	if !ok {
+		return nil, fmt.Errorf("a2a: the SDK handler is a %T, not an *InterceptedHandler", request)
+	}
+	intercepted.Handler = &sendHandler{RequestHandler: intercepted.Handler, agent: executor, tasks: tasks}
 	return &Handler{cfg: cfg, jsonrpc: a2asrv.NewJSONRPCHandler(request)}, nil
 }
 

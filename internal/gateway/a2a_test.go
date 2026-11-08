@@ -1177,3 +1177,191 @@ func TestA2AOutboundSecretIsAbsentFromEveryLog(t *testing.T) {
 		t.Fatalf("no auth=refused observation: %+v", obs)
 	}
 }
+
+// answerMessage is a SendMessage body that continues an existing task.
+func answerMessage(taskID, messageID, text string) string {
+	return `{"message":{"messageId":"` + messageID + `","taskId":"` + taskID + `","role":"ROLE_USER","parts":[{"text":"` + text + `"}]}}`
+}
+
+func errorText(body map[string]any) string {
+	if e, ok := body["error"].(map[string]any); ok {
+		if message, ok := e["message"].(string); ok {
+			return message
+		}
+	}
+	return ""
+}
+
+func (f *a2aFixture) dispatches() []a2a.Dispatch {
+	f.dispatcher.mu.Lock()
+	defer f.dispatcher.mu.Unlock()
+	return append([]a2a.Dispatch(nil), f.dispatcher.sent...)
+}
+
+func (f *a2aFixture) stateOf(taskID string) string {
+	got, _, _ := f.store.A2AStore().GetTask(f.ctx, taskID)
+	return got.State
+}
+
+// TestA2AAnswerOnTheSameTaskIsAccepted: SendMessage no longer leaves an SDK execution behind, so an answer
+// to an INPUT_REQUIRED task (and a second one straight after) is accepted, goes back to SUBMITTED, and is
+// dispatched as a continuation to the task's original target. Both target kinds.
+func TestA2AAnswerOnTheSameTaskIsAccepted(t *testing.T) {
+	t.Run("session target, moved by Report", func(t *testing.T) {
+		f := newA2AFixture(t)
+		_, body := f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", textMessage)
+		taskID := taskIDOf(body)
+		if taskID == "" {
+			t.Fatalf("no task: %v", body)
+		}
+		if _, err := f.svc.Accepted(f.ctx, taskID); err != nil {
+			t.Fatalf("accepted: %v", err)
+		}
+		target := a2a.Principal{Kind: a2a.KindSession, Host: "vmb", Session: f.sessionB}
+		if task, err := f.svc.Report(f.ctx, target, taskID, "input_required", "which format?", ""); err != nil || task.State != a2a.StateInputRequired {
+			t.Fatalf("input_required: %+v %v", task, err)
+		}
+
+		status, body := f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", answerMessage(taskID, "m2", "format: text"))
+		if status != http.StatusOK || errorCode(body) != 0 || taskIDOf(body) != taskID {
+			t.Fatalf("the answer was refused: %d %v", status, body)
+		}
+		if got := f.stateOf(taskID); got != a2a.StateSubmitted {
+			t.Fatalf("state after the answer = %s, want SUBMITTED", got)
+		}
+		sent := f.dispatches()
+		if len(sent) != 2 || sent[1].Continuation != true || sent[0].Continuation || sent[1].Text != "format: text" ||
+			sent[1].Task.ID != taskID || sent[1].Task.Target.ID != f.sessionB {
+			t.Fatalf("dispatched = %+v", sent)
+		}
+
+		// A second answer straight after: no lingering lock.
+		_, body = f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", answerMessage(taskID, "m3", "and bold"))
+		if errorCode(body) != 0 || taskIDOf(body) != taskID {
+			t.Fatalf("the second answer was refused: %v", body)
+		}
+		if sent := f.dispatches(); len(sent) != 3 || !sent[2].Continuation {
+			t.Fatalf("dispatched after the second answer = %+v", sent)
+		}
+
+		// The history keeps every message once.
+		stored, _, _ := f.store.A2AStore().GetTask(f.ctx, taskID)
+		decoded, err := a2a.DecodeBody(stored)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]int{}
+		for _, m := range decoded.History {
+			ids[m.ID]++
+		}
+		for _, id := range []string{"m1", "m2", "m3"} {
+			if ids[id] != 1 {
+				t.Fatalf("message %s appears %d times in the history %v", id, ids[id], ids)
+			}
+		}
+	})
+
+	t.Run("service target, moved by ApplyRemote", func(t *testing.T) {
+		f := newA2AFixture(t)
+		_, body := f.rpc(t, "svc", f.hostCred, f.sessionA, "1.0", "SendMessage", textMessage)
+		taskID := taskIDOf(body)
+		if taskID == "" {
+			t.Fatalf("no task: %v", body)
+		}
+		changed, err := f.svc.ApplyRemote(f.ctx, taskID, a2a.RemoteTask{ID: "r-1", State: "INPUT_REQUIRED", Text: "which format?"})
+		if err != nil || !changed || f.stateOf(taskID) != a2a.StateInputRequired {
+			t.Fatalf("input required: changed=%t err=%v state=%s", changed, err, f.stateOf(taskID))
+		}
+
+		_, body = f.rpc(t, "svc", f.hostCred, f.sessionA, "1.0", "SendMessage", answerMessage(taskID, "m2", "format: text"))
+		if errorCode(body) != 0 || taskIDOf(body) != taskID {
+			t.Fatalf("the answer was refused: %v", body)
+		}
+		if got := f.stateOf(taskID); got != a2a.StateSubmitted {
+			t.Fatalf("state after the answer = %s, want SUBMITTED", got)
+		}
+		sent := f.dispatches()
+		if len(sent) != 2 || !sent[1].Continuation || sent[1].Task.Target.Kind != a2a.TargetService || sent[1].Task.Target.ID != sent[0].Task.Target.ID {
+			t.Fatalf("dispatched = %+v", sent)
+		}
+	})
+}
+
+// TestA2AAnswerRefusals: a non-party sees not-found, a final task takes no more input, and a wrong
+// contextId is a parameter error. None of them dispatches or changes the task.
+func TestA2AAnswerRefusals(t *testing.T) {
+	f := newA2AFixture(t)
+	_, body := f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", textMessage)
+	taskID := taskIDOf(body)
+	if taskID == "" {
+		t.Fatalf("no task: %v", body)
+	}
+
+	// A session that is not a party.
+	_, got := f.rpc(t, f.sessionB, f.hostCred, f.sessionA, "1.0", "SendMessage", answerMessage(taskID, "m2", "hi"))
+	if code := errorCode(got); code != -32001 {
+		t.Fatalf("a non-party got code %d, want -32001 (%v)", code, got)
+	}
+	// An unknown task id looks the same.
+	_, got = f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", answerMessage("no-such-task", "m3", "hi"))
+	if code := errorCode(got); code != -32001 {
+		t.Fatalf("an unknown task got code %d, want -32001 (%v)", code, got)
+	}
+	// A context id that is not the task's.
+	wrong := `{"message":{"messageId":"m4","taskId":"` + taskID + `","contextId":"other","role":"ROLE_USER","parts":[{"text":"hi"}]}}`
+	_, got = f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", wrong)
+	if code := errorCode(got); code != -32602 {
+		t.Fatalf("a wrong contextId got code %d, want -32602 (%v)", code, got)
+	}
+
+	// A final task takes no more input.
+	target := a2a.Principal{Kind: a2a.KindSession, Host: "vmb", Session: f.sessionB}
+	if _, err := f.svc.Accepted(f.ctx, taskID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Report(f.ctx, target, taskID, "completed", "done", ""); err != nil {
+		t.Fatalf("completed: %v", err)
+	}
+	_, got = f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", answerMessage(taskID, "m5", "more"))
+	if errorCode(got) == 0 || !strings.Contains(errorText(got), "terminal state") {
+		t.Fatalf("an answer on a final task: %v", got)
+	}
+	if f.stateOf(taskID) != a2a.StateCompleted {
+		t.Fatalf("the final task changed to %s", f.stateOf(taskID))
+	}
+	if sent := f.dispatches(); len(sent) != 1 {
+		t.Fatalf("%d dispatches, want only the first", len(sent))
+	}
+}
+
+// TestA2ASendMessageInterceptorsStillApplyToAnAnswer: the A2A-Version check and the card enforcer run in
+// front of the gateway's own SendMessage, for a continuation as for a new task.
+func TestA2ASendMessageInterceptorsStillApplyToAnAnswer(t *testing.T) {
+	f := newA2AFixture(t)
+	_, body := f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", textMessage)
+	taskID := taskIDOf(body)
+	if taskID == "" {
+		t.Fatalf("no task: %v", body)
+	}
+	answer := answerMessage(taskID, "m2", "hi")
+
+	for _, version := range []string{"", "0.3"} {
+		_, got := f.rpc(t, f.sessionB, f.ingress, "", version, "SendMessage", answer)
+		if code := errorCode(got); code != -32009 {
+			t.Fatalf("version %q: code %d, want -32009 (%v)", version, code, got)
+		}
+	}
+	_, got := f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendStreamingMessage", answer)
+	if code := errorCode(got); code != -32004 {
+		t.Fatalf("streaming: code %d, want -32004 (%v)", code, got)
+	}
+	if sent := f.dispatches(); len(sent) != 1 {
+		t.Fatalf("%d dispatches, want only the first", len(sent))
+	}
+
+	// A blocking call (no returnImmediately) returns the task at once, in its current state (contract 14.2).
+	_, got = f.rpc(t, f.sessionB, f.ingress, "", "1.0", "SendMessage", answerMessage(taskID, "m3", "ok"))
+	if errorCode(got) != 0 || taskIDOf(got) != taskID {
+		t.Fatalf("a blocking answer: %v", got)
+	}
+}

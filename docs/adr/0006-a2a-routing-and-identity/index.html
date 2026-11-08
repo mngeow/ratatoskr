@@ -491,6 +491,7 @@ pre.wire .c { color: #a6a28c; }
 
 
 <h2 id="built">1c. What was built (2026-11-08, written, compile-checked, never run)</h2>
+<p class="prose"><b>Correction after the first user run (uncommitted, never run).</b> A same-task answer failed with -32004 "execution already in progress": the submit-and-return executor never ended the SDK execution, so its per-task lock stayed held. The fix replaces the SDK's <code>SendMessage</code> with our own (<code>internal/a2a/send.go</code>), which runs the executor synchronously and writes to the store, so no SDK execution is registered. Deviation, recorded in the contract (14.2): a <code>SendMessage</code> without <code>returnImmediately</code> returns the task at once instead of blocking until a terminal or interrupted state. Restarting the gateway clears a lock already held. No conformance is claimed.</p>
 <p class="prose">After the user's go-ahead, the first delivery was written on the branch <code>feat/a2a-participants</code>. It has passed <code>gofmt</code>, <code>go vet</code> (both build tags, darwin and linux) and <code>go build</code>, and its tests were written and type-checked. <b>Nothing has been run</b>: no test, no gateway, no daemon, no migration, no network, no model. Details are in <a href="../../implementation/a2a-participants-contract.md">the contract</a> (sections 12 and 13). <b>No conformance is claimed.</b> The test guide is <a href="../../testing/index.html#s6">scenario 6</a>.</p>
 <div class="table-wrap"><table>
   <tr><th>Piece</th><th>As built</th><th>Not yet</th></tr>

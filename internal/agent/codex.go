@@ -24,6 +24,16 @@ const (
 	codexApprovalModeValue = "approve"
 )
 
+// taskToolNames are the A2A task tools beside ratatoskr_send. They duplicate the
+// server's names for the same reason peerToolName does. A task arrives unattended,
+// so the first call to any of them must not stop at an approval prompt.
+var taskToolNames = []string{"ratatoskr_task_send", "ratatoskr_task_get", "ratatoskr_task_report"}
+
+// codexApprovalKeyFor is the approval_mode key of one tool of the ratatoskr server.
+func codexApprovalKeyFor(tool string) string {
+	return "mcp_servers.ratatoskr.tools." + tool + ".approval_mode"
+}
+
 // codexSpec builds Codex's launch spec.
 //
 // Codex gets no session id: no flag for one was found in its help output, so the
@@ -43,6 +53,9 @@ func codexSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Laun
 	addConfig(codexServerURLKey, tomlString("http://"+p.ServerAddr+"/mcp"))
 	addConfig(codexTokenEnvKey, tomlString(codexTokenEnvName))
 	addConfig(codexApprovalModeKey, tomlString(codexApprovalModeValue))
+	for _, tool := range taskToolNames {
+		addConfig(codexApprovalKeyFor(tool), tomlString(codexApprovalModeValue))
+	}
 
 	for _, event := range HookEvents {
 		command := HookCommand(p.RtkPath, p.DisplayName, event, p.SessionDir)
