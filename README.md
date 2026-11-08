@@ -2,6 +2,8 @@
 
 ![Ratatoskr, drawn as a fierce gold beast in the style of Viking Age carving, with a drill-tooth tusk and a rune-stick message in its claws, encircled by the serpent Níðhöggr carved with its name in runes. Around the ring, a network links Claude Code, Codex, pi, OpenCode and other agents, along with app development, devops and infrastructure work.](assets/ratatoskr-banner.svg)
 
+**Documentation home:** open [`docs/index.html`](docs/index.html) for every decision record, testing guide, contract and working paper in one place (on macOS: `open docs/index.html`). GitHub shows `.html` files as source, so use a local checkout.
+
 **Ratatoskr is an agent network.** Define agents built on the harnesses you already use, such as Claude Code, Codex, pi and OpenCode, and put them on a common network where they can discover each other and talk to each other. From there, you can spawn whole teams of agents to work together on a shared task.
 
 > [!WARNING]
@@ -612,7 +614,9 @@ Key decisions are kept in [`docs/adr/`](docs/adr/) as Architecture Decision Reco
 | [0003](docs/adr/0003-per-host-daemon/index.html) | Move from `rtk runtime` to a long-lived daemon on each machine, with attachable windows, as the basis for sessions that spawn workers. Plain `rtk` stays local. The daemon is built, and the owner reports that it works in their testing on 2026-11-06, with one open bug. Workers aren't built, and some questions about them remain open | Accepted |
 | [0004](docs/adr/0004-network-tab/index.html) | A Network tab inside the attached window, following agent-net: a gateway API lists every host's sessions with how fresh each fact is, and Enter on a remote session opens a direct SSH connection from your own terminal. Not a dashboard. The API, tab and SSH entry are written but have never been run; the open choices in the record are proposals, not decisions | Proposed |
 | [0005](docs/adr/0005-host-agent-cards-and-graph/index.html) | A public, unauthenticated A2A-style Agent Card per host daemon, served by default on port 7778 from a `card.yaml` its owner edits (optionally from a model draft), polled by the gateway on a preset schedule, stored with the graph in the gateway SQLite database and drawn as a graph of hosts in a third Graph tab. First version committed, the 2026-11-08 corrections are in the working tree, none of it run; the polling interval is a default I chose, the gateway database needs a migration, and the host is not an A2A service | Proposed |
-| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | Full A2A through the gateway, as a proposal with animated diagrams: one endpoint per exact session, how the sender is proven, and tasks with questions and results. Proposal only: nothing is built or run, and ADR-0005's card is not this | Proposed |
+| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A through the gateway, as a proposal with animated diagrams: one endpoint per participant (managed sessions and externally managed services), how the sender is proven, and a first delivery of message, clarification, result and polled retrieval. Proposal only |
+| [0007](docs/adr/0007-openrig-operator-integration/index.html) | OpenRig operator integration: only the main operator gets a network identity, as an externally managed participant behind a small bridge; OpenRig keeps its lifecycle and queues. Proposal only |
+| [0008](docs/adr/0008-agent-discovery-tool/index.html) | An agent discovery tool: a compact list of host cards and contactable sessions that the model chooses from, with no gateway search. Proposal only |
 
 GitHub shows `.html` files as source, so open a record from a local checkout to use its diagrams.
 

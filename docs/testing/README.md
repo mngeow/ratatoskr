@@ -2,6 +2,8 @@
 
 **The owner reports that the daemon works, with one open bug:** text appears in the prompt box after an answer, and the cause is unknown. That report doesn't say which scenarios it covered. Every expected result here comes from reading the code, so tell the team when something differs.
 
+Documentation home: [index.html](../index.html).
+
 **Start with the [full guide](index.html),** which has diagrams, scenario navigation, fill-in fields and copy buttons. Open it from a local checkout, because GitHub shows `.html` as source. The READMEs below hold the same commands, for reading on a VM.
 
 | Scenario | Setup | Status today |
