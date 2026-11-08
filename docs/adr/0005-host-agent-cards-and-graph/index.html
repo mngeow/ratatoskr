@@ -396,7 +396,7 @@ html.js .nojs-box { display: none; }
 </header>
 
 <nav class="prose small" aria-label="Sections"><b>Sections:</b>
-  <a href="#summary">1. Short answer</a> · <a href="#decided">decisions</a> · <a href="#built">1a. What was built</a> ·
+  <a href="#summary">1. Short answer</a> · <a href="#decided">decisions</a> · <a href="#built">1a. What was built</a> · <a href="#corrections">1b. Corrections</a> ·
   <a href="#mockups">2. Mockups</a> ·
   <a href="#a2a">3. What the card is</a> ·
   <a href="#today">4. What exists today</a> ·
@@ -481,6 +481,17 @@ html.js .nojs-box { display: none; }
   <li>The migration, <code>VACUUM INTO</code> on a pre-created empty file, the poller, the listener, the graph route and every screen are <b>unrun</b>. The user chose to test first, so every check in the <a href="../../testing/index.html">test guide</a> is marked written, not verified.</li>
   <li>Light themes, mouse on real terminals, narrow widths and the 256/16-colour mapping for the new tab are undrawn, as for the other tabs.</li>
 </ul>
+
+<h2 id="corrections">1b. Corrections from the user (2026-11-08, ordered, not yet built)</h2>
+<p class="prose">These supersede the matching statements in 1a, sections 3, 6, 7, 9 and 12, which are left as written so the history stays readable. Authoritative text: <a href="../../implementation/host-cards-contract.md">the contract, section 13</a>. Quoted words are the user's as relayed by the operator.</p>
+<div class="table-wrap"><table>
+  <tr><th>The user said</th><th>What changes</th></tr>
+  <tr><td>"The default for the daemon is to start and listen on 0.0.0.0 on a default port, this can be changed if CLI args are provided" <span class="tag t-user">USER</span></td><td>The card listener is <b>on by default</b> at <code>0.0.0.0:7778</code> (the port is my default). <code>--card-listen ADDR</code> overrides it and <code>off</code> disables it. The <code>--allow-lan</code>/<code>--insecure-http</code> rule is dropped for the card, which is public by this decision, so nothing sensitive may be in it. A failed bind never stops the daemon and is shown as <code>not bound: reason</code>; the card is never called ready unless it is <code>listening</code>. The gateway accepts plain-http card targets on loopback, Tailscale and private LAN addresses.</td></tr>
+  <tr><td>"Why is the LLM generated card not implemented? I asked for it" <span class="tag t-user">USER</span></td><td>I left it unbuilt waiting for a provider choice instead of building a default. That was my error. It is now ordered: Graph tab key <b>g</b>, a confirmation showing the exact payload, a diff, and Accept (which backs up <code>card.yaml</code> first), through <code>claude</code> or <code>codex</code> presets set in <code>card.yaml</code>. Flags must come from official documentation; untested until the user allows a run.</td></tr>
+  <tr><td>"cards should be stored as yaml file, there is no need to have cli commands to publish, show, bla bla bla, just edit a static file" <span class="tag t-user">USER</span></td><td>The card is <code>card.yaml</code> in the daemon state directory. The owner edits it; the daemon reloads on change and keeps the last good card when an edit is invalid. The daemon card commands, publish, history, rollback and the revision store are removed. The gateway's storage of polled cards is unchanged.</td></tr>
+  <tr><td>Operator requirement <span class="tag t-arch">NOT A USER QUOTE</span></td><td>Drafting settings (<code>preset</code>, <code>argv</code>, <code>pass_env</code>) are private and can never appear in the served card, which is built by an explicit field projection. No keys in the YAML.</td></tr>
+</table></div>
+<p class="prose"><b>As built (2026-11-08, written, never run).</b> The listener, the YAML file, the field projection and model generation are all in the working tree; details and the riskiest assumptions are in <a href="../../implementation/host-cards-contract.md">contract section 14</a>. Points worth knowing here: the listener has three visible states (<code>listening</code>, <code>off</code>, <code>not bound</code>) and a bind failure never stops the daemon; an invalid edit keeps the last good card; accepting a model draft <b>rewrites <code>card.yaml</code> and keeps comments only in <code>card.yaml.bak</code></b>; the <code>claude</code> and <code>codex</code> presets were taken from the vendors' pages and have never been run, and Codex may load the owner's skills, hooks and MCP servers, which the confirmation screen says. Every daemon now opens a read-only port on all interfaces by default, so nothing sensitive may be in a card. The mockups below still show the earlier editor, publish and history screens; they are kept as the record of the first design.</p>
 
 <h2 id="mockups">2. Mockups</h2>
 <p class="prose">Sample data throughout: five invented hosts. Nothing here was drawn by the real program. A terminal cannot reproduce the rounded boxes, hover colours or smooth lines of this page; the real tab would use box-drawing characters in the same Monokai palette as the existing tabs. <span class="tag t-arch">PROPOSAL</span></p>

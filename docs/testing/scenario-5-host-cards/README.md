@@ -50,7 +50,7 @@ Expect:
 
 ## 3. Run the unit tests (the first time anything runs)
 
-About 90 test functions were written and only type-checked. Run them before trusting anything else.
+About 90 test functions were written and only type-checked, plus the 2026-11-08 tests for `card.yaml` (decoding, line numbers, private `drafting:`, reload, last good card), the default listener and bind failure, and drafting with a fake runner (no model is called). Run them before trusting anything else.
 
 **M1 Mac**
 
@@ -97,45 +97,47 @@ Expect:
 
 The migration runs before the gateway binds its address. A gateway that migrates and then cannot bind stays migrated, so an older binary then needs the backup.
 
-## 6. Start the daemons, with the card listener on the Mac
+## 6. Start the daemons: the card listener is on by default
 
-The card listener is **off by default**. Turning it on later means stopping the daemon, which ends its agents. Use a loopback or Tailscale address; a LAN address needs `--allow-lan`, and plain HTTP on a LAN needs `--insecure-http`. No public address is accepted.
+With no flag, each daemon serves its card on **`0.0.0.0:7778`**, so anyone who can reach that port can read it. `--card-listen ADDR` picks another address and `--card-listen off` turns it off. Changing it means stopping the daemon, which ends its agents.
 
 **M1 Mac**
 
 ```sh
-rtk daemon --card-listen <MAC_IP>:<CARD_PORT>
+rtk daemon
+rtk daemon status
 ```
 
 **B1 VM-B**
 
 ```sh
-rtk daemon --card-listen <VMB_IP>:<CARD_PORT>
+rtk daemon
+rtk daemon status
 ```
 
 Expect:
 
-- Each daemon starts as before and says its card listener address. Start one agent on each as in scenario 2 or 3.
-- Bad choices are refused with a reason and nothing bound: a public address, a LAN address without `--allow-lan`, and `--card-listen` while a daemon is already running.
+- Each daemon starts as before. `rtk daemon status` has a `card listener:` line reading `listening on 0.0.0.0:7778, card at URL (readable by anyone who can reach this port)`. Start one agent on each as in scenario 2 or 3.
+- **Bind failure:** with something already on 7778 (for example a second daemon under another state directory), the daemon still starts and says `NOT BOUND: the port is already in use (the daemon is running; the card is not served)`, in the log, in `rtk daemon status` and in the Graph tab. Nothing may say ready.
+- `--card-listen off` gives `card listener: off`. `--allow-lan` and `--insecure-http` are refused on `rtk daemon` now.
+- macOS may ask whether `rtk` may accept incoming connections, because it binds every interface. That has not been seen; note what happens.
 
-## 7. Write and publish the Mac's card
+## 7. Write the Mac's card: edit card.yaml
 
-Editing exists only on the host that owns the card. Use the Graph tab's editor, or the command line.
+There are no card commands. The card is the file `daemon/card.yaml` in the Mac's state directory, and the Graph tab shows its path.
 
 **M1 Mac**
 
 ```sh
-printf "Ratatoskr host daemon on the Mac." > "$HOME/rtk-test/card-description.txt"
-rtk daemon card validate
-rtk daemon card publish --name mac --description-file "$HOME/rtk-test/card-description.txt"
-rtk daemon card show
-rtk daemon card history
+ls -l "<MAC_STATE>/daemon/card.yaml"
+"$EDITOR" "<MAC_STATE>/daemon/card.yaml"
 ```
 
 Expect:
 
-- `validate` and `publish` succeed and `show` prints revision 1. Publishing a token-like string or a path in the description is **refused** with a readable reason (try it). The word "bearer" alone also blocks, which is a known false positive.
-- The command line cannot declare skills. Only the window's editor can. A card **cannot be published without a description**: `rtk daemon card publish` stops and points to `--description-file PATH` (or `-`). A declared skill needs a description you wrote and at least one tag.
+- The file exists from the first start, mode 0600, as a commented template. Until `description` is filled in, nothing is served and the status says **needs description**.
+- Fill in `description` and save. Within about 2 seconds the card is served. Add a skill with an id, name, description and at least one tag.
+- Save something broken (an unknown key, a bad indent, a value that looks like a token, or a path in the description): the daemon keeps serving the **last good card**, and the Graph tab shows the error and its line, without repeating the value. The word "bearer" alone also blocks, which is a known false positive.
 
 ## 8. Read the card as anyone could
 
@@ -144,16 +146,16 @@ The card is public: no login. Check what a stranger would see.
 **M1 Mac**
 
 ```sh
-curl -i http://<MAC_IP>:<CARD_PORT>/.well-known/agent-card.json
-curl -i http://<MAC_IP>:<CARD_PORT>/.well-known/agent.json
-curl -i -X POST http://<MAC_IP>:<CARD_PORT>/.well-known/agent-card.json
-curl -i http://<MAC_IP>:<CARD_PORT>/other
+curl -i http://<MAC_IP>:7778/.well-known/agent-card.json
+curl -i http://<MAC_IP>:7778/.well-known/agent.json
+curl -i -X POST http://<MAC_IP>:7778/.well-known/agent-card.json
+curl -i http://<MAC_IP>:7778/other
 ```
 
 Expect:
 
-- GET returns the card with an `ETag`; repeating it with `If-None-Match` gives **304**. HEAD works. **POST gives 405**, any other path **404**, and before anything is published **503**. `agent.json` returns the same bytes as a compatibility alias.
-- Read the JSON for anything that should not be public: no tokens, credentials, skill bodies, absolute paths, usernames or environment values. Its one interface points at the card's own URL with binding `RATATOSKR-CARD`. It is "A2A-style", **not** a claim of A2A conformance, because the official proto source has not been read.
+- GET returns the card with an `ETag`; repeating it with `If-None-Match` gives **304**. HEAD works. **POST gives 405**, any other path **404**, and while the file still needs a description **503**. `agent.json` returns the same bytes as a compatibility alias.
+- Read the JSON for anything that should not be public: no tokens, credentials, skill bodies, absolute paths, usernames or environment values, and **nothing from `drafting:`** (no preset, argv or pass_env). Its one interface points at the card's own URL with binding `RATATOSKR-CARD`. The card document follows the v1.0.0 AgentCard field set; the host is not an A2A service.
 
 ## 9. Tell the gateway where to poll
 
@@ -162,14 +164,14 @@ Only you, on the gateway host, decide where it polls. The target is never read f
 **G2 gateway admin**
 
 ```sh
-rtk gateway card-target set mac http://<MAC_IP>:<CARD_PORT>
-rtk gateway card-target set vmb http://<VMB_IP>:<CARD_PORT>
+rtk gateway card-target set mac http://<MAC_IP>:7778
+rtk gateway card-target set vmb http://<VMB_IP>:7778
 rtk gateway card-target show
 ```
 
 Expect:
 
-- Both targets are listed. http is accepted on loopback and Tailscale addresses only. These are refused with a reason: a hostname, `100.100.100.100`, a LAN http address without `--insecure-http`, and a LAN https address without `--fingerprint`. (`100.100.100.200` is also on the deny list but that entry is unverified.)
+- Both targets are listed. Plain http is accepted on loopback, Tailscale and private LAN (RFC 1918) addresses with no extra flag. These are refused with a reason: a hostname, a public address, `100.100.100.100`, a LAN https address without `--fingerprint`, and `--insecure-http`, which is no longer needed. (`100.100.100.200` is also on the deny list but that entry is unverified.)
 - Changing a target clears that host's stored card, because the old card came from another endpoint.
 
 ## 10. Polling with nothing watching
@@ -217,11 +219,33 @@ Expect:
 - The strip shows ` Terminals `, ` Network ` and ` Graph ` as touching blocks (27 cells wide, ` T  N  G ` when narrow). Click Graph. **F7** is an optional shortcut and takes a key a pane received before. A window with no sessions still opens on Network; Graph is one click away.
 - At 120 by 26 or more, up to 12 hosts show as a grid; smaller, or more hosts, show a list. Each host is marked `● fresh`, `… stale`, `○ offline`, `? no card` or `✗ rejected` (ASCII `X`). The mark is about the **card**, never about busy or idle. `rejected` means the newest poll was refused (invalid card, oversize body or changed certificate); the last good card is kept and the reason says which.
 - Message lines are **sends the gateway decided**, including failed ones, never "delivered". Poll lines show the last poll result and link no two hosts together.
-- Select a host: Card, Skills, Security, Capabilities and Raw JSON. A remote host says it is read-only and to edit on that host. The local host shows the editor: change the description, declare a skill you choose, validate, see the diff, publish, and look at history and rollback. A conflict keeps your edits. The draft key says drafting is **not configured**: no model is ever called.
+- Select a host: Card, Skills, Security, Capabilities and Raw JSON. A remote host says it is read-only and to edit on that host. The local host shows the `card.yaml` path, whether the file is valid (or needs a description, or has an error at a line), whether a last good card is being served, and the **listener state** with its own mark: `+ listening ADDR`, `- off` or `! not bound REASON`. File validity and listener state are separate, and while listening it says the card is readable by anyone who can reach the port. **r** reloads the file now. **e** only says to edit the file in your own editor. **c** copies the URL only while listening.
+- Typing `g` alone runs nothing: it prepares a draft (step 13).
 - Typing letters or pasting while in Graph reaches no pane. The URL panel lets you select the URL natively; the copy button says "request sent", never "copied".
 - With colour off (`NO_COLOR=1`) the marks and the active tab keep their widths. An older gateway shows "gateway too old". If the graph is too large, card bodies are omitted and the view says so.
 
-## 13. Stop and clean up
+## 13. Generate a card draft (calls a model: only with your go-ahead)
+
+**This step runs your installed `claude` or `codex` and sends a payload to its model service.** Do it only if you choose to. The presets have never been run.
+
+**M1 Mac**
+
+```sh
+grep -A3 '^drafting:' "<MAC_STATE>/daemon/card.yaml"
+cp "<MAC_STATE>/daemon/card.yaml" "$HOME/rtk-test/card.yaml.before-draft"
+rtk attach
+```
+
+In the Graph tab, select the local host and press **g**.
+
+Expect:
+
+- A confirmation screen with the resolved binary, the exact argv, the exact payload and its byte count, the environment variable names passed, and caveats: for claude, managed-policy hooks still apply and `--permission-prompts` needs Claude Code 2.1.259+. For codex, it may load your skills, hooks and MCP servers. The payload has names, descriptions, harness names and versions only: no skill bodies, paths, usernames or environment. **Enter does nothing. Esc leaves** and nothing has run.
+- **y** runs it (up to 120 s). Then a diff against `card.yaml` with generated fields marked, and notices that Accept writes `card.yaml.bak` first and rewrites the file without its comments. **d** discards. Nothing is written yet: compare the file with your copy.
+- **a** accepts: `card.yaml.bak` matches your copy, and `card.yaml` holds the draft and is served within about 2 seconds. Edit `card.yaml` between **y** and **a**, and Accept is refused as a conflict, with nothing written.
+- Closing the window during a run cancels it. A login failure or a refused flag shows as a failed draft with the file untouched.
+
+## 14. Stop and clean up
 
 Removes only this guide's folders. Keep the copy of the gateway state until you are happy with the migration.
 
