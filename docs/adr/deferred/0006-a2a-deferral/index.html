@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deferred: A2A adoption (ADR-0006 record)</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
+
+
+</style>
+</head>
+<body>
+<nav data-docs-home aria-label="Documentation home" style="font:14px/1.4 system-ui,sans-serif;padding:6px 14px;background:#272822;color:#f8f8f2;border-bottom:1px solid #49483e"><a href="../../../index.html" style="color:#66d9ef">&larr; Docs home</a></nav>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">DEFERRED ADR RECORD · A2A (ADR-0006)</p>
+  <h1>A2A is deferred: it does not fit what the sessions need today</h1>
+  <p class="prose">A short record of why the A2A implementation is set aside for now, what was built before the decision, what is kept, and what would make it worth reopening. <b>This is a deferral for fit, not a finding that A2A cannot carry messages.</b></p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Deferred 2026-11-08</b> at the user's request, as relayed by the operator <span class="tag t-user">USER</span>. A deferral, not a rejection and not a supersession; it can be reopened by the user.</dd></div>
+    <div><dt>Reason</dt><dd><b>Fit.</b> A2A's task semantics do not match the main current need (direct conversational peer messaging between managed Claude and Codex sessions). It is not a claim that A2A cannot carry messages.</dd></div>
+    <div><dt>Concerns</dt><dd><a href="../../0006-a2a-routing-and-identity/index.html">ADR-0006</a> (the deferred proposal). Affects <a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a> and <a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a>, revised so neither depends on A2A.</dd></div>
+    <div><dt>Preserved</dt><dd>Branch <code>feat/a2a-participants</code> at <code>29cccad</code>, local and on origin. Not merged, not deleted.</dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../../design/ground-rules.md">GR-3</a>). Everything on the branch is untested, and no A2A conformance is claimed.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#decision">1. The decision</a> · <a href="#fit">2. Why it does not fit</a> · <a href="#effect">3. What changes in the other records</a> · <a href="#kept">4. What is preserved</a> · <a href="#findings">5. Findings from the first runs</a> · <a href="#revisit">6. When to reopen it</a> · <a href="#limits">7. What is not claimed</a>
+</nav>
+<p class="prose small"><b>Labels.</b> <span class="tag t-user">USER</span> the user's decision. <span class="tag t-code">CODE</span> read in source. <span class="tag t-arch">PROPOSAL</span> the architect's reading. <span class="tag t-unv">UNVERIFIED</span> nobody has checked it.</p>
+
+<h2 id="decision">1. The decision</h2>
+<div class="note">
+  <p><b>A2A is not being implemented for now.</b> The user asked to abandon it for the time being, with documentation changes only. <span class="tag t-user">USER</span></p>
+  <p><b>Why, in one sentence.</b> A2A can carry direct messages as well as tracked tasks, but the current integration models a Claude or Codex conversation as a long-lived <i>task</i> with an id, states and follow-up calls, while what managed sessions mostly need today is plain peer messaging, which <code>ratatoskr_send</code> already does through MCP, hooks and the terminal bridge. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>What this is not.</b> It is not a finding that A2A is unsuitable, unsafe or unable to carry messages, and not a judgement on the team's code. It is a decision about fit with present requirements.</p>
+</div>
+
+<h2 id="fit">2. Why it does not fit now</h2>
+<div class="table-wrap"><table>
+  <tr><th>The need</th><th>What serves it today</th><th>What A2A adds or changes</th></tr>
+  <tr><td>A session sends a conversational message to a peer and gets a reply later</td><td><code>ratatoskr_send</code>, the MCP server, hooks and harness delivery through the daemon's terminal bridge <span class="tag t-code">CODE</span></td><td>A2A has a direct <b>Message</b> form that could carry this. The branch did not use it for chat; every exchange became a task with a lifecycle.</td></tr>
+  <tr><td>Track a unit of delegated work to a result, across organisations or vendors</td><td>Nothing specific; a human reads two terminals</td><td>This is where A2A tasks fit well: ids, states, polled retrieval, a result artifact. It is not the primary need today.</td></tr>
+  <tr><td>Reach the managed Claude or Codex</td><td>The daemon's own bridge: MCP, hooks and a terminal paste</td><td>A2A does not replace it. Every A2A message to a managed session still ends in that bridge, so A2A would be an added layer on top of it.</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Task semantics for every chat.</b> Treating each conversation as a task adds states (submitted, working, input required, completed), a rule that a stop is not completion, an answer-on-the-same-task path and a cancel rule. That cost buys little if the sessions only need to talk.</li>
+  <li><b>No local simplification.</b> The local MCP, hook and terminal bridge stays required for managed sessions either way.</li>
+  <li><b>Where A2A may still suit.</b> Delegating bounded work, and interoperating with other A2A systems or an external orchestrator. Those are later and unrequested. <span class="tag t-arch">PROPOSAL</span></li>
+</ul>
+
+<h2 id="effect">3. What changes in the other records</h2>
+<div class="table-wrap"><table>
+  <tr><th>Record</th><th>Disposition now</th><th>What was done on this page's date</th></tr>
+  <tr><td><a href="../../0006-a2a-routing-and-identity/index.html">ADR-0006</a> A2A routing and identity</td><td><b>Deferred</b></td><td>Reduced to a short disposition page at the same address, so links keep working. The full proposal moved, unchanged, to <a href="../0006-a2a-proposal/index.html">the preserved proposal</a>. No coherent active decision remained once A2A was removed, so the record is deferred, not edited into something else.</td></tr>
+  <tr><td><a href="../../0007-adapter-integration-contract/index.html">ADR-0007</a> Adapter integration contract (new)</td><td>Proposed; wire direction chosen by the user (a separate HTTP+JSON participant API), the rest open</td><td>Written after the deferral: a language-neutral participant contract for outside harnesses and orchestrators. It does not assume A2A, and says A2A could at most appear later as one adapter.</td></tr>
+  <tr><td><a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a> OpenRig operator integration</td><td>Proposed, <b>blocked</b></td><td>Revised so it names no A2A requirement. The goal (only the main operator on the network, through a bridge) and the boundary (OpenRig keeps its lifecycle and queues) stand. <b>The contract between the gateway and the bridge is still open</b> (the user later chose a direction, a separate HTTP+JSON participant API, in ADR-0007): it needs a gateway interface for external participants that does not exist, and this page does not choose one.</td></tr>
+  <tr><td><a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a> Agent discovery tool</td><td>Proposed, <b>independent</b></td><td>Revised to say it never needed A2A: it joins data the gateway already serves and sends with the existing tool. The earlier sequence (A2A first) no longer applies.</td></tr>
+  <tr><td><a href="../../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> Host cards</td><td>Unchanged</td><td>One pointer added. A host card is still public metadata in the shape of an A2A card; it is not an A2A service and implies no task support.</td></tr>
+</table></div>
+<p class="prose"><b>One thing cannot be represented consistently.</b> The README and the design index called the host card "A2A-style" and listed ADR-0006 as the next step. The README already said the card is metadata and not an A2A service; the README and the design index now also mark ADR-0006 deferred. If the user would rather not keep the A2A card shape at all, that is a change to ADR-0005, not made here. <span class="tag t-unv">OPEN</span></p>
+
+<h2 id="kept">4. What is preserved</h2>
+<ul class="prose">
+  <li><b>The implementation.</b> Branch <code>feat/a2a-participants</code> at <code>29cccad</code> (local and <code>origin</code>). It holds the A2A server on the official <code>a2a-go/v2</code> v2.8.0 handler with an own SQLite task store, migration 0003, participant commands, the MCP task tools, outbound bearer authentication, <code>ListTasks</code> with the spec's <code>totalSize</code>, and a reference adapter. <span class="tag t-code">CODE</span> <b>Never run</b>, and not on <code>main</code>.</li>
+  <li><b>The contract.</b> <code>docs/implementation/a2a-participants-contract.md</code> exists on that branch only. Read it without switching branches: <code>git show feat/a2a-participants:docs/implementation/a2a-participants-contract.md</code>. The scenario 6 guide is on the branch too (<code>docs/testing/scenario-6-a2a-participants/</code>).</li>
+  <li><b>The proposal text.</b> <a href="../0006-a2a-proposal/index.html">The preserved proposal</a>, moved out of ADR-0006 unchanged. <a href="../../0006-a2a-routing-and-identity/index.html">ADR-0006</a> itself is now a short disposition page.</li>
+</ul>
+
+<h2 id="findings">5. Findings from the first runs</h2>
+<p class="prose">The user began testing scenario 6 before the decision. These are the results reported to the architect, and what was found. They are written down so a later start is not lost.</p>
+<div class="table-wrap"><table>
+  <tr><th>Finding</th><th>What is known</th><th>State</th></tr>
+  <tr><td><b>VM-B did not show <code>ratatoskr_task_report</code></b></td><td>Static source review: a daemon-managed Codex always lists the three task tools, even with no gateway link <span class="tag t-code">CODE</span>. The likeliest cause was an older daemon still running on VM-B (an old binary, or a new one copied without restarting the daemon), or Codex not started through <code>rtk attach</code>. Evidence asked of the user (build string, how Codex was started, <code>/mcp</code> output) was <b>not received</b>.</td><td><span class="tag t-unv">UNVERIFIED</span> and unresolved</td></tr>
+  <tr><td><b>-32004 "execution already in progress" on a same-task reply</b></td><td>The submit-and-return executor never ended the SDK execution, so its per-task lock stayed held. Fixed on the branch by replacing the SDK's <code>SendMessage</code> with the gateway's own (<code>internal/a2a/send.go</code>). <b>Contract 14.2:</b> a <code>SendMessage</code> without <code>returnImmediately</code> returns the task at once instead of blocking, a documented deviation from the spec.</td><td>Fix written and committed on the branch; <b>never run</b></td></tr>
+  <tr><td><b>Task tools not pre-approved</b></td><td>Only <code>ratatoskr_send</code> was pre-approved in the Codex and Claude launch settings, so the first use of a task tool would prompt. The branch commit adds the three names.</td><td>On the branch only; <b>never run</b>. <code>main</code> still pre-approves only <code>ratatoskr_send</code></td></tr>
+</table></div>
+
+<h2 id="revisit">6. When to reopen it</h2>
+<ul class="prose">
+  <li>Delegated, tracked work is wanted between sessions or with an outside orchestrator, and plain messaging is no longer enough.</li>
+  <li>Interoperability with other A2A systems is a stated requirement, not an assumption.</li>
+  <li>Then start from the branch and the contract, and settle first the engineering unknowns it left open: the SDK's real result shapes, dispatch and wake against a live stream, the polling mirror against a real service, the MCP tool closures, migration 0003 on a real database, and the VM-B tool question above. Reopening is the user's decision; this page does not authorise any of it.</li>
+</ul>
+
+<h2 id="limits">7. What is not claimed</h2>
+<ul class="prose">
+  <li>No A2A conformance, and no claim that the branch works. It was compile-checked and vetted only.</li>
+  <li>No claim about the user's own test results beyond the reports quoted above.</li>
+  <li>This page has not been opened in a browser.</li>
+</ul>
+
+<h2 id="sources">Sources</h2>
+<ul class="prose small">
+  <li>The user's request as relayed by the operator and the lead on 2026-11-08, and the lead's brief for this change.</li>
+  <li><a href="../0006-a2a-proposal/index.html">The preserved proposal</a>; <a href="../../0006-a2a-routing-and-identity/index.html">ADR-0006</a>; <a href="../index.html">Deferred ADRs</a>; the branch contract (see section 4).</li>
+</ul>
+</div>
+</body>
+</html>

@@ -293,9 +293,11 @@ These are decision records, not features. None is implemented, and none authoris
 
 | Proposal | What it would add |
 | --- | --- |
-| [ADR-0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A reduced A2A first delivery: message, clarification, result and polled task retrieval between **participants** (managed sessions and externally managed services), with an exact endpoint per participant and a proven sender |
-| [ADR-0007](docs/adr/0007-openrig-operator-integration/index.html) | Only the main OpenRig operator on the network, through a small bridge; OpenRig keeps its lifecycle and queues |
-| [ADR-0008](docs/adr/0008-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search |
+| [ADR-0007](docs/adr/0007-adapter-integration-contract/index.html) | A language-neutral contract so outside harnesses and orchestrators (OpenRig, Pi, custom) join through adapters in any language; the user chose a separate HTTP+JSON participant API on the gateway, the rest is open |
+| [ADR-0008](docs/adr/0008-openrig-operator-integration/index.html) | Only the main OpenRig operator on the network, through a small bridge; OpenRig keeps its lifecycle and queues. Blocked until the participant API of ADR-0007 is decided |
+| [ADR-0009](docs/adr/0009-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search |
+
+**Deferred:** [A2A](docs/adr/deferred/0006-a2a-deferral/index.html) (ADR-0006) is set aside for now because its task semantics do not fit the current need for direct peer messaging. The proposal and a never-run implementation branch, `feat/a2a-participants`, are kept; see the [deferred ADRs](docs/adr/deferred/index.html).
 
 Not on the list yet: worker spawning, teams, Pi and OpenCode adapters, remote dispatch.
 
@@ -314,9 +316,10 @@ Decisions are kept in [`docs/adr/`](docs/adr/), one folder and one self-containe
 | [0003](docs/adr/0003-per-host-daemon/index.html) | A long-lived daemon on each machine with attachable windows. Plain `rtk` stays local | Accepted; built, owner-tested with one open bug; workers not built |
 | [0004](docs/adr/0004-network-tab/index.html) | A Network tab and SSH entry, following agent-net | Proposed; implemented, not run by the team |
 | [0005](docs/adr/0005-host-agent-cards-and-graph/index.html) | Public A2A-style host cards from `card.yaml`, polled by the gateway and drawn in a Graph tab | Proposed; implemented, not run by the team; the gateway database needs a migration |
-| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A routing and identity, reduced first delivery, managed and external participants | Proposal only |
-| [0007](docs/adr/0007-openrig-operator-integration/index.html) | OpenRig operator integration | Proposal only |
-| [0008](docs/adr/0008-agent-discovery-tool/index.html) | Agent discovery tool | Proposal only |
+| [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A routing and identity, with managed and external participants ([deferral record](docs/adr/deferred/0006-a2a-deferral/index.html)) | **Deferred** 2026-11-08; not on `main` |
+| [0007](docs/adr/0007-adapter-integration-contract/index.html) | Adapter integration contract (language-neutral) | Proposal only; wire direction chosen (HTTP+JSON participant API), details open |
+| [0008](docs/adr/0008-openrig-operator-integration/index.html) | OpenRig operator integration | Proposal only; blocked on the participant API |
+| [0009](docs/adr/0009-agent-discovery-tool/index.html) | Agent discovery tool | Proposal only |
 
 ## The name
 

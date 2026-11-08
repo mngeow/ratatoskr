@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ADR-0008 Agent Discovery Tool</title>
+<title>ADR-0008 OpenRig Operator Integration</title>
 <style>
 :root {
   color-scheme: light;
@@ -376,22 +376,22 @@ pre.wire .c { color: #a6a28c; }
 
 <header class="top">
   <p class="kicker">ARCHITECTURE DECISION RECORD 0008</p>
-  <h1>Agent discovery: a compact list the model reads and chooses from</h1>
-  <p class="prose">A proposal for one tool, here called <code>ratatoskr_discover</code>, that returns every paired host's card, its description and capabilities, its host name, and the sessions you can contact right now, in one compact list. <b>The model decides whom to contact.</b> The gateway is a directory, not a search engine. <b>This is a proposal only. No code was written, nothing was run, and the page has not been opened in a browser.</b></p>
+  <h1>OpenRig operator integration: one network identity, nothing else moves</h1>
+  <p class="prose">A proposal for letting Ratatoskr sessions on other machines talk to <b>one</b> OpenRig seat, the main operator, through the gateway. <b>The contract between the gateway and the bridge is not decided.</b> The user has chosen a direction for it, a separate HTTP+JSON participant API on the gateway (option W2 in <a href="../0007-adapter-integration-contract/index.html">ADR-0007</a>), but that record is still a proposal and reachability, TLS, authentication, identifiers and inbound delivery are open. The A2A protocol that an earlier draft assumed is deferred (<a href="../deferred/0006-a2a-deferral/index.html">deferral record</a>), and this page does not replace it with another one. OpenRig keeps its teams, its seat lifecycle, its terminals and its durable queues. <b>This is a proposal only. No code was written, nothing was run, no OpenRig command was tried, and the page has not been opened in a browser.</b></p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Proposed 2026-11-08.</b> The user chose the shape: a compact list of all Agent Cards, descriptions, capabilities and hostnames, returned by a tool, with the model selecting <span class="tag t-user">USER</span>. The tool name, limits and wiring are <span class="tag t-arch">PROPOSAL</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code.</dd></div>
-    <div><dt>Depends on</dt><dd><a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> (host cards, already written in the tree). Sending to the chosen session works today with the custom tool and later through <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a>. The operator could be listed later (<a href="../0007-openrig-operator-integration/index.html">ADR-0007</a>).</dd></div>
-    <div><dt>Sources</dt><dd>Ratatoskr source at the working tree, read: <a class="src" href="../../../internal/protocol/network.go"><code>internal/protocol/network.go</code></a> (<code>GET /v1/network</code>, hosts and sessions), <a class="src" href="../../../internal/protocol/graph.go"><code>internal/protocol/graph.go</code></a> (<code>GET /v1/graph</code>, host cards), <a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a> (the existing send tool).</dd></div>
-    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>). The list below is a mock-up, not output.</dd></div>
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-08; revised 2026-11-08 when A2A was deferred.</b> The direction (only the main operator on the network, as an externally managed participant) is the user's, as relayed by the operator <span class="tag t-user">USER</span>. <b>It cannot be built until a gateway interface for external participants is chosen in its own record.</b> Everything about how is <span class="tag t-arch">PROPOSAL</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code.</dd></div>
+    <div><dt>Depends on</dt><dd>A gateway interface for external participants, <b>which does not exist and is not decided</b>. <a href="../0007-adapter-integration-contract/index.html">ADR-0007</a> is the proposal for it (a language-neutral adapter contract; the user chose its wire direction, a separate HTTP+JSON participant API, and left the rest open). With that direction the bridge would be a client of that API. This record does not depend on ADR-0007 being accepted. <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> (A2A) was one candidate and is deferred. Related: <a href="../0009-agent-discovery-tool/index.html">ADR-0009</a> may list the operator later.</dd></div>
+    <div><dt>Sources</dt><dd>Ratatoskr source at the working tree, read. OpenRig only through its command line as described to this seat (<code>rig send</code>, <code>rig capture</code>, <code>rig queue</code>, <code>rig whoami</code>). <b>OpenRig's own source and API were not read.</b></dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>). The scenario below is illustrative.</dd></div>
   </dl>
 </header>
 
 <nav class="prose small" aria-label="Sections"><b>Sections:</b>
-  <a href="#summary">1. Short answer</a> · <a href="#list">2. The list</a> · <a href="#diagram">3. Discover, choose, send</a> · <a href="#not">4. What it does not do</a> · <a href="#order">5. Order of work</a> · <a href="#decisions">6. Choices and gaps</a>
+  <a href="#summary">1. Short answer</a> · <a href="#boundary">2. The boundary</a> · <a href="#bridge">3. The bridge</a> · <a href="#diagram">4. Round trip</a> · <a href="#limits">5. Limits</a> · <a href="#decisions">6. Choices and gaps</a>
 </nav>
 
 <p class="prose small"><b>Labels.</b>
-  <span class="tag t-user">USER</span> the user's choice.
+  <span class="tag t-user">USER</span> the user's direction.
   <span class="tag t-code">CODE</span> read in Ratatoskr source.
   <span class="tag t-arch">PROPOSAL</span> the architect's suggestion.
   <span class="tag t-unv">OPEN</span> undecided. <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
@@ -400,67 +400,71 @@ pre.wire .c { color: #a6a28c; }
 
 <h2 id="summary">1. Short answer</h2>
 <div class="note">
-  <p><b>One tool, one list, the model chooses.</b> A session calls the tool and gets a compact list: for each paired host, its name and address, its card's description and declared skills, when the gateway last saw the card; and for each session on it, the exact name and id and whether it is connected. The model reads the list and picks. <span class="tag t-user">USER</span></p>
-  <p><b>The gateway only aggregates.</b> It joins data it already holds. It does not search, filter by meaning, rank, embed, call a model or recommend. <span class="tag t-user">USER</span></p>
-  <p><b>A host's declaration is not a session's ability.</b> A card says what the host's owner wrote. It does not say that a given Claude or Codex session on it has the skill, and nothing checks. The list says so, and keeps source, freshness, reachable and unknown as separate facts. <span class="tag t-arch">PROPOSAL</span></p>
-  <p><b>Most of the data already exists.</b> Hosts, their sessions and their liveness are served at <code>GET /v1/network</code>, and host cards with their freshness at <code>GET /v1/graph</code>. A first directory therefore needs no A2A work. The user's chosen order puts it after the A2A first delivery; <a href="#order">section 5</a> separates what is possible now from that order.</p>
+  <p><b>Only the operator is exposed.</b> One OpenRig seat, the main operator, gets a network identity that Ratatoskr sessions on any paired host can reach. No other seat, pod or rig is registered. OpenRig still launches, restarts, supervises and tears down its seats, and still owns its terminals, teams and queues. <span class="tag t-user">USER</span></p>
+  <p><b>A small bridge, not an import.</b> A bridge on the operator's machine speaks the gateway's participant interface (direction chosen by the user: a separate HTTP+JSON API, <a href="../0007-adapter-integration-contract/index.html">ADR-0007</a>; the contract itself is <span class="tag t-unv">OPEN</span>). Inbound, it hands a message to the <i>exact current</i> operator through a supported OpenRig delivery. Outbound, it lets the operator send and report through a tool or command. It never starts a harness, never copies OpenRig topology, and never treats the sender field of a message as proof of identity. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>A message is not a queue item.</b> A message that crosses the gateway lives in the gateway. An OpenRig queue row lives in OpenRig. The operator may create a queue row because of a message; the bridge does not, and the two are never the same record. <span class="tag t-arch">PROPOSAL</span></p>
 </div>
 
-<h2 id="list">2. The list</h2>
-<p class="prose">A mock-up of what a session might receive (invented hosts; the real format is not chosen). It is plain compact text because a model reads it, not a person.</p>
-<pre class="wire" tabindex="0" aria-label="Mock-up of the discovery list">directory as of 14:09:20 (gateway clock). Declared = what each host owner wrote; nothing here checks a session's ability.
-host mac    100.64.0.5   card fresh 3s   "Ratatoskr daemon on my Mac."   declares: code-review
-  claude@mac    id ...c1a4   connected
-  codex@mac     id ...b208   connected
-host vmb    100.64.0.9   card stale 4m   "Ubuntu build box, GPU."        declares: (none)
-  codex@vmb     id ...9d31   connected
-host vmc    100.64.0.11  no card         (no description)                declares: (unknown)
-  (sessions unknown: host not connected)</pre>
-<ul class="prose">
-  <li><b>Source, freshness, reachable and unknown are four separate things.</b> The card's text comes from the host (<code>declared</code>), its age from the gateway's last poll, "connected" from the stream and heartbeat, and anything the gateway does not know is printed as unknown rather than guessed. A stale card or a disconnected host is shown, not hidden.</li>
-  <li><b>Participants, not only sessions.</b> Later, the list can include externally managed participants (<a href="../0006-a2a-routing-and-identity/index.html#participants">ADR-0006 section 5a</a>), marked as such, with their stable participant id. That is a later consumer of the same list; nothing here depends on it.</li>
-  <li><b>Exact ids come with names.</b> Sessions are listed with the exact id so the send goes to that session and not whatever the name means later (<a href="../0006-a2a-routing-and-identity/index.html#destination">ADR-0006 section 5</a>). The id is routing help, not authority.</li>
-  <li><b>Optional detail.</b> A second form returns one host's full card on request, for a model that wants the skills' descriptions. Payload bounds and paging are added only when the number of hosts makes the list too large; until then no paging. <span class="tag t-arch">PROPOSAL</span></li>
-</ul>
-
-<h2 id="diagram">3. Discover, choose, send (illustrative)</h2>
-<figure class="anim" data-diagram="d8" data-label="Discovery list, model choice and send"><figcaption class="t">Diagram. A model discovers a peer and contacts it</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The prose around it says the same.</p></noscript></figure>
-
-<h2 id="not">4. What it does not do</h2>
-<ul class="prose">
-  <li><b>No search, ranking, embeddings or model in the gateway.</b> The gateway returns the whole directory it holds. If it grows too large, the answer is bounds and paging, not relevance.</li>
-  <li><b>No automatic task assignment and no worker spawning.</b> The tool lists; the model sends a normal message to a session that already exists.</li>
-  <li><b>No verification of skills.</b> It repeats host declarations and live connection facts. It never says a session "can" do something.</li>
-  <li><b>No new permission.</b> Seeing a session in the list does not allow sending to it; the gateway's send checks are unchanged, and a refused send is reported as refused.</li>
-  <li><b>No change to host cards or the Graph tab.</b> They stay as ADR-0005 describes, and they do not imply A2A task support.</li>
-</ul>
-
-<h2 id="order">5. Order of work</h2>
+<h2 id="boundary">2. The boundary</h2>
 <div class="table-wrap"><table>
-  <tr><th>Possible now</th><th>The user's chosen sequence</th></tr>
-  <tr><td>A gateway read that joins <code>/v1/network</code> sessions with <code>/v1/graph</code> cards, and a tool in each session's MCP server that formats it. Sending to the chosen session already works with the custom send tool. No A2A needed.</td><td>A2A first delivery (<a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a>), then OpenRig integration (<a href="../0007-openrig-operator-integration/index.html">ADR-0007</a>), then discovery. After that, the same list can include the operator and send through A2A.</td></tr>
+  <tr><th>Stays in OpenRig</th><th>Becomes visible on the Ratatoskr network</th><th>Not done</th></tr>
+  <tr><td>Seat and pod definitions, launching, restarting, stopping, replacing the occupant<br>Terminals and what is typed into them<br>Durable queues, handoffs and their states<br>Teams, topology, permissions, the human-facing rules</td><td>One endpoint for the operator's current session<br>Messages to it and its replies, over an interface not yet chosen<br>Results it chooses to send back<br>Its liveness as the gateway sees it</td><td>No import of seats or topology<br>No registering every seat<br>No OpenRig lifecycle control from Ratatoskr<br>No merging OpenRig queues with gateway messages<br>No second copy of the operator's harness</td></tr>
 </table></div>
-<p class="prose">So a basic directory is not blocked by A2A. Whether to build it earlier than the chosen sequence is the user's call. <span class="tag t-unv">OPEN</span></p>
+<p class="prose"><b>Today.</b> The operator is an ordinary OpenRig seat, reached by <code>rig send</code> and queue rows from other OpenRig seats. Ratatoskr's gateway knows nothing about it: the custom send tool addresses Ratatoskr sessions on paired hosts only (<a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a>). A Ratatoskr session on another machine therefore cannot reach the operator, and the operator cannot reach it, except by a human relaying.</p>
+
+<h2 id="bridge">3. The bridge</h2>
+<h3>Where it lives and who it is</h3>
+<p class="prose"><b>Recommendation.</b> The bridge is an <b>externally managed participant</b> (an idea first written in the deferred <a href="../deferred/0006-a2a-proposal/index.html#participants">ADR-0006 section 5a</a>, kept as a record, not as a requirement): a separate process or package maintained near OpenRig (an optional <code>integrations/openrig</code> folder is acceptable), with a stable participant id, its <b>own</b> scoped, independently revocable credential, and no Ratatoskr daemon, terminal, hooks or MCP on the OpenRig side. It is not a session of a Ratatoskr host: host delegation is a trust boundary for managed hosts only, and the host pairing key is not reused for it. The gateway never depends on OpenRig's internals; the bridge is the only piece that knows them. In the terms of <a href="../0007-adapter-integration-contract/index.html">ADR-0007</a> the bridge would be an <i>OpenRig adapter</i>; if that record is not accepted, this boundary stands and only the wire sections change. <span class="tag t-arch">PROPOSAL</span> An earlier draft of this page made the operator a session of its host through the daemon; that is withdrawn. The owner enrols exactly one participant for the operator; the bridge refuses to register any other seat. <span class="tag t-unv">OPEN</span> how the enrolment is done, and by which interface.</p>
+
+<h3>Inbound: Ratatoskr to the operator</h3>
+<ul class="prose">
+  <li>The gateway routes a message to the operator's endpoint and sends it to the bridge over a mechanism that is <span class="tag t-unv">OPEN</span> (polling, long-polling, a stream or a push to a URL; <a href="../0007-adapter-integration-contract/index.html#inbound">ADR-0007</a>): not chosen, not designed, and not authorised to be built. (Candidates such as a registered URL or an outbound connector were discussed under the deferred ADR-0006; none is adopted here.)</li>
+  <li>The bridge delivers it with a supported OpenRig verb, to the <b>exact current operator session</b>, never to a name that could mean a replacement: a short message through <code>rig send</code>, shown with a header the <b>gateway</b> wrote ("from <code>codex@ubuntu</code>, verified by the gateway, task T1"). The body's own <code>from</code> is ignored. <span class="tag t-unv">UNVERIFIED</span> that <code>rig send</code> reaches the intended occupant reliably, handles long or multi-line bodies, or reports success truthfully.</li>
+  <li>Delivery is reported truthfully: the gateway may say a message was handed to the bridge, and the bridge may say it was delivered, only when each has confirmed it. A result exists only if the operator explicitly sends one. If the delivery command's outcome is unknown, that is said and the delivery is not retried.</li>
+</ul>
+
+<h3>Outbound: the operator to Ratatoskr</h3>
+<ul class="prose">
+  <li>A tool or command the operator can call to send a message or an answer. Name, form and wire are <span class="tag t-unv">OPEN</span>. Who owns any local MCP tool server or hook the operator's harness would use is the adapter's, not the gateway's (a recommendation, <a href="../0007-adapter-integration-contract/index.html#ownership">ADR-0007 section 3a</a>); which local form suits OpenRig is open.</li>
+  <li>The operator's own credential never leaves the bridge's side of the machine, and the gateway, not the operator's text, sets the origin of everything it forwards.</li>
+</ul>
+
+<h3>No double ownership</h3>
+<p class="prose">The operator's harness is owned by OpenRig. No Ratatoskr daemon launches, pairs, supervises or pastes into it as a managed session, and the bridge must not start a second copy. If both an OpenRig occupant and a daemon-managed session claimed the name, the gateway would see two participants for one seat; the one-participant rule above prevents that.</p>
+
+<h2 id="diagram">4. Round trip and restart (illustrative)</h2>
+<p class="prose">A Codex session on Ubuntu asks the operator which project architect owns a design question. The operator asks that architect inside OpenRig and answers. Then the second scene: the bridge stops, and the operator is restarted.</p>
+<figure class="anim" data-diagram="d7" data-label="Operator bridge round trip and restart"><figcaption class="t">Diagram. The operator behind the gateway, and what happens when it restarts</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The prose around it says the same.</p></noscript></figure>
+
+<h2 id="limits">5. Limits to state plainly</h2>
+<ul class="prose">
+  <li><b>Correlation lives in the bridge.</b> It keeps a table of gateway message id to the delivery it made and to any queue row the operator says it created. Neither OpenRig nor the gateway knows the other's ids. Lose the table and a late reply cannot be matched; it is then reported as unmatched, not guessed.</li>
+  <li><b>Cancellation cannot stop OpenRig work.</b> A cancel request, if the chosen interface has one, can only tell the operator; it cannot undo what the operator already started.</li>
+  <li><b>A queue result is not a reply.</b> A queue row closing in OpenRig does not answer the sender. Only the operator's explicit message does.</li>
+  <li><b>Restart and replacement.</b> The operator participant keeps its stable id across an OpenRig restart. Open conversations follow a policy the owner declares (suggested default: they end, with a reason), and nothing is moved to the new occupant silently.</li>
+  <li><b>Stale.</b> If the gateway cannot reach the bridge, it marks the operator unreachable; new messages fail immediately and are not queued for later.</li>
+  <li><b>Trust.</b> The gateway proves which host and session sent a message; it cannot prove the operator will act wisely on it. OpenRig's own gates and permission prompts are unchanged and not bypassed. Text from another machine is treated as untrusted input by the operator, like any message.</li>
+</ul>
 
 <h2 id="decisions">6. Choices and gaps</h2>
 <div class="table-wrap"><table>
   <tr><th>#</th><th>Question</th><th>Recommendation</th><th>Status</th></tr>
-  <tr><td>1</td><td>A compact list of all cards and sessions, model chooses</td><td>Yes</td><td><span class="tag t-user">USER</span></td></tr>
-  <tr><td>2</td><td>Gateway does no search or ranking</td><td>Yes</td><td><span class="tag t-user">USER</span></td></tr>
-  <tr><td>3</td><td>Tool name</td><td><code>ratatoskr_discover</code></td><td><span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span></td></tr>
-  <tr><td>4</td><td>Who sees which hosts and sessions</td><td>Every session sees every paired host; hosts see nothing outside the pairing</td><td><span class="tag t-unv">OPEN</span> (it exposes all session names to every session)</td></tr>
-  <tr><td>5</td><td>Size limit</td><td>No paging until needed; a hard cap with a "truncated" flag</td><td><span class="tag t-unv">OPEN</span> numbers not chosen</td></tr>
-  <tr><td>6</td><td>Build earlier than the chosen order</td><td>Possible; your call</td><td><span class="tag t-unv">OPEN</span></td></tr>
-  <tr><td>7</td><td>Build any of it</td><td>No build authorised</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>1</td><td>Only the main operator is exposed</td><td>Yes</td><td><span class="tag t-user">USER</span> direction</td></tr>
+  <tr><td>2</td><td>Bridge identity</td><td>An external participant with its own scoped credential; one participant for the operator</td><td><span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>3</td><td>Inbound delivery verb</td><td>A supported OpenRig verb to the exact current session</td><td><span class="tag t-unv">OPEN</span> which verb; reliability unverified</td></tr>
+  <tr><td>4</td><td>Outbound form</td><td>A tool or command; shape not chosen</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>5</td><td>Where the bridge runs, how the gateway reaches it, and what restarts it</td><td>Near OpenRig; the transport depends on the gateway interface, which is not chosen; supervision not designed</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>6</td><td>Who may message the operator</td><td>Your own paired hosts only; outsiders denied</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>7</td><td>Build any of it</td><td>Not before a gateway interface for external participants is chosen; <a href="../0007-adapter-integration-contract/index.html">ADR-0007</a> proposes one and is undecided</td><td><span class="tag t-user">USER</span> no build authorised</td></tr>
 </table></div>
 <ul class="prose">
-  <li><b>Not examined:</b> how large a list a model handles before it chooses worse, and how the existing MCP server would carry a longer tool result.</li>
-  <li><b>Unverified:</b> that the two existing routes can be joined without a new gateway route; the join may belong in the gateway or in the daemon.</li>
+  <li><b>Not examined:</b> OpenRig's source, its queue and send internals, and whether a long-running adapter fits its model. Everything here is built from command names and the user's description.</li>
+  <li><b>Not designed:</b> operator-to-operator across OpenRig instances, importing other seats, or any OpenRig change.</li>
 </ul>
 
 <h2 id="sources">Sources</h2>
 <ul class="prose small">
-  <li><a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> host cards and the graph; <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> A2A; <a href="../0007-openrig-operator-integration/index.html">ADR-0007</a> the operator; <a href="../0004-network-tab/index.html">ADR-0004</a> the network API.</li>
+  <li><a href="../deferred/0006-a2a-deferral/index.html">The A2A deferral record</a> and the <a href="../deferred/0006-a2a-proposal/index.html">preserved A2A proposal</a> for the earlier design, kept for reference; <a href="../0009-agent-discovery-tool/index.html">ADR-0009</a> for discovery; <a href="../0003-per-host-daemon/index.html">ADR-0003</a> for the daemon.</li>
   <li><b>The request:</b> the user's words as relayed by the operator on 2026-11-08 (split into three records).</li>
 </ul>
 </div>
@@ -588,22 +592,31 @@ host vmc    100.64.0.11  no card         (no description)                declare
 
 
   var D = {};
-  D.d8 = { w: 760, h: 250, nodes: [
-    N('model', 14, 95, 150, 46, 'claude', 'Model in a session', 'Claude on the Mac'),
-    N('dmac', 205, 95, 140, 46, 'dm', 'Local daemon', 'the MCP tool'),
-    N('gw', 390, 86, 160, 62, 'gw', 'Gateway directory', 'cards and sessions it holds'),
-    N('dub', 596, 95, 150, 46, 'dm', 'Ubuntu daemon', 'host of codex@vmb')
+  D.d7 = { w: 760, h: 250, nodes: [
+    N('codex', 14, 95, 140, 46, 'codex', 'Codex', 'session ...9d31, Ubuntu'),
+    N('gw', 200, 86, 140, 62, 'gw', 'Gateway', 'routes the message'),
+    N('br', 386, 95, 140, 46, 'dm', 'Bridge', 'operator machine'),
+    N('op', 590, 28, 156, 46, 'claude', 'Operator seat', 'OpenRig, exact session'),
+    N('arch', 590, 160, 156, 46, 'codex', 'Project architect', 'another OpenRig seat')
   ], edges: [
-    E('e1', 'model', 'dmac', 'ratatoskr_discover'),
-    E('e2', 'dmac', 'gw', 'directory read'),
-    E('e3', 'gw', 'dub', 'send to the exact session')
+    E('e1', 'codex', 'gw', 'message'),
+    E('e2', 'gw', 'br', 'interface not chosen'),
+    E('e3', 'br', 'op', 'supported OpenRig delivery'),
+    E('e4', 'op', 'arch', 'OpenRig queue (not the gateway)', 'dash')
   ], scenes: [
-    { name: 'Discover, choose, send', steps: [
-      S('The model calls the tool', 'It wants a second opinion on a retry loop and does not know who to ask. It calls ratatoskr_discover with no arguments.', ['model', 'dmac'], ['e1'], ['e1', 'discover'], ['One call, no search terms.'], ['The tool does not ask a model anything.']),
-      S('The daemon reads the directory', 'The daemon asks the gateway with its host credential. The gateway joins what it already holds: the paired hosts, their latest cards and freshness, and each host\'s sessions and connection state.', ['dmac', 'gw'], ['e2'], ['e2', 'read'], ['Joins existing data.'], ['No search, ranking or embeddings.']),
-      S('The compact list comes back', 'Every host is listed with its card description, declared skills, card age and connection, and every session with its exact name and id. Unknown things say unknown. Declared means declared, not verified.', ['gw', 'dmac', 'model'], ['e2', 'e1'], ['e2', 'list', 'rev'], ['Source, freshness, reachable, unknown kept apart.'], ['A declared skill is not a verified one.']),
-      S('The model chooses', 'It reads the list and decides codex@vmb, a GPU build box, looks right, or it decides to ask no one. The choice is the model\'s own; nothing in the gateway recommended it.', ['model'], [], null, ['The model selects.'], ['The gateway never ranks or assigns.']),
-      S('It sends to that exact session', 'It uses the normal send, addressed to codex@vmb with the exact id from the list. The gateway\'s send checks run as always; if the session was replaced since the list, the send is refused, not redirected.', ['model', 'dmac', 'gw', 'dub'], ['e1', 'e2', 'e3'], ['e3', 'message'], ['The id pins the session.'], ['Appearing in the list is not permission to send.'])
+    { name: 'Round trip', steps: [
+      S('Codex asks the operator', 'Codex sends a message to the operator\'s exact endpoint: which architect owns this design question? The gateway authenticates the caller from its credential, not from the message body.', ['codex', 'gw'], ['e1'], ['e1', 'message'], ['Caller proven by credential.', 'Destination is the exact session.'], ['Nothing in the body is trusted as identity.']),
+      S('The gateway routes it to the bridge', 'The gateway sends it to the bridge over the interface the project has yet to choose, with an origin it wrote: from codex@ubuntu, message M1.', ['gw', 'br'], ['e2'], ['e2', 'M1 + origin'], ['Origin written by the gateway.'], ['Not yet delivered to the operator.']),
+      S('The bridge hands it to the operator', 'The bridge delivers it to the exact current operator session with a supported OpenRig verb, headed "from codex@ubuntu, verified by the gateway". Only a confirmed delivery is reported as delivered. An unknown outcome is reported as uncertain and never retried.', ['br', 'op'], ['e3'], ['e3', 'delivered'], ['A message, not a queue item.'], ['Delivery is not an answer.']),
+      S('The operator asks the architect, inside OpenRig', 'The operator creates its own OpenRig queue item for the project architect. That is OpenRig work: Ratatoskr never sees it and the bridge does not create it. The architect answers the operator through OpenRig.', ['op', 'arch'], ['e4'], ['e4', 'OpenRig queue item'], ['OpenRig keeps its queues and lifecycle.'], ['The queue item is not the gateway message.']),
+      S('The operator reports, explicitly', 'The operator calls the outbound tool to answer. The bridge sends it through the gateway as the reply to M1. Only this explicit message answers; a queue row closing does not.', ['op', 'br', 'gw'], ['e3', 'e2'], ['e2', 'reply to M1', 'rev'], ['An answer only from the operator\'s message.'], ['A stop or a closed queue row never counts as an answer.']),
+      S('Codex reads the result', 'Codex receives the reply. How a session learns of it (a wake, or a later read) depends on the inbound delivery mechanism, which is not chosen.', ['codex', 'gw'], ['e1'], ['e1', 'reply', 'rev'], ['The reply is attributed by the gateway.'], [])
+    ] },
+    { name: 'Stale and restart', steps: [
+      S('The bridge registers the operator', 'The bridge presents its own credential and registers the operator participant. The gateway creates an endpoint for it only. Only the one enrolled operator may register; no daemon or Ratatoskr terminal is involved.', ['br', 'gw'], ['e2'], ['e2', 'register ...op1'], ['One registrant, owner-configured.'], ['No other seat can register.']),
+      S('The bridge stops heartbeating', 'The gateway notices within its normal window and marks the operator unreachable. A new message fails immediately with a clear error. It is not queued for later.', ['gw'], [], null, ['Fail immediately, no replay.'], ['A stored endpoint is not proof it is up.'], ['br']),
+      S('The operator is restarted by OpenRig', 'OpenRig starts a new occupant. The participant id is stable, but what happened to open conversations is the owner\'s declared policy; by default they end with the reason "occupant replaced" and nothing is moved to the new occupant.', ['gw', 'op'], [], null, ['Replacement is rejected, not followed.'], ['Nothing crosses to the new session.']),
+      S('Messages resume only after it registers again', 'When the bridge re-registers the new occupant, new messages reach it under the same participant id. A reply addressed to an ended conversation is refused.', ['br', 'gw', 'op'], ['e2', 'e3'], ['e2', 'register ...op2'], ['Exact session binding holds.'], [])
     ] }
   ] };
   function setup(fig) {

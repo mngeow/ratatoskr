@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0007 Adapter Integration Contract</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
+
+/* ADR-0006 animated diagrams */
+.anim { margin: 14px 0 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.anim figcaption.t { padding: 10px 14px 0; font-weight: 700; }
+.anim .scenes { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.anim .scenes button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 6px; padding: 3px 10px; font: inherit; cursor: pointer; }
+.anim .scenes button[aria-pressed="true"] { background: var(--bridge-soft); border-color: var(--bridge); font-weight: 700; }
+.anim svg { display: block; width: 100%; height: auto; }
+.anim .ctl2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); }
+.anim .ctl2 button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
+.anim .ctl2 button:disabled { opacity: .45; cursor: default; }
+.anim button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.anim .pos2 { color: var(--muted); font-size: .85rem; margin-left: auto; }
+.anim .cap { padding: 4px 14px 12px; min-height: 8.5em; }
+.anim .cap h4 { margin: 0 0 4px; font-size: 1rem; }
+.anim .cap p { margin: 0 0 6px; }
+.anim .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.anim .chips ul { margin: 0; padding: 0; list-style: none; font-size: .88rem; }
+.anim .chips li { padding: 2px 0 2px 1.5em; position: relative; }
+.anim .chips .ok li::before { content: "\2713"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.anim .chips .no li::before { content: "\2717"; position: absolute; left: 0; color: var(--bad); font-weight: 700; }
+.anim .chips h5 { margin: 0 0 2px; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.anim .tr { margin: 0; padding: 8px 14px 12px 34px; border-top: 1px solid var(--line); font-size: .88rem; color: var(--muted); }
+.anim .tr li.cur { color: var(--ink); font-weight: 700; }
+.dn rect { fill: var(--surface); stroke: var(--wire); stroke-width: 1.5; transition: fill .2s, stroke .2s; }
+.dn text { text-anchor: middle; fill: var(--ink); font-family: system-ui, sans-serif; }
+.dn .l1 { font-size: 13px; font-weight: 700; }
+.dn .l2 { font-size: 10.5px; fill: var(--muted); }
+.dn.claude rect { fill: var(--claude-soft); stroke: var(--claude); }
+.dn.codex rect { fill: var(--codex-soft); stroke: var(--codex); }
+.dn.gw rect { fill: var(--accent-soft); stroke: var(--accent); }
+.dn.dm rect { fill: var(--bridge-soft); stroke: var(--bridge); }
+.dn.ext rect { fill: var(--surface); stroke-dasharray: 5 3; }
+.dn.dead rect { stroke-dasharray: 3 3; opacity: .6; }
+.dn.lit rect { stroke-width: 3.5; stroke: var(--focus); }
+.de line, .de polyline { stroke: var(--wire); stroke-width: 2; fill: none; transition: stroke .2s; }
+.de.lit line, .de.lit polyline { stroke: var(--focus); stroke-width: 3.5; }
+.de.dash line, .de.dash polyline { stroke-dasharray: 6 4; }
+.de.bad.lit line, .de.bad.lit polyline { stroke: var(--bad); }
+.de text { font-size: 10px; fill: var(--muted); text-anchor: middle; font-family: system-ui, sans-serif; }
+.de.lit text { fill: var(--ink); font-weight: 700; }
+.pk { fill: var(--focus); }
+.pk-l { font-size: 10px; fill: var(--ink); font-family: ui-monospace, Menlo, monospace; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; text-anchor: middle; }
+html:not(.js) .anim svg, html:not(.js) .anim .ctl2, html:not(.js) .anim .scenes { display: none; }
+@media (max-width: 720px) { .anim .chips { grid-template-columns: 1fr; } }
+.cmp td:first-child { white-space: nowrap; }
+pre.wire { background: var(--term); color: var(--term-ink); padding: 10px 14px; border-radius: 8px; overflow: auto; font: .8rem/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre.wire .c { color: #a6a28c; }
+.t-opt { color: var(--codex); }
+.dn.und rect { fill: var(--warn-soft); stroke: var(--warn); stroke-dasharray: 2 3; }
+</style>
+</head>
+<body>
+<nav data-docs-home aria-label="Documentation home" style="font:14px/1.4 system-ui,sans-serif;padding:6px 14px;background:#272822;color:#f8f8f2;border-bottom:1px solid #49483e"><a href="../../index.html" style="color:#66d9ef">&larr; Docs home</a></nav>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0007</p>
+  <h1>One contract, any language: how outside harnesses and orchestrators join through adapters</h1>
+  <p class="prose">A proposal for a generic, language-neutral Ratatoskr integration interface. An external harness or orchestrator (OpenRig, a Pi agent, a custom service) joins through an <b>adapter</b> that its own authors write in any language. The core speaks one stable, documented <b>participant contract</b>; the adapter translates between that contract and its harness, so no harness detail enters the gateway or the core. <b>The user has chosen the wire direction: a separate, small HTTP+JSON participant API on the gateway (option W2, <a href="#wire">section 7</a>).</b> Reachability, TLS, authentication and enrolment, identifiers, the inbound delivery mechanism, the schemas and who may contact whom are still open. A2A is deferred and is not the assumed contract. <b>This is a proposal only. No code was written, nothing was run, and the page has not been opened in a browser.</b></p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-08.</b> The need (outside harnesses join through adapters in any language; a Go-only interface does not meet it; A2A not assumed) and, <b>on 2026-11-08, the choice of W2 as the wire direction</b> are the user's, as relayed by the operator <span class="tag t-user">USER</span>. <b>This remains a proposal for the API contract; it does not authorise building it.</b> Everything else is <span class="tag t-arch">RECOMMENDATION</span>, <span class="tag t-opt">OPTION</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code.</dd></div>
+    <div><dt>Relates to</dt><dd><a href="../0008-openrig-operator-integration/index.html">ADR-0008</a> (the OpenRig operator, which this would give an interface), <a href="../0009-agent-discovery-tool/index.html">ADR-0009</a> (discovery), <a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> (host cards) and the <a href="../deferred/0006-a2a-deferral/index.html">A2A deferral record</a>. <a href="#relations">Section 12</a> says how.</dd></div>
+    <div><dt>Sources</dt><dd>Ratatoskr's cross-machine contract (<a class="src" href="../../implementation/cross-machine-contract.md"><code>docs/implementation/cross-machine-contract.md</code></a>) and the send tool (<a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a>), read. Nothing about OpenRig's or Pi's internals was read; both appear only as the user described them.</dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>). Every flow and status below is a design, not an observation.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#summary">1. Short answer</a> ·
+  <a href="#today">2. What exists today</a> ·
+  <a href="#roles">3. Roles and trust</a> ·
+  <a href="#ownership">3a. MCP and hooks: who owns what</a> ·
+  <a href="#identity">4. Identity and addressing</a> ·
+  <a href="#flows">5. The flows</a> ·
+  <a href="#work">6. Conversation vs delegated work</a> ·
+  <a href="#wire">7. Wire options</a> ·
+  <a href="#versioning">8. Versioning</a> ·
+  <a href="#security">9. Security</a> ·
+  <a href="#author">10. What an adapter author does</a> ·
+  <a href="#scenarios">11. Scenarios</a> ·
+  <a href="#relations">12. Relation to the other records</a> ·
+  <a href="#decisions">13. Decisions and open questions</a>
+</nav>
+
+<p class="prose small"><b>Labels.</b>
+  <span class="tag t-user">USER</span> the user's own requirement or answer.
+  <span class="tag t-code">CODE</span> read in Ratatoskr source or its contract.
+  <span class="tag t-arch">RECOMMENDATION</span> the architect's suggestion.
+  <span class="tag t-opt">OPTION</span> a choice with drawbacks, not chosen.
+  <span class="tag t-unv">OPEN</span> undecided. <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+  The diagrams have Play, Pause, Back, Next and Replay; nothing moves until you press Play, and reduced motion removes the packet animation.
+</p>
+
+<h2 id="summary">1. Short answer</h2>
+<div class="note">
+  <p><b>The requirement.</b> External harnesses and orchestrators must be able to join through adapters written in any language. A Go-only interface (an importable package, a Go plug-in) does not meet that, because most adapters would not be written in Go. <span class="tag t-user">USER</span></p>
+  <p><b>The shape.</b> Define a <b>participant contract</b>: a short list of operations (connect, register sessions, send, receive, report delivery, discover, close) and exact meanings for each, written as a document with machine-readable schemas and a set of conformance fixtures (example exchanges any adapter can be checked against). The contract is meant to be independent of how bytes travel, and the user has chosen the binding: <b>a separate HTTP+JSON participant API on the gateway</b>, documented and supported for any language's HTTP client. A Go library may exist as a convenience, but the document is the contract, not the library. <span class="tag t-arch">RECOMMENDATION</span></p>
+  <p><b>The pattern.</b> The core and the gateway know participants, sessions and messages. They do not know Codex, OpenRig, Pi or any harness. Everything harness-specific (how to type into it, how to ask it a question, how it names its own agents) lives in the adapter. <span class="tag t-arch">RECOMMENDATION</span></p>
+  <p><b>The chosen wire, and its edges.</b> <span class="tag t-user">USER</span> W2: a participant API on the gateway for external adapters. The daemon-to-gateway host protocol <b>stays separate and unchanged</b>; this API does not reuse or expose it. It is a documented, supported integration surface, not an internal one.</p>
+  <p><b>What is not decided here.</b> Network reachability (a public address is not an authorisation for an internet-wide listener), TLS, authentication and enrolment, participant and session identifiers, how an inbound message reaches an adapter, the detailed schemas, and who may contact whom. Nor is whether delegated work is tracked, nor any limit. The decisions are collected in <a href="#decisions">section 13</a>.</p>
+</div>
+
+<h2 id="today">2. What exists today</h2>
+<p class="prose">Read in the cross-machine contract <span class="tag t-code">CODE</span> (its text describes protocol version 1; the code is a later version whose details this page did not re-read, <span class="tag t-unv">UNVERIFIED</span>):</p>
+<ul class="prose">
+  <li><b>A wire already exists, between our own daemons and the gateway.</b> JSON over HTTP with a bearer credential and a protocol-version header, plus one long-lived newline-delimited JSON stream per host that carries <code>offer</code>, <code>directory</code>, <code>ping</code> and <code>report</code>. Runtimes always dial out; the gateway never dials in.</li>
+  <li><b>Identity is the host.</b> The host comes from its credential, never from a request. Sessions are registered per run with new ids; a message address is <code>name@host</code>.</li>
+  <li><b>Honest delivery results exist</b> (<a href="#flows">section 5</a>): <code>host_stored</code> is success and means the host has the message, not that anyone read it.</li>
+  <li><b>It was built for one kind of client.</b> An <code>offer</code> is turned by the host's daemon into a paste into a terminal, subject to that daemon's gates. There is no published schema, no policy for outside authors, and no way for something that is not an rtk host to take part.</li>
+</ul>
+<p class="prose">So the pieces for honest results and for identity from a credential exist in the host protocol. What is missing is a contract an outsider can implement and a way to enrol one. <b>The user chose not to open the host protocol for that</b> (option W1) but to add a separate participant API beside it, so the host protocol is unchanged. <span class="tag t-user">USER</span></p>
+
+<h2 id="roles">3. Roles and trust boundaries</h2>
+<div class="table-wrap"><table>
+  <tr><th>Part</th><th>Responsible for</th><th>Trusted for</th><th>Never trusted for</th></tr>
+  <tr><td><b>Core</b><br>the rtk runtime and daemon on a host</td><td>Launching and supervising its own sessions; the terminal bridge, hooks and MCP; applying its gates before pasting</td><td>Acting for its own host and sessions</td><td>Naming any other host or participant</td></tr>
+  <tr><td><b>Gateway</b><br>including the participant API</td><td>Serving the participant API (separate from the host protocol); authenticating every caller; deciding the sender's identity; storing the full message before routing; recording every outcome; writing the origin the receiver sees</td><td>Being the single authority on who sent what, and what happened to it</td><td>Understanding any harness; judging whether a model did the right thing; searching or ranking</td></tr>
+  <tr><td><b>Adapter</b><br>any language</td><td>Being a client of the participant API (any language); translating to and from one harness; reporting delivery truthfully; keeping its own credential safe</td><td>Acting as the one participant it was enrolled as</td><td>Acting as another participant or host; setting the origin of a message; its text as instructions</td></tr>
+  <tr><td><b>Host, session or harness</b><br>Claude, Codex, an OpenRig seat, a Pi agent</td><td>Doing its own work and applying its own permission prompts</td><td>Nothing about the network</td><td>Identity (a model cannot assert who it is); its output as authority over another party</td></tr>
+</table></div>
+<figure class="anim" data-diagram="layers" data-label="Roles and trust boundaries"><figcaption class="t">Diagram. Who knows what, from the session to an outside harness, with the participant API beside the host wire</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The table above says the same.</p></noscript></figure>
+
+<h2 id="ownership">3a. MCP and hooks: who owns what</h2>
+<div class="note">
+  <p><b>This section is a RECOMMENDATION about the architecture boundary.</b> <span class="tag t-arch">RECOMMENDATION</span> It is <b>not</b> a decision by the user that every adapter must use MCP or hooks. The language-neutral network contract needs neither; each adapter may use whatever local mechanism its harness offers.</p>
+  <p><b>The rule, in short.</b> For a <b>Ratatoskr-managed</b> Claude or Codex session, the daemon (core) owns the per-session MCP server and its configuration, and the hook configuration and receiver. For an <b>external participant</b>, the <b>adapter</b> owns its harness-facing integration, its deployment and its configuration. The <b>gateway</b> owns only the participant API, authentication, routing and the ledger, and <b>never installs an MCP server or a hook into an external harness</b>.</p>
+  <p>Every box and step in the table and diagrams carries one of three labels: <span class="tag t-code">OWNED BY RATATOSKR</span> <span class="tag t-opt">OWNED BY THE ADAPTER</span> <span class="tag t-unv">STILL UNDECIDED</span>.</p>
+</div>
+<h3>What exists for a managed session (read in the code, not run)</h3>
+<ul class="prose">
+  <li><b>A loopback-only server</b> in the daemon (<a class="src" href="../../../internal/server/server.go"><code>internal/server/server.go</code></a>) listens on <code>127.0.0.1</code> and gives each agent its own bearer token, kept only as a hash. It serves the agent's MCP server at <code>/mcp</code> and the hook receiver at <code>POST /hook</code>. <span class="tag t-code">CODE</span></li>
+  <li><b>Claude</b> is launched with <code>--mcp-config</code>, <code>--settings</code> (the hooks) and <code>--allowedTools</code> (<a class="src" href="../../../internal/agent/claude.go"><code>internal/agent/claude.go</code></a>). <b>Codex</b> is launched with <code>-c mcp_servers.ratatoskr.*</code> (the server, its bearer token variable and the approval mode) and one <code>-c hooks.&lt;event&gt;</code> per hook event (<a class="src" href="../../../internal/agent/codex.go"><code>internal/agent/codex.go</code></a>). <span class="tag t-code">CODE</span></li>
+  <li><b>The hooks</b> are five events (<code>SessionStart</code>, <code>UserPromptSubmit</code>, <code>Stop</code>, <code>PermissionRequest</code>, <code>PostToolUse</code>), each running <code>rtk hook</code> with the agent and event (<a class="src" href="../../../internal/agent/hooks.go"><code>internal/agent/hooks.go</code></a>). They tell the router what state the harness is in. They do not carry messages. <span class="tag t-code">CODE</span></li>
+  <li><b>Incoming messages</b> go through the daemon's router and delivery gate and are pasted into the pane by the terminal bridge, and only when the agent is idle with nothing in flight and no user draft (<a class="src" href="../../../internal/router/gate.go"><code>internal/router/gate.go</code></a>). <span class="tag t-code">CODE</span></li>
+  <li><b>On <code>main</code> only <code>ratatoskr_send</code> is pre-approved</b> in the launch settings. <span class="tag t-code">CODE</span> Behaviour of any of this has never been run by the team. <span class="tag t-unv">UNVERIFIED</span></li>
+</ul>
+<h3>The recommended boundary</h3>
+<div class="table-wrap"><table>
+  <tr><th>Concern</th><th>Managed Claude or Codex</th><th>External participant (OpenRig operator, Pi agent)</th><th>Gateway</th></tr>
+  <tr><td><b>Per-session MCP server and its config</b></td><td><span class="tag t-code">OWNED BY RATATOSKR</span> the daemon starts it and writes the launch configuration</td><td><span class="tag t-opt">OWNED BY THE ADAPTER</span> it <i>may</i> provide an MCP tool server, or use another local mechanism. Which one, per harness: <span class="tag t-unv">STILL UNDECIDED</span></td><td>Never installs one</td></tr>
+  <tr><td><b>The send tool the model sees</b></td><td><span class="tag t-code">OWNED BY RATATOSKR</span> <code>ratatoskr_send</code> over MCP</td><td><span class="tag t-opt">OWNED BY THE ADAPTER</span> its form (MCP tool, command, in-process call) is <span class="tag t-unv">STILL UNDECIDED</span></td><td>Sees only the participant API call</td></tr>
+  <tr><td><b>Hook configuration and receiver</b></td><td><span class="tag t-code">OWNED BY RATATOSKR</span> the daemon writes the hook config and receives <code>POST /hook</code></td><td><span class="tag t-opt">OWNED BY THE ADAPTER</span> it <i>may</i> use that harness's hooks or events; whether a harness offers any is <span class="tag t-unv">STILL UNDECIDED</span></td><td>Never installs one</td></tr>
+  <tr><td><b>What hooks mean</b></td><td>State signals that feed the gate (idle, busy, waiting for permission). <b>Not message transport</b></td><td>Optional signals that tell the adapter when a session can accept input. Not message transport</td><td>Does not see them</td></tr>
+  <tr><td><b>Incoming delivery into the harness</b></td><td><span class="tag t-code">OWNED BY RATATOSKR</span> the router, the gate and the terminal bridge</td><td><span class="tag t-opt">OWNED BY THE ADAPTER</span> a harness-specific local delivery. The adapter reports the delivery status</td><td><span class="tag t-code">OWNED BY RATATOSKR</span> the delivery mechanism <i>to the adapter</i> is <span class="tag t-unv">STILL UNDECIDED</span> (I1 to I4, <a href="#inbound">section 5</a>)</td></tr>
+  <tr><td><b>Credentials</b></td><td>A per-agent loopback token to the daemon, and the host's own credential from daemon to gateway</td><td>The participant credential, for the participant API only. Its form is <span class="tag t-unv">STILL UNDECIDED</span></td><td>Authenticates; stores only a hash</td></tr>
+  <tr><td><b>Deployment and configuration</b></td><td><span class="tag t-code">OWNED BY RATATOSKR</span> written at launch</td><td><span class="tag t-opt">OWNED BY THE ADAPTER</span> its author or operator deploys and configures it, in the harness's own way</td><td>Serves the participant API, auth, routing, the ledger</td></tr>
+  <tr><td><b>Required by the network contract?</b></td><td>Not applicable: the daemon is our own client</td><td><b>No.</b> The contract needs only the participant API; MCP and hooks are local choices</td><td>Needs neither</td></tr>
+</table></div>
+<figure class="anim" data-diagram="own" data-label="Outbound and inbound flow for an external participant"><figcaption class="t">Diagram. An external participant: what Ratatoskr owns, what the adapter owns, and what is undecided</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The table above says the same.</p></noscript></figure>
+<p class="prose"><b>Compare with the managed-session path,</b> where the daemon already handles MCP, hooks and the terminal paste:</p>
+<figure class="anim" data-diagram="ownmgd" data-label="The managed-session path for comparison"><figcaption class="t">Diagram. A managed Claude or Codex session: everything is Ratatoskr-owned</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The table above says the same.</p></noscript></figure>
+<h3>Local integration questions still open, per harness</h3>
+<p class="prose">None of these has been examined. Both harnesses are known here only through the user's description. <span class="tag t-unv">UNVERIFIED</span> Each is an <span class="tag t-unv">STILL UNDECIDED</span> choice for the adapter author, not for the gateway.</p>
+<div class="table-wrap"><table>
+  <tr><th>Harness</th><th>Outbound: how a model or operator calls the adapter</th><th>Inbound: how a message is delivered into it</th><th>Signals, deployment</th></tr>
+  <tr><td><b>OpenRig operator</b><br>(<a href="../0008-openrig-operator-integration/index.html">ADR-0008</a>)</td><td>An MCP tool in the operator seat's own configuration? A command the operator runs? Something OpenRig already offers? Who adds it to the seat (OpenRig's team or ours)?</td><td>A supported OpenRig delivery to the exact current occupant, such as <code>rig send</code>. Does it reach the right occupant, take long or multi-line bodies, and report success truthfully?</td><td>Does the operator's harness expose hooks or events that say it is idle? Where does the adapter run, who starts and restarts it, and who holds its credential?</td></tr>
+  <tr><td><b>Pi agent</b></td><td>How does Pi expose tools to its agents: MCP, its own tool protocol, or in-process calls? One tool server per agent or one for all three?</td><td>How can a message be delivered to one named Pi agent? Is there an input queue, an event, an API?</td><td>Does Pi have hooks, events or an idle signal? Is the adapter a sidecar process or a plug-in inside Pi, and in which language?</td></tr>
+</table></div>
+
+<h2 id="identity">4. Identity and addressing</h2>
+<p class="prose"><b>Everything in this section is a recommendation for decision.</b> Participant identifiers, session identifiers, the address form and enrolment are open user decisions (<a href="#decisions">section 13</a>); none is settled here, and nothing from the deferred A2A design is carried over as an answer.</p>
+<ul class="prose">
+  <li><b>A participant is an enrolled principal.</b> It has a stable id and its <b>own</b> credential, scoped to it and revocable on its own. It is not a host and does not borrow a host's pairing key. <span class="tag t-arch">RECOMMENDATION</span> How it is enrolled is <span class="tag t-unv">OPEN</span>; the nearest existing pattern is host pairing, where the owner mints a single-use code at the gateway.</li>
+  <li><b>The participant comes from the credential, never from a request.</b> The same rule as hosts today. An adapter can register and send only as sessions of its own participant. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>One participant, many sessions.</b> A participant may hold several named sessions at once (an OpenRig adapter fronting one operator today and more seats later; a Pi adapter fronting three Pi agents). This mirrors a host with several agents. Each registration gets a new opaque session id, and a name has at most one open session, so a replacement session never inherits an older one's messages. <span class="tag t-code">CODE</span> for hosts; <span class="tag t-arch">RECOMMENDATION</span> to apply it unchanged to participants.</li>
+  <li><b>Addresses.</b> <span class="tag t-opt">OPTION A</span> participants share the <code>name@host</code> namespace: <code>operator@openrig-main</code> works with the existing send tool, but participant ids and host names must never collide, so enrolment must refuse a clash. <span class="tag t-opt">OPTION B</span> a distinct form such as <code>ext:operator@openrig-main</code>: no collision possible, but every tool and list must learn a second form. <span class="tag t-arch">RECOMMENDATION</span> A, with the collision check. <span class="tag t-unv">OPEN</span></li>
+  <li><b>Names and ids.</b> A friendly name is looked up when the message is sent; the exact session id is what the gateway routes on. An ambiguous name is refused, not guessed (the rule hosts already follow).</li>
+  <li><b>The origin is written by the gateway.</b> The receiver sees <code>name@participant</code> (or <code>name@host</code>) as the gateway established it. A <code>from</code> field in a body is ignored.</li>
+</ul>
+
+<h2 id="flows">5. The flows</h2>
+<p class="prose">Four flows, each in the diagram below: send, receive, report, and the failures. Under W2 each flow is an operation on the participant API. Route names, fields and schemas are <b>not designed</b> (<span class="tag t-unv">OPEN</span>). The status words in the table are the ones the cross-machine contract already uses <span class="tag t-code">CODE</span>; the last three rows are what adapter-side delivery would add <span class="tag t-arch">RECOMMENDATION</span>.</p>
+<div class="table-wrap"><table>
+  <tr><th>Flow</th><th>What the contract says</th><th>Needed?</th></tr>
+  <tr><td><b>Connect</b></td><td>Authenticate the API call with the participant credential (how is open); state the contract version(s) the adapter speaks; the gateway answers with the version it will use or an explicit incompatibility naming what it supports.</td><td>Required</td></tr>
+  <tr><td><b>Register sessions</b></td><td>Declare the sessions the participant is exposing now, with names. The gateway returns opaque ids. Registering a name again ends the earlier session of that name.</td><td>Required</td></tr>
+  <tr><td><b>Send</b></td><td>To an address, with a body, an optional <code>reply_to</code> and a client-chosen message id so the same id sent twice is stored and offered once. The result is one of the delivery statuses below, returned truthfully.</td><td>Required</td></tr>
+  <tr><td><b>Receive</b></td><td>The gateway makes an inbound message available with its gateway-written origin; the adapter saves it durably or refuses it with a reason, then answers. Duplicates by message id are ignored. <b>How the message reaches the adapter is open</b> (<a href="#inbound">below</a>).</td><td>Required</td></tr>
+  <tr><td><b>Report delivery</b></td><td>After the first answer the adapter may report later facts about a message (handed to the harness, shown, refused). Reports correct the ledger and are shown as reports, never as proof.</td><td>Optional</td></tr>
+  <tr><td><b>Discover</b></td><td>List the participants and sessions the caller can contact, with their declared capabilities (<a href="../0009-agent-discovery-tool/index.html">ADR-0009</a>). The list says what an owner declared, not what a session can do.</td><td>Optional</td></tr>
+  <tr><td><b>Heartbeat and close</b></td><td>Liveness is what the gateway hears from the adapter; a clean close ends its sessions; silence ends them after a window.</td><td>Required</td></tr>
+</table></div>
+<div class="table-wrap"><table>
+  <tr><th>Status</th><th>Meaning</th><th>Could it still arrive?</th></tr>
+  <tr><td><code>gateway_unreachable</code></td><td>Nothing reached the gateway, or it refused before storing</td><td>No</td></tr>
+  <tr><td><code>gateway_uncertain</code></td><td>Sent, no complete answer in time</td><td><b>Yes</b></td></tr>
+  <tr><td><code>unknown_recipient</code></td><td>The gateway has never seen the name; the result lists the current directory</td><td>No</td></tr>
+  <tr><td><code>destination_unreachable</code></td><td>The recipient has no open connection, or was not heard from in the window; never offered</td><td>No</td></tr>
+  <tr><td><code>session_gone</code></td><td>Live, but no current session of that name; or the recipient refused with a reason</td><td>No</td></tr>
+  <tr><td><code>delivery_uncertain</code></td><td>Offered once, no answer in time. A late report corrects it</td><td><b>Yes</b></td></tr>
+  <tr><td><code>host_stored</code></td><td>The recipient host saved it. <b>Tool success.</b> Not read, not acted on</td><td>Normal path</td></tr>
+  <tr><td><code>participant_stored</code> <span class="tag t-arch">NEW</span></td><td>The adapter saved it durably. The same meaning as <code>host_stored</code>, for a participant</td><td>Normal path</td></tr>
+  <tr><td><code>participant_refused</code> <span class="tag t-arch">NEW</span></td><td>The adapter refused it with a reason (harness busy, unsupported content)</td><td>No</td></tr>
+  <tr><td><code>participant_delivered</code> <span class="tag t-arch">NEW, optional</span></td><td>The adapter reports it handed the message to the harness. Still not read, not acted on</td><td>n/a (a later report)</td></tr>
+</table></div>
+<p class="prose"><b>Rules that carry over.</b> Never report an uncertain case as a definite failure; nothing is retried automatically; the gateway stores the full body before routing; a failure record is never delivered later; and <b>stored is not delivered, delivered is not read, read is not acted on.</b> <span class="tag t-code">CODE</span></p>
+<h3 id="inbound">How an inbound message reaches an adapter (open)</h3>
+<p class="prose">The user left this open. Each mechanism is a different cost to the gateway and to the adapter author. None is recommended here.</p>
+<div class="table-wrap"><table>
+  <tr><th>Mechanism</th><th>How it works</th><th>For</th><th>Drawbacks</th></tr>
+  <tr><td><span class="tag t-opt">I1</span> Polling</td><td>The adapter asks for new messages on a timer</td><td>Simplest for any HTTP client; adapter dials out</td><td>Latency set by the interval; steady empty requests; the gateway must remember what was already taken</td></tr>
+  <tr><td><span class="tag t-opt">I2</span> Long-polling</td><td>The adapter asks and the gateway holds the request until a message exists or a time passes</td><td>Near-immediate; still a plain request; dial out</td><td>Held connections; proxy and timeout limits; the adapter must re-ask after every answer</td></tr>
+  <tr><td><span class="tag t-opt">I3</span> A streamed response</td><td>One long request returns newline-delimited JSON or server-sent events</td><td>Immediate; one connection; the same style as the host stream</td><td>Some proxies buffer streams; the adapter must parse a stream; reconnect and resume rules are needed</td></tr>
+  <tr><td><span class="tag t-opt">I4</span> Push to a URL (webhook)</td><td>The adapter exposes a URL and the gateway posts to it</td><td>Simple for services that already have a URL</td><td>The adapter must be reachable; the gateway then dials out to owner-supplied URLs and needs destination rules; authentication in both directions</td></tr>
+</table></div>
+<p class="prose">Whatever is chosen, the receiver answers stored or refused and ignores a repeated id, so the same flows hold.</p>
+<figure class="anim" data-diagram="flows" data-label="Contract flows: send, receive, failure, connect"><figcaption class="t">Diagram. The flows and what each status means</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The tables above say the same.</p></noscript></figure>
+
+<h2 id="work">6. Conversation versus delegated work</h2>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Message conversation</th><th>Delegated work with tracking</th></tr>
+  <tr><td>Unit</td><td>A message, optionally replying to an earlier one</td><td>A piece of work with an id that outlives any one message</td></tr>
+  <tr><td>State</td><td>Only delivery state (the statuses above). No lifecycle for the conversation</td><td>States such as submitted, working, needs input, done, failed, cancelled</td></tr>
+  <tr><td>Result</td><td>The next message</td><td>A result recorded against the work</td></tr>
+  <tr><td>Follow-up</td><td>A normal reply</td><td>A call that names the work</td></tr>
+  <tr><td>Fits</td><td>Chat between peers: managed sessions, an OpenRig operator, a Pi agent</td><td>Handing a bounded job to a worker or an outside service and waiting for it</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>The baseline contract is conversation only.</b> It is what every current need (managed sessions, the operator, a Pi participant) is. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>Tracking is a separate, optional profile</b> a participant opts into by declaring a capability, so a chat-only adapter never sees task semantics. Whether a profile is ever specified is <span class="tag t-unv">OPEN</span> and, if it is, it is a later record. This avoids the reason A2A was deferred: forcing every chat to become a task. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li>A delegated-work profile could be modelled on A2A tasks or on something smaller. This page does not choose, and does not assume A2A.</li>
+</ul>
+
+<h2 id="wire">7. Wire options</h2>
+<div class="note">
+  <p><b>Chosen: W2</b>, a separate, small HTTP+JSON participant API on the gateway for external adapters. <span class="tag t-user">USER</span> <b>2026-11-08</b>, relayed by the operator.</p>
+  <p><b>What that means.</b> It is a documented, supported integration API that any language's HTTP and JSON client can call. The daemon-to-gateway host protocol is a different surface and <b>stays separate and unchanged</b>. This record remains a <b>proposal for the API contract</b>; it is not authorisation to build it.</p>
+  <p><b>What W2 does not settle.</b> Network reachability (a publicly reachable address is not authorisation for an internet-wide listener), TLS, authentication and enrolment, participant and session identifiers, the inbound delivery mechanism (<a href="#inbound">section 5</a>), the schemas, and who may contact whom. These stay open user decisions in <a href="#decisions">section 13</a>.</p>
+</div>
+<p class="prose">The other options are kept below, with their drawbacks, as the record of what was considered. They are <b>not chosen</b>.</p>
+<div class="table-wrap"><table>
+  <tr><th>Option</th><th>What it is</th><th>For</th><th>Drawbacks</th></tr>
+  <tr><td><span class="tag t-user">W2 CHOSEN</span> A new small HTTP+JSON participant API</td><td>A few routes on the gateway, separate from the host protocol, with a published JSON Schema or OpenAPI description</td><td>Written for outsiders; works with curl; schemas give most languages generated types; independent of the host protocol, so neither can break the other</td><td>A new surface to design, document and keep stable. A second set of routes and a second authentication path in the gateway to secure. Inbound delivery over HTTP has proxy and timeout quirks (see the mechanisms in section 5)</td></tr>
+  <tr><td><span class="tag t-opt">W1</span> Open the existing gateway wire <i>(not chosen)</i></td><td>Let a participant credential use the daemon's HTTP routes and NDJSON stream</td><td>Exists; no new gateway protocol</td><td>Shaped for hosts: offers are meant to be pasted into terminals, and its terms (host, agent, gates) leak into every adapter. No published schema or outside-author version policy. Couples third parties to an internal protocol</td></tr>
+  <tr><td><span class="tag t-opt">W3</span> A local line protocol to a nearby rtk daemon <i>(not chosen)</i></td><td>The adapter talks JSON lines over stdio or a Unix socket to a daemon on its own machine, which relays to the gateway</td><td>No network credential in the adapter; reuses the host's trust and dial-out</td><td>Needs an rtk daemon where the harness runs, and makes the participant a host-delegated session, not an independent principal. A second hop to debug</td></tr>
+  <tr><td><span class="tag t-opt">W4</span> MCP as the contract <i>(not chosen)</i></td><td>The adapter is an MCP client or server; tools carry send, receive and discover</td><td>Many language SDKs; already the agents' tool surface</td><td>Tool-shaped and client-initiated: server-to-client push is awkward. Identity and credentials are not part of it. Stretches MCP beyond tool calls</td></tr>
+  <tr><td><span class="tag t-opt">W5</span> gRPC with protobuf <i>(not chosen)</i></td><td>A schema compiler generates clients</td><td>Strong typed schema, streaming built in</td><td>A heavy dependency the core has so far kept out; harder through some proxies; not curl-able; a build step for every adapter author</td></tr>
+  <tr><td><span class="tag t-opt">W6</span> Gateway calls the adapter (webhooks) <i>(not chosen as the wire)</i></td><td>The adapter exposes a URL; the gateway posts inbound messages to it</td><td>Simple for services that already have a URL</td><td>The adapter must be reachable; the gateway dials out to untrusted URLs. It survives only as inbound mechanism I4 under W2, still undecided</td></tr>
+  <tr><td><span class="tag t-opt">W7</span> A broker (NATS, MQTT, AMQP) <i>(not chosen)</i></td><td>Both sides connect to a message broker</td><td>Mature delivery semantics and many clients</td><td>A new service to run and secure; its delivery guarantees would have to be reconciled with the gateway ledger</td></tr>
+</table></div>
+<p class="prose"><b>Deliberately not on the list:</b> A2A. It was the earlier candidate; it is deferred (<a href="../deferred/0006-a2a-deferral/index.html">record</a>) and is not assumed. An A2A adapter could later exist as one more client of the participant API. <span class="tag t-unv">OPEN</span></p>
+
+<h2 id="versioning">8. Versioning and compatibility</h2>
+<ul class="prose">
+  <li><b>A contract version <code>MAJOR.MINOR</code>,</b> independent of the existing host protocol version and of any adapter's own version. The adapter states what it speaks on connect; the gateway answers with the one it will use, or an explicit incompatibility that names the range it supports. A mismatch is shown, never silently tolerated (the behaviour hosts already have). <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>Within a major version changes only add.</b> Unknown fields are ignored; unknown optional features are ignored; a feature the other side requires but lacks is refused at connect. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>Capabilities are feature flags, not version bumps</b> (delivery reports, discovery, a task profile if one ever exists), so an adapter can stay on one version and still say what it does.</li>
+  <li><b>Conformance fixtures are versioned with the contract.</b> An author can run their adapter's exchanges against the fixtures. Nothing about the fixtures exists yet. <span class="tag t-unv">OPEN</span></li>
+  <li><b>Open:</b> where the version travels in an HTTP request (a header, a path, or the connect call); how many major versions the gateway serves at once; the notice before one is dropped; where the specification lives and whether it is published for outside authors.</li>
+</ul>
+
+<h2 id="security">9. Security</h2>
+<ul class="prose">
+  <li><b>Authenticate every request</b> (the mechanism and enrolment are open). A participant credential, if that is chosen, would be random, stored only as a hash at the gateway, scoped to one participant and revocable without touching any other. It is never put in a document or a log, and an adapter keeps it out of argv. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>Identity from the credential, origin from the gateway.</b> Neither an adapter nor a message body can name its own sender. <span class="tag t-code">CODE</span> (hosts)</li>
+  <li><b>A narrow namespace.</b> A participant registers sessions only under itself. The owner enrols exactly the participants intended (one for OpenRig's operator, not one per seat) unless they choose otherwise. <span class="tag t-arch">RECOMMENDATION</span></li>
+  <li><b>Reachability and TLS are open user decisions.</b> Hosts today use plain HTTP on loopback and a tailnet and TLS elsewhere, and being on a tailnet authorises nothing <span class="tag t-code">CODE</span>; whether the participant API follows that, and who may reach it from where, is not decided. A publicly reachable address is not authorisation for an internet-wide listener. <span class="tag t-unv">OPEN</span></li>
+  <li><b>Message text is untrusted input.</b> A message from another machine can carry instructions meant for the receiving model. The receiving side labels the origin and does not let a message bypass a permission prompt or a gate. This is true of every message today and stays true for adapters.</li>
+  <li><b>Abuse limits</b> (message size, rate, sessions per participant) are needed and not chosen. <span class="tag t-unv">OPEN</span></li>
+  <li><b>Who may contact whom is an open user decision.</b> An earlier answer was given under the deferred A2A design; it is <b>not carried over</b> here, and no default is assumed. <span class="tag t-unv">OPEN</span></li>
+</ul>
+
+<h2 id="author">10. What an adapter author implements</h2>
+<div class="table-wrap"><table>
+  <tr><th>Level</th><th>Items</th></tr>
+  <tr><td><b>Required</b></td><td>Authenticate with the participant credential. State the contract version and be refused clearly on a mismatch. Register sessions and keep them alive (heartbeat), close cleanly. Send a message with a client message id and return the delivery status as given. Receive an offer, save it durably, answer stored or refused with a reason, and ignore a repeated id. Never report an uncertain outcome as definite. Never put its credential in a log or argv.</td></tr>
+  <tr><td><b>Should</b></td><td>Reconnect with a back-off and re-register after a drop. Declare a short description and its capabilities honestly. Keep its own table matching gateway message ids to harness-side ids.</td></tr>
+  <tr><td><b>Optional</b></td><td>Delivery reports after the first answer. Discovery reads. A delegated-work profile, if one is ever specified.</td></tr>
+  <tr><td><b>Out of scope</b></td><td>Launching or supervising a harness for Ratatoskr. Importing a harness's topology or queues. Making the gateway understand the harness. Search, ranking or model calls in the gateway. Any change to the harness itself.</td></tr>
+</table></div>
+<p class="prose">Under W2 a minimal adapter is a program that makes authenticated HTTP calls with a JSON client: register one session, send on request, and save what it receives. How large that is depends on the inbound mechanism chosen in section 5. <span class="tag t-unv">UNVERIFIED</span></p>
+
+<h2 id="scenarios">11. Scenarios</h2>
+<p class="prose">Two illustrative scenarios, in the diagram below. Neither has been tried; both rest on what the user described. <span class="tag t-unv">UNVERIFIED</span> throughout.</p>
+<ul class="prose">
+  <li><b>An OpenRig operator adapter.</b> It runs near OpenRig (any language), enrols as the participant <code>openrig-main</code> with one session, <code>operator</code>. A managed Codex on another machine sends to <code>operator@openrig-main</code>. The gateway offers it to the adapter, which saves it and answers <code>participant_stored</code>, then hands it to the exact current operator seat with a supported OpenRig delivery and may report <code>participant_delivered</code>. The operator answers through the adapter's outbound tool (its form is open, <a href="#ownership">section 3a</a>). OpenRig keeps its queues and lifecycle; nothing of it enters the gateway. <a href="../0008-openrig-operator-integration/index.html">ADR-0008</a> holds the boundary and limits.</li>
+  <li><b>A Pi-based participant.</b> A Pi agent runs several agents. An adapter in whatever language suits Pi enrols as <code>pi-lab</code> and registers three sessions, <code>planner</code>, <code>coder</code>, <code>critic</code>, each with its own opaque id. Others address <code>coder@pi-lab</code>. If <code>coder</code> restarts, it registers again, gets a new id, and does not inherit old messages. Pi's actual interfaces were not examined; the adapter's inside is its author's concern. <span class="tag t-unv">UNVERIFIED</span></li>
+</ul>
+<figure class="anim" data-diagram="scen" data-label="Scenarios: an OpenRig operator adapter and a Pi participant"><figcaption class="t">Diagram. Two adapters on the same contract</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The list above says the same.</p></noscript></figure>
+
+<h2 id="relations">12. How this relates to the other records</h2>
+<div class="table-wrap"><table>
+  <tr><th>Record</th><th>Relation</th></tr>
+  <tr><td><a href="../0008-openrig-operator-integration/index.html">ADR-0008</a> OpenRig operator integration</td><td>ADR-0008 states the goal and the boundary (one operator on the network; OpenRig keeps its lifecycle, terminals and queues). It was blocked on "the gateway interface is open". This record is a <b>proposal for that interface</b>, and the user has chosen its wire direction (W2). If it is accepted, the bridge of ADR-0008 is an OpenRig adapter, that is a client of the W2 participant API. <b>ADR-0008 does not depend on this record being accepted</b>: its boundary stands either way, and if another interface is chosen only its wire sections change. ADR-0008 still cannot be built until some interface exists.</td></tr>
+  <tr><td><a href="../0009-agent-discovery-tool/index.html">ADR-0009</a> Discovery</td><td>Independent. Today's discovery lists hosts and sessions. If participants ever exist, the same list can include them, marked as such, using the capabilities they declare.</td></tr>
+  <tr><td><a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> Host cards</td><td>Unchanged. Whether a participant's capability text reuses the card shape is open and not needed for the baseline.</td></tr>
+  <tr><td><a href="../deferred/0006-a2a-deferral/index.html">A2A deferral</a></td><td>A2A is not the assumed contract. Several ideas first written in the deferred proposal (a participant as an enrolled principal with its own credential; origin written by the gateway; one participant with several sessions) are carried here as proposals, in protocol-neutral words.</td></tr>
+</table></div>
+
+<h2 id="decisions">13. Decisions and open questions</h2>
+<p class="prose"><b>Chosen:</b> row 2 only. Every other row is open; none has a default carried over from the deferred A2A work.</p>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>Options and drawbacks</th><th>Recommendation</th><th>Status</th></tr>
+  <tr><td>1</td><td>Define a contract independent of the wire, with schemas and fixtures?</td><td>Yes: more up-front writing, but the wire can change without breaking authors. No: the API itself is the contract; faster, but any change to it breaks every adapter.</td><td>Yes</td><td><span class="tag t-arch">RECOMMENDATION</span> needs you</td></tr>
+  <tr><td>2</td><td>Which wire?</td><td>W1 to W7 (section 7)</td><td>n/a</td><td><span class="tag t-user">CHOSEN: W2</span> 2026-11-08. A separate HTTP+JSON participant API; host protocol unchanged. Not authorisation to build</td></tr>
+  <tr><td>3</td><td>Network reachability of the participant API</td><td>Loopback or tailnet only; the owner's LAN; a public address behind the owner's own front end; directly public. Wider reach gives more adapters and more exposure. "Publicly reachable" is not authorisation for an internet-wide listener</td><td>None given</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>4</td><td>TLS</td><td>Required everywhere; required except loopback and a tailnet (as hosts); owner-supplied certificate with a pinned fingerprint. Each trades ease against assurance</td><td>None given</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>5</td><td>Authentication and enrolment</td><td>Owner mints a single-use code at the gateway (as host pairing does); a configuration file; self-service with owner approval. Credential form, scope and revocation follow</td><td>None given</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>6</td><td>Participant and session identifiers, and the address form</td><td>Shared <code>name@host</code> namespace with a collision check; or a distinct form (no collision, a second form everywhere). Whether session ids are opaque per registration as for hosts today</td><td>No default taken. (Section 4 gives a reading, not a decision)</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>7</td><td>How an inbound message reaches an adapter</td><td>I1 polling, I2 long-polling, I3 streamed response, I4 push to a URL (section 5)</td><td>None given</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>8</td><td>The detailed API schemas</td><td>Routes, fields, errors, version carrier, pagination: not designed</td><td>Design after rows 3 to 7</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>9</td><td>Who may contact whom</td><td>Every authenticated participant may contact every session; or explicit grants per participant. The earlier answer was given under the deferred A2A design and is not carried over</td><td>None given</td><td><span class="tag t-unv">OPEN</span> needs you</td></tr>
+  <tr><td>10</td><td>Is delivery reporting in the baseline?</td><td>In: more work for every author, more truth. Optional: simple adapters can only say stored</td><td>Optional</td><td><span class="tag t-arch">RECOMMENDATION</span></td></tr>
+  <tr><td>11</td><td>A delegated-work profile</td><td>Specify it later in its own record, or never</td><td>Later, only when a real need appears</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>12</td><td>Where the specification lives and who may read it</td><td>In this repository as documents and schemas; or published separately for outside authors</td><td>In this repository first</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>13</td><td>Limits: sessions per participant, message size, rates</td><td>Not chosen. Hosts have a per-host session limit today</td><td>Decide with the schemas</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>14</td><td>Build any of it</td><td>No code is authorised by this record or by the choice of W2</td><td>Not before rows 1 and 3 to 9 are answered</td><td><span class="tag t-user">USER</span> no build authorised</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Not examined:</b> OpenRig's and Pi's source and interfaces; whether <code>rig send</code> reaches the intended seat reliably; the code of the current host protocol beyond its contract document; how the Network tab should show participants.</li>
+  <li><b>Not designed:</b> the specification text, schemas, fixtures, the enrolment command, a task profile, or any change to the gateway.</li>
+</ul>
+
+<h2 id="sources">Sources</h2>
+<ul class="prose small">
+  <li><a class="src" href="../../implementation/cross-machine-contract.md"><code>docs/implementation/cross-machine-contract.md</code></a> (protocol, identity and the send results) and <a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a> (the send tool).</li>
+</ul>
+
+</div>
+
+<script>
+
+
+
+
+
+
+
+
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll(':scope > [role="tablist"] > [role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  function setupListbox(box) {
+    var rows = Array.prototype.slice.call(box.querySelectorAll('[role="option"]'));
+    function pick(i, focus) {
+      rows.forEach(function (r, n) {
+        var on = n === i;
+        r.setAttribute('aria-selected', on ? 'true' : 'false');
+        r.tabIndex = on ? 0 : -1;
+        var d = document.getElementById(r.getAttribute('data-detail'));
+        if (d) d.hidden = !on;
+      });
+      if (focus) rows[i].focus();
+    }
+    rows.forEach(function (r, i) {
+      r.addEventListener('click', function () { pick(i, false); });
+      r.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowDown') n = Math.min(i + 1, rows.length - 1);
+        if (e.key === 'ArrowUp') n = Math.max(i - 1, 0);
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = rows.length - 1;
+        if (n !== null) { e.preventDefault(); pick(n, true); }
+      });
+    });
+    pick(0, false);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-listbox]'), setupListbox);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+}());
+
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduced = false; }
+
+  function el(name, attrs, parent) {
+    var n = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // N(id, x, y, w, h, kind, l1, l2)
+  function N(id, x, y, w, h, kind, l1, l2) { return { id: id, x: x, y: y, w: w, h: h, kind: kind, l1: l1, l2: l2 }; }
+  // E(id, from, to, label, cls, via)
+  function E(id, a, b, label, cls, via) { return { id: id, a: a, b: b, label: label, cls: cls || '', via: via || [] }; }
+  // S(title, text, lit, edges, packet, ok, no, dead)
+  function S(title, text, lit, edges, packet, ok, no, dead) { return { title: title, text: text, lit: lit || [], edges: edges || [], packet: packet || null, ok: ok || [], no: no || [], dead: dead || [] }; }
+
+
+  var D = {};
+  D.layers = { w: 760, h: 270, nodes: [
+    N('sess', 14, 30, 150, 46, 'claude', 'Managed session', 'Claude or Codex in a pane'),
+    N('core', 14, 130, 150, 46, 'dm', 'Core: daemon', 'terminal bridge, MCP, hooks'),
+    N('gw', 300, 130, 150, 62, 'gw', 'Gateway', 'identity, ledger, routing'),
+    N('ad', 590, 130, 156, 62, 'ext', 'Adapter', 'any language'),
+    N('har', 590, 30, 156, 46, 'codex', 'Outside harness', 'OpenRig, Pi, custom')
+  ], edges: [
+    E('e1', 'sess', 'core', 'MCP, hooks, paste'),
+    E('e2', 'core', 'gw', 'host protocol (unchanged)'),
+    E('e3', 'ad', 'gw', 'participant API (HTTP+JSON, W2)'),
+    E('e4', 'ad', 'har', 'harness-specific, in the adapter', 'dash')
+  ], scenes: [
+    { name: 'Who knows what', steps: [
+      S('The session knows nothing of the network', 'A managed session only calls ratatoskr_send. It cannot name its own sender and has no credential. Its daemon applies the gates before anything is pasted.', ['sess', 'core'], ['e1'], null, ['Identity is never the session\'s claim.'], ['The tool surface is today\'s, unchanged.']),
+      S('The gateway knows participants, sessions and messages', 'It serves the host protocol and, separately, the participant API. It authenticates the caller, decides who the sender is, stores the full body, routes by exact session and records every outcome. It has no idea what Codex, OpenRig or Pi are.', ['gw'], ['e2', 'e3'], null, ['One authority for identity and outcome.'], ['Nothing harness-specific may enter here.']),
+      S('The adapter calls the participant API on one side and drives its harness on the other', 'The adapter is a client of the HTTP+JSON participant API and can act only as the participant it was enrolled as. Its API side is the same for every harness. Its harness side is the only place harness details live.', ['ad', 'gw'], ['e3'], ['e3', 'API call'], ['One contract for all adapters.'], ['Reachability, TLS and auth are open.']),
+      S('The harness stays the harness', 'OpenRig keeps its queues and seats, Pi keeps its agents. The adapter reaches them through whatever they offer. Nothing is imported into Ratatoskr.', ['har', 'ad'], ['e4'], null, ['No second copy of the harness.'], ['The harness side is unverified for OpenRig and Pi.'])
+    ] }
+  ] };
+
+  D.flows = { w: 760, h: 230, nodes: [
+    N('ad', 14, 84, 150, 62, 'ext', 'Adapter', 'any language'),
+    N('gw', 230, 84, 150, 62, 'gw', 'Gateway', 'stores, routes, records'),
+    N('dm', 450, 84, 130, 62, 'dm', 'Host daemon', 'gates, paste'),
+    N('cx', 628, 84, 118, 62, 'codex', 'Codex session', 'managed')
+  ], edges: [
+    E('e1', 'ad', 'gw', 'participant API (HTTP+JSON)'),
+    E('e2', 'gw', 'dm', 'host protocol (unchanged)'),
+    E('e3', 'dm', 'cx', 'MCP, hooks, paste')
+  ], scenes: [
+    { name: 'Send to a managed session', steps: [
+      S('The adapter sends', 'The adapter has authenticated to the participant API and registered its session. It sends to codex@ubuntu with a client message id and a body. It does not say who it is in the body: the credential already did.', ['ad', 'gw'], ['e1'], ['e1', 'send + message id'], ['Sender proven by the credential.'], ['Body-supplied sender is ignored.']),
+      S('The gateway stores first, then routes', 'It stores the full body, writes the origin (name@participant), checks that Codex has a current session, and offers the message to that host.', ['gw', 'dm'], ['e2'], ['e2', 'offer'], ['Stored before routing.', 'Origin written by the gateway.'], ['Not yet on the host.']),
+      S('The host saves it', 'The host daemon saves the message and answers. The gateway returns host_stored to the adapter: tool success, which means the host has it.', ['dm', 'gw', 'ad'], ['e2', 'e1'], ['e1', 'host_stored', 'rev'], ['Success means saved.'], ['Not delivered, not read, not acted on.']),
+      S('Later facts arrive as reports', 'The daemon pastes it when its gates allow and reports held, pasted or accepted. Those correct the ledger and are shown as reports, never as proof of anything.', ['dm', 'cx'], ['e3'], ['e3', 'paste when ready'], ['Reports correct the record.'], ['A turn ending is not task success.'])
+    ] },
+    { name: 'Receive for an adapter', steps: [
+      S('A managed session sends to the participant', 'Codex calls ratatoskr_send to coder@pi-lab. Its host passes it to the gateway, which stores the body and finds one open session named coder under that participant.', ['cx', 'dm', 'gw'], ['e3', 'e2'], ['e2', 'send', 'rev'], ['Exact session, not a guess.'], ['The name is looked up once.']),
+      S('The message is made available to the adapter', 'It carries the gateway-written origin and the message id. How it reaches the adapter (polling, long-polling, a stream or a push to a URL) is an open decision. The adapter is not trusted to say anything about the sender.', ['gw', 'ad'], ['e1'], ['e1', 'message (mechanism open)', 'rev'], ['Origin is the gateway\'s.'], ['The delivery mechanism is open.']),
+      S('The adapter saves it and answers', 'It writes the message durably, then answers stored, or refuses with a reason. A repeated message id is ignored. Only then does it hand the message to its harness in its own way.', ['ad'], [], null, ['participant_stored means saved.'], ['Handing it to the harness is a separate fact.']),
+      S('The adapter may report more', 'If it supports delivery reports it later says it handed the message to the harness. That is still not read and not acted on, and it is shown as a report.', ['ad', 'gw'], ['e1'], ['e1', 'delivered (optional)'], ['Optional, honest, labelled.'], ['The harness may still ignore it.'])
+    ] },
+    { name: 'When it goes wrong', steps: [
+      S('Unknown recipient', 'The name was never seen. The gateway stores the failure, returns unknown_recipient and lists the current directory. Nothing was offered.', ['ad', 'gw'], ['e1'], ['e1', 'unknown_recipient', 'rev'], ['Definite: it could not arrive.'], []),
+      S('The recipient is offline', 'The host is not connected or has not been heard from within the window. The gateway returns destination_unreachable. The message is never offered and never delivered later.', ['gw'], [], null, ['Definite: never offered.'], ['A stored failure is not replayed.'], ['dm']),
+      S('Offered, but no answer in time', 'The gateway offered the message once and heard nothing. It returns delivery_uncertain, because the message may still arrive. It does not retry.', ['gw', 'dm'], ['e2'], ['e2', 'offer, no ack'], ['Uncertain is said plainly.'], ['It may be pasted anyway.']),
+      S('A late report corrects it', 'The host answers late. The ledger and the sender\'s record are corrected. An uncertain case was never reported as a failure, so nothing has to be taken back.', ['dm', 'gw', 'ad'], ['e2', 'e1'], ['e2', 'late ack', 'rev'], ['Never call uncertain a failure.'], [])
+    ] },
+    { name: 'Connect and version', steps: [
+      S('Connect with a version', 'The adapter authenticates (how is open) and states the contract versions it speaks, here 1.0 and 1.1. Where the version travels in an HTTP request is open.', ['ad', 'gw'], ['e1'], ['e1', 'connect: 1.0, 1.1'], ['Authentication first.'], ['Enrolment and TLS are open.']),
+      S('The gateway picks or refuses', 'The gateway supports 1.x, so it answers with the highest common minor, 1.1. If it supported only 2.x it would answer with an explicit incompatibility that names what it supports. It never guesses.', ['gw', 'ad'], ['e1'], ['e1', 'use 1.1', 'rev'], ['A mismatch is shown, not tolerated.'], ['Which versions the gateway serves is open.']),
+      S('Register the sessions', 'The adapter declares its sessions, here planner, coder and critic. The gateway returns one opaque id for each. Registering a name again ends the earlier session of that name.', ['ad', 'gw'], ['e1'], ['e1', 'register 3 sessions'], ['Only sessions of its own participant.'], ['The per-participant limit is not chosen.']),
+      S('Keep alive, then close', 'The adapter heartbeats. A clean close ends its sessions at once; silence ends them after the window. Messages to a closed session fail with session_gone and are not queued.', ['ad', 'gw'], ['e1'], ['e1', 'heartbeat'], ['Liveness is what the gateway hears.'], ['A stored endpoint is not proof it is up.'])
+    ] }
+  ] };
+
+  D.scen = { w: 760, h: 270, nodes: [
+    N('cx', 14, 96, 140, 46, 'codex', 'Codex session', 'ubuntu, managed'),
+    N('gw', 210, 96, 140, 62, 'gw', 'Gateway', 'participant API'),
+    N('a1', 420, 28, 150, 46, 'ext', 'OpenRig adapter', 'participant openrig-main'),
+    N('op', 610, 28, 140, 46, 'claude', 'Operator seat', 'OpenRig'),
+    N('a2', 420, 196, 150, 46, 'ext', 'Pi adapter', 'participant pi-lab'),
+    N('pi', 610, 160, 140, 28, 'codex', 'planner', 'Pi agent'),
+    N('pj', 610, 196, 140, 28, 'codex', 'coder', 'Pi agent'),
+    N('pk', 610, 232, 140, 28, 'codex', 'critic', 'Pi agent')
+  ], edges: [
+    E('e1', 'cx', 'gw', 'ratatoskr_send'),
+    E('e2', 'gw', 'a1', 'participant API'),
+    E('e3', 'a1', 'op', 'rig send (UNVERIFIED)', 'dash'),
+    E('e4', 'gw', 'a2', 'participant API'),
+    E('e5', 'a2', 'pj', 'Pi-specific', 'dash')
+  ], scenes: [
+    { name: 'OpenRig operator adapter', steps: [
+      S('Codex asks the operator', 'Codex sends to operator@openrig-main. The gateway authenticates the sender through its host and finds the one open session named operator under that participant.', ['cx', 'gw'], ['e1'], ['e1', 'to operator@openrig-main'], ['Exact session.'], ['The address form is open.']),
+      S('The message reaches the adapter', 'It carries the origin codex@ubuntu written by the gateway. The adapter, a client of the HTTP+JSON API, saves it and answers participant_stored. How it got there (poll, long-poll, stream or push) is open.', ['gw', 'a1'], ['e2'], ['e2', 'message + origin'], ['Stored is said, not delivered.'], ['The delivery mechanism is open.']),
+      S('The adapter hands it to the exact operator seat', 'In its own way, using what OpenRig offers, here shown as a supported delivery verb. Which verb, and whether it reaches the right occupant reliably, nobody has checked.', ['a1', 'op'], ['e3'], ['e3', 'harness delivery'], ['Harness details stay in the adapter.'], ['OpenRig was not examined.']),
+      S('The operator answers through the adapter', 'The operator calls the adapter\'s outbound tool. The adapter sends it as a message from operator@openrig-main. OpenRig queue rows stay inside OpenRig.', ['op', 'a1', 'gw'], ['e3', 'e2'], ['e2', 'reply', 'rev'], ['A queue row is not a gateway message.'], ['Boundary and limits: ADR-0008.'])
+    ] },
+    { name: 'Pi with three sessions', steps: [
+      S('The Pi adapter registers three sessions', 'One participant, pi-lab, one credential, three named sessions: planner, coder, critic. Each gets its own opaque id.', ['a2', 'gw', 'pi', 'pj', 'pk'], ['e4'], ['e4', 'register 3 sessions'], ['One participant, many sessions.'], ['The session limit is not chosen.']),
+      S('Codex addresses one of them', 'Codex sends to coder@pi-lab. The gateway routes to the exact session id of coder, not to planner or critic.', ['cx', 'gw', 'a2'], ['e1', 'e4'], ['e4', 'to coder@pi-lab'], ['Addressed by exact id.'], []),
+      S('The adapter routes it inside Pi', 'How the adapter delivers to the coder agent is Pi-specific and the adapter author\'s concern. The contract does not describe it, and nothing about Pi was examined.', ['a2', 'pj'], ['e5'], ['e5', 'Pi-specific'], ['Harness details stay in the adapter.'], ['Pi\'s interfaces are unknown to this page.']),
+      S('coder restarts', 'The adapter registers coder again and gets a new id; the old session ends. A message that was meant for the old one is not handed to the new one.', ['a2', 'gw', 'pj'], ['e4'], ['e4', 'register coder again'], ['A replacement never inherits.'], ['A reply to the ended session is refused.'])
+    ] }
+  ] };
+
+  D.own = { w: 760, h: 230, nodes: [
+    N('mdl', 14, 90, 140, 54, 'ext', 'Harness / model', 'adapter-side: the harness'),
+    N('tl', 214, 90, 150, 54, 'und', 'Local mechanism', 'MCP, hooks, events, other: UNDECIDED'),
+    N('ad', 414, 90, 140, 54, 'ext', 'Adapter', 'OWNED BY THE ADAPTER'),
+    N('gw', 614, 78, 132, 78, 'dm', 'Gateway', 'API, auth, routing, ledger: RATATOSKR')
+  ], edges: [
+    E('e1', 'mdl', 'tl', 'tool call / event'),
+    E('e2', 'tl', 'ad', 'translate'),
+    E('e3', 'ad', 'gw', 'HTTP+JSON (W2)')
+  ], scenes: [
+    { name: 'Outbound', steps: [
+      S('The model calls a local tool', 'The model or operator uses whatever the adapter put in front of it: an MCP tool, a command or an in-process call. The form is undecided per harness, and the gateway never installs it.', ['mdl', 'tl'], ['e1'], ['e1', 'tool call'], ['Gateway installs nothing in the harness.'], ['The local form is undecided.']),
+      S('The adapter translates', 'The adapter turns the local call into a participant API call. This is the only place harness details live. MCP is one way to receive the call, not a requirement.', ['tl', 'ad'], ['e2'], ['e2', 'harness call'], ['Owned by the adapter.'], ['MCP is optional.']),
+      S('The participant API takes it', 'The adapter makes an authenticated HTTP+JSON call (how it authenticates is undecided). The gateway decides the sender from the credential, stores the full body and routes by exact session.', ['ad', 'gw'], ['e3'], ['e3', 'send'], ['Owned by Ratatoskr.', 'Origin written by the gateway.'], ['Authentication form is undecided.']),
+      S('The honest result comes back', 'The result travels back the same way, truthful about stored versus delivered. The model sees an outcome, not a promise it was read.', ['gw', 'ad', 'tl', 'mdl'], ['e3', 'e2', 'e1'], ['e3', 'delivery status', 'rev'], ['Stored is not read.'], [])
+    ] },
+    { name: 'Inbound', steps: [
+      S('The gateway makes the message available', 'By a delivery mechanism the user has not chosen: polling, long-polling, a stream or a push to a URL. The origin is written by the gateway.', ['gw', 'ad'], ['e3'], ['e3', 'message (mechanism open)', 'rev'], ['Owned by Ratatoskr.'], ['Delivery mechanism is undecided (I1 to I4).']),
+      S('The adapter saves it and acknowledges', 'The adapter stores it durably, answers stored or refused, and ignores a repeated id. Only then does it try the harness.', ['ad'], [], null, ['Stored is said first.'], ['Delivery into the harness is a separate fact.']),
+      S('The adapter delivers locally, in the harness\'s way', 'Using whatever the harness offers: a supported command, an input queue, an event. Hooks or events, if the harness has them, may tell the adapter when a session can accept input. They are signals, not the transport.', ['ad', 'tl', 'mdl'], ['e2', 'e1'], ['e2', 'local delivery', 'rev'], ['Owned by the adapter.', 'Hooks are optional state signals.'], ['Whether a harness has such signals is undecided.']),
+      S('The adapter reports what happened', 'It tells the gateway the delivery status, optionally delivered to the harness. That is a report, not proof the message was read or acted on.', ['ad', 'gw'], ['e3'], ['e3', 'delivery report'], ['Reports correct the ledger.'], ['Reading and acting are not reported.'])
+    ] }
+  ] };
+
+  D.ownmgd = { w: 760, h: 250, nodes: [
+    N('md', 14, 100, 130, 50, 'ext', 'Claude / Codex', 'the harness in a pane'),
+    N('mcp', 200, 20, 160, 50, 'dm', 'Per-session MCP server', 'daemon: RATATOSKR'),
+    N('hk', 200, 180, 160, 50, 'dm', 'Hook receiver', 'POST /hook: RATATOSKR'),
+    N('rt', 430, 100, 150, 50, 'dm', 'Router, gate, bridge', 'daemon: RATATOSKR'),
+    N('gw', 630, 100, 116, 50, 'dm', 'Gateway', 'host protocol')
+  ], edges: [
+    E('e1', 'md', 'mcp', 'ratatoskr_send (MCP)'),
+    E('e2', 'mcp', 'rt', 'send'),
+    E('e3', 'rt', 'gw', 'host protocol'),
+    E('e4', 'md', 'hk', 'hook events (state)'),
+    E('e5', 'hk', 'rt', 'idle / busy'),
+    E('e6', 'rt', 'md', 'paste when idle', 'dash')
+  ], scenes: [
+    { name: 'Managed outbound', steps: [
+      S('The model calls ratatoskr_send', 'The daemon wrote the MCP configuration at launch and runs the per-session server on loopback with that agent\'s own bearer token. Nothing here is the adapter\'s.', ['md', 'mcp'], ['e1'], ['e1', 'ratatoskr_send'], ['Owned by Ratatoskr.'], ['Never run by the team.']),
+      S('The router sends it on', 'The daemon\'s router passes it to the gateway over the host protocol, with the host credential. The gateway writes the origin.', ['mcp', 'rt', 'gw'], ['e2', 'e3'], ['e3', 'send'], ['Owned by Ratatoskr.'], ['Host protocol is unchanged by ADR-0007.'])
+    ] },
+    { name: 'Managed inbound', steps: [
+      S('A message arrives for the session', 'The gateway offers it to the host. The daemon\'s router queues it and checks the gate.', ['gw', 'rt'], ['e3'], ['e3', 'offer', 'rev'], ['Owned by Ratatoskr.'], []),
+      S('Hooks say what state the harness is in', 'Hook events from the harness (start, prompt, stop, permission, tool use) reach the receiver. They are state signals the gate reads. They never carry a message.', ['md', 'hk', 'rt'], ['e4', 'e5'], ['e4', 'hook event'], ['Hooks are signals, not transport.'], ['Only idle with nothing in flight and no draft passes the gate.']),
+      S('The terminal bridge pastes it', 'When the gate allows, the daemon pastes the message into the pane. The session sees text, and replies with ratatoskr_send like any other turn.', ['rt', 'md'], ['e6'], ['e6', 'paste'], ['Owned by Ratatoskr.'], ['Delivered does not mean read or acted on.'])
+    ] }
+  ] };
+  function setup(fig) {
+    var cfg = D[fig.getAttribute('data-diagram')];
+    if (!cfg) return;
+    var svg = el('svg', { viewBox: '0 0 ' + cfg.w + ' ' + cfg.h, role: 'img', 'aria-label': fig.getAttribute('data-label') || 'Diagram' });
+    var byId = {};
+    cfg.nodes.forEach(function (n) { byId[n.id] = n; });
+    var edgeEls = {};
+    cfg.edges.forEach(function (e) {
+      var a = byId[e.a], b = byId[e.b];
+      var pts = [[a.x + a.w / 2, a.y + a.h / 2]].concat(e.via).concat([[b.x + b.w / 2, b.y + b.h / 2]]);
+      var g = el('g', { 'class': 'de ' + e.cls }, svg);
+      el('polyline', { points: pts.map(function (p) { return p.join(','); }).join(' ') }, g);
+      var mid = pts[Math.floor(pts.length / 2) - (pts.length % 2 === 0 ? 1 : 0)];
+      var m2 = pts[Math.floor(pts.length / 2)];
+      var tx = (mid[0] + m2[0]) / 2, ty = (mid[1] + m2[1]) / 2 - 6;
+      var t = el('text', { x: tx, y: ty }, g); t.textContent = e.label;
+      edgeEls[e.id] = { g: g, pts: pts };
+    });
+    var nodeEls = {};
+    cfg.nodes.forEach(function (n) {
+      var g = el('g', { 'class': 'dn ' + n.kind }, svg);
+      el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 7 }, g);
+      var t1 = el('text', { x: n.x + n.w / 2, y: n.y + 19, 'class': 'l1' }, g); t1.textContent = n.l1;
+      var t2 = el('text', { x: n.x + n.w / 2, y: n.y + 35, 'class': 'l2' }, g); t2.textContent = n.l2;
+      nodeEls[n.id] = g;
+    });
+    var dot = el('circle', { r: 7, 'class': 'pk', cx: -20, cy: -20 }, svg);
+    var dotl = el('text', { x: -20, y: -20, 'class': 'pk-l' }, svg);
+
+    var scenesBar = fig.querySelector('.scenes');
+    var prev = fig.querySelector('[data-prev]'), next = fig.querySelector('[data-next]'), play = fig.querySelector('[data-play]'), replay = fig.querySelector('[data-replay]');
+    var pos = fig.querySelector('.pos2'), cap = fig.querySelector('.cap'), tr = fig.querySelector('.tr');
+    fig.insertBefore(svg, fig.querySelector('.ctl2'));
+    var scene = 0, step = 0, timer = null, raf = null;
+
+    cfg.scenes.forEach(function (s, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = s.name;
+      b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+      b.addEventListener('click', function () { stop(); scene = i; step = 0; draw(); });
+      scenesBar.appendChild(b);
+    });
+    if (cfg.scenes.length < 2) scenesBar.style.display = 'none';
+
+    function stop() { if (timer) { clearInterval(timer); timer = null; } play.textContent = 'Play'; play.setAttribute('aria-pressed', 'false'); }
+    function movePacket(s) {
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      if (!s.packet) { dot.setAttribute('cx', -20); dot.setAttribute('cy', -20); dotl.setAttribute('x', -20); dotl.setAttribute('y', -20); dotl.textContent = ''; return; }
+      var path = edgeEls[s.packet[0]].pts;
+      var rev = s.packet[0] && s.packet[2] === 'rev';
+      var pts = rev ? path.slice().reverse() : path;
+      var end = pts[pts.length - 1];
+      function put(x, y) { dot.setAttribute('cx', x); dot.setAttribute('cy', y); dotl.setAttribute('x', x); dotl.setAttribute('y', y - 11); }
+      dotl.textContent = s.packet[1];
+      if (reduced) { put((pts[0][0] + end[0]) / 2, (pts[0][1] + end[1]) / 2); return; }
+      var t0 = null, dur = 900;
+      function frame(ts) {
+        if (t0 === null) t0 = ts;
+        var p = Math.min(1, (ts - t0) / dur), seg = (pts.length - 1) * p, i = Math.min(pts.length - 2, Math.floor(seg)), f = seg - i;
+        put(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+        if (p < 1) raf = requestAnimationFrame(frame); else raf = null;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    function list(items) { return items.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); }
+    function draw() {
+      var sc = cfg.scenes[scene], s = sc.steps[step];
+      Array.prototype.forEach.call(scenesBar.children, function (b, i) { b.setAttribute('aria-pressed', i === scene ? 'true' : 'false'); });
+      Object.keys(nodeEls).forEach(function (id) {
+        nodeEls[id].classList.toggle('lit', s.lit.indexOf(id) !== -1);
+        nodeEls[id].classList.toggle('dead', s.dead.indexOf(id) !== -1);
+      });
+      Object.keys(edgeEls).forEach(function (id) { edgeEls[id].g.classList.toggle('lit', s.edges.indexOf(id) !== -1); });
+      movePacket(s);
+      cap.innerHTML = '<h4>' + esc(s.title) + '</h4><p>' + esc(s.text) + '</p><div class="chips"><div class="ok"><h5>Proposed to hold</h5><ul>' + (s.ok.length ? list(s.ok) : '<li>Nothing new.</li>') + '</ul></div><div class="no"><h5>Not decided or not proven</h5><ul>' + (s.no.length ? list(s.no) : '<li>Nothing new.</li>') + '</ul></div></div>';
+      pos.textContent = sc.name + ': step ' + (step + 1) + ' of ' + sc.steps.length;
+      prev.disabled = step === 0;
+      next.disabled = step === sc.steps.length - 1;
+      tr.innerHTML = sc.steps.map(function (x, i) { return '<li' + (i === step ? ' class="cur"' : '') + '>' + esc(x.title) + '</li>'; }).join('');
+    }
+    prev.addEventListener('click', function () { stop(); if (step > 0) { step--; draw(); } });
+    next.addEventListener('click', function () { stop(); var n = cfg.scenes[scene].steps.length; if (step < n - 1) { step++; draw(); } });
+    replay.addEventListener('click', function () { stop(); step = 0; draw(); });
+    play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      var n = cfg.scenes[scene].steps.length;
+      if (step >= n - 1) { step = 0; draw(); }
+      play.textContent = 'Pause'; play.setAttribute('aria-pressed', 'true');
+      timer = setInterval(function () {
+        if (step < n - 1) { step++; draw(); } else { stop(); }
+      }, reduced ? 6000 : 3800);
+    });
+    draw();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('figure.anim'), setup);
+}());
+</script>
+</body>
+</html>

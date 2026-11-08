@@ -25,7 +25,8 @@ OUT = os.path.join(DOCS, 'index.html')
 
 # ---------------------------------------------------------------- categories (order is the nav order)
 CATS = [
-    ('adr', 'Decision records', 'ADR-0001 to ADR-0008. Each is a self-contained HTML page with its status near the top.'),
+    ('adr', 'Decision records', 'ADR-0001 to ADR-0009. Each is a self-contained HTML page with its status near the top. ADR-0006 is deferred.'),
+    ('deferred', 'Deferred ADRs', 'Decisions set aside on purpose, with the reason. Not accepted, not rejected, not active requirements.'),
     ('design', 'Design guides', 'Ground rules, the design index and the two early proposals.'),
     ('testing', 'Testing guides', 'Step-by-step manual test guides. Written from the source; nothing here has been run by the team.'),
     ('contracts', 'Contracts and designs', 'The authoritative description of what each part is meant to do, and where it is described as built. A contract is not evidence of behaviour unless it says so.'),
@@ -156,7 +157,16 @@ def main():
         covered.add(rel)
         path = 'docs/' + rel
         text = read(os.path.join(DOCS, rel)) if rel.endswith(('.md', '.html', '.py')) else ''
-        if rel.startswith('adr/'):
+        if rel.startswith('adr/deferred/'):
+            ok = table.get(os.path.normpath(rel))
+            title = html_title(text)
+            if rel == 'adr/deferred/index.html':
+                add('deferred', path, rel, 'html', title, 'The list of deferred decision records and what "deferred" means here', 'Section index')
+            elif rel.endswith('0006-a2a-proposal/index.html'):
+                add('deferred', path, rel, 'html', title, 'The full A2A proposal, moved here unchanged from ADR-0006 and kept as history; not a requirement', 'Deferred 2026-11-08')
+            else:
+                add('deferred', path, rel, 'html', title, 'Why A2A is deferred (fit, not inability), what was built, the branch kept, and the first-run findings', 'Deferred 2026-11-08')
+        elif rel.startswith('adr/'):
             ok = table.get(os.path.normpath(rel))
             m = ok or ('', '', '')
             title = m[0] or html_title(text)

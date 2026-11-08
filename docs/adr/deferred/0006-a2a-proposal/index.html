@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deferred proposal: A2A routing and identity (was ADR-0006)</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
+
+/* ADR-0006 animated diagrams */
+.anim { margin: 14px 0 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.anim figcaption.t { padding: 10px 14px 0; font-weight: 700; }
+.anim .scenes { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.anim .scenes button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 6px; padding: 3px 10px; font: inherit; cursor: pointer; }
+.anim .scenes button[aria-pressed="true"] { background: var(--bridge-soft); border-color: var(--bridge); font-weight: 700; }
+.anim svg { display: block; width: 100%; height: auto; }
+.anim .ctl2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); }
+.anim .ctl2 button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
+.anim .ctl2 button:disabled { opacity: .45; cursor: default; }
+.anim button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.anim .pos2 { color: var(--muted); font-size: .85rem; margin-left: auto; }
+.anim .cap { padding: 4px 14px 12px; min-height: 8.5em; }
+.anim .cap h4 { margin: 0 0 4px; font-size: 1rem; }
+.anim .cap p { margin: 0 0 6px; }
+.anim .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.anim .chips ul { margin: 0; padding: 0; list-style: none; font-size: .88rem; }
+.anim .chips li { padding: 2px 0 2px 1.5em; position: relative; }
+.anim .chips .ok li::before { content: "\2713"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.anim .chips .no li::before { content: "\2717"; position: absolute; left: 0; color: var(--bad); font-weight: 700; }
+.anim .chips h5 { margin: 0 0 2px; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.anim .tr { margin: 0; padding: 8px 14px 12px 34px; border-top: 1px solid var(--line); font-size: .88rem; color: var(--muted); }
+.anim .tr li.cur { color: var(--ink); font-weight: 700; }
+.dn rect { fill: var(--surface); stroke: var(--wire); stroke-width: 1.5; transition: fill .2s, stroke .2s; }
+.dn text { text-anchor: middle; fill: var(--ink); font-family: system-ui, sans-serif; }
+.dn .l1 { font-size: 13px; font-weight: 700; }
+.dn .l2 { font-size: 10.5px; fill: var(--muted); }
+.dn.claude rect { fill: var(--claude-soft); stroke: var(--claude); }
+.dn.codex rect { fill: var(--codex-soft); stroke: var(--codex); }
+.dn.gw rect { fill: var(--accent-soft); stroke: var(--accent); }
+.dn.dm rect { fill: var(--bridge-soft); stroke: var(--bridge); }
+.dn.ext rect { fill: var(--surface); stroke-dasharray: 5 3; }
+.dn.dead rect { stroke-dasharray: 3 3; opacity: .6; }
+.dn.lit rect { stroke-width: 3.5; stroke: var(--focus); }
+.de line, .de polyline { stroke: var(--wire); stroke-width: 2; fill: none; transition: stroke .2s; }
+.de.lit line, .de.lit polyline { stroke: var(--focus); stroke-width: 3.5; }
+.de.dash line, .de.dash polyline { stroke-dasharray: 6 4; }
+.de.bad.lit line, .de.bad.lit polyline { stroke: var(--bad); }
+.de text { font-size: 10px; fill: var(--muted); text-anchor: middle; font-family: system-ui, sans-serif; }
+.de.lit text { fill: var(--ink); font-weight: 700; }
+.pk { fill: var(--focus); }
+.pk-l { font-size: 10px; fill: var(--ink); font-family: ui-monospace, Menlo, monospace; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; text-anchor: middle; }
+html:not(.js) .anim svg, html:not(.js) .anim .ctl2, html:not(.js) .anim .scenes { display: none; }
+@media (max-width: 720px) { .anim .chips { grid-template-columns: 1fr; } }
+.cmp td:first-child { white-space: nowrap; }
+pre.wire { background: var(--term); color: var(--term-ink); padding: 10px 14px; border-radius: 8px; overflow: auto; font: .8rem/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre.wire .c { color: #a6a28c; }
+</style>
+</head>
+<body>
+<nav data-docs-home aria-label="Documentation home" style="font:14px/1.4 system-ui,sans-serif;padding:6px 14px;background:#272822;color:#f8f8f2;border-bottom:1px solid #49483e"><a href="../../../index.html" style="color:#66d9ef">&larr; Docs home</a></nav>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">DEFERRED PROPOSAL · formerly the body of ADR-0006</p>
+  <h1>A2A for Ratatoskr: where a message goes, who is really asking, and who may take part <span class="muted">(deferred)</span></h1>
+  <p class="prose"><b>Reduced first delivery, 2026-11-08.</b> The user accepted a smaller first phase: standard A2A message exchange with a clarification and a result, on one proven round trip, with the foundations (exact destination, authentication, session replacement) kept. <a href="#scope">Section 1a</a> is the scope and the technical compliance qualification. <b>Goal, clarified 2026-11-08:</b> Ratatoskr is a modular network that external orchestrators and services (OpenRig, an independent Pi, a custom service) can join, not only terminals Ratatoskr launches. A <b>participant</b> is an authenticated, addressable agent or service; a managed session is one kind. <a href="#participants">Section 5a</a> covers that. OpenRig operator integration and the discovery tool are separate records: <a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a> and <a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a>.</p>
+  <p class="prose">A deferred proposal (see the notice above), with animated diagrams, for replacing the custom message contract with the standard A2A protocol served by the gateway. The hard part is not the message format. It is two questions the current system answers by convention and A2A answers not at all: <b>which exact session is this for</b>, and <b>who is the sender, provably</b>. <b>This is a proposal only. No code was written, nothing was run, and the page has not been opened in a browser.</b> It is separate from <a href="../../0005-host-agent-cards-and-graph/index.html">ADR-0005</a>, which publishes host cards and is not an A2A implementation.</p>
+
+<div class="note" id="deferred" role="note" style="border-left:5px solid var(--warn);background:var(--warn-soft)">
+  <p><b>DEFERRED 2026-11-08. This is the preserved A2A proposal, moved here from <a href="../../0006-a2a-routing-and-identity/index.html">ADR-0006</a>, which is now a short disposition page. Do not read this page as a requirement.</b> At the user's request A2A implementation is deferred, <b>because A2A does not fit the current requirements</b>, not because it cannot carry messages. The disposition of this record is <b>deferred</b>: it is not accepted, not rejected and not superseded. Nothing below is an active decision, and no other active record depends on it. Read <a href="../0006-a2a-deferral/index.html">the deferral record</a> for the reasons, what was built, and what is preserved.</p>
+  <p>The proposal is kept unchanged below (only its relative links were adjusted for its new folder, and its references to the OpenRig and discovery records follow their new numbers, ADR-0008 and ADR-0009) as a historical proposal, so that a later decision can start from it. Its words such as "recommendation" and "the first delivery" describe the proposal as it stood, not current plans. The implementation exists only on the branch <code>feat/a2a-participants</code> at <code>29cccad</code>; it is not on <code>main</code>, and none of it was ever run.</p>
+</div>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>DEFERRED 2026-11-08</b> at the user's request, for fit (<a href="../0006-a2a-deferral/index.html">record</a>). Previously: proposed 2026-11-07; first delivery reduced 2026-11-08. Nothing here is authorised to be built. Nothing here is decided. <span class="tag t-arch">PROPOSAL</span> items are the architect's recommendations; <span class="tag t-unv">OPEN</span> items need you.</dd></div>
+    <div><dt>Scope</dt><dd><b>As proposed (historical), phase 1 only:</b> send, clarify, result and task retrieval by polling between participants (managed sessions, plus the contract and one reference adapter for an externally managed service) through the gateway (<a href="#scope">section 1a</a>). Outside clients, streaming and push are later; OpenRig integration (ADR-0008) and discovery (ADR-0009) are separate records. The Graph tab stays host-based. SSH entry, the Network tab, workers and remote dispatch are not touched.</dd></div>
+    <div><dt>Sources</dt><dd>Ratatoskr source at the working tree on <code>2f65bf0</code>, read. The A2A v1.0.0 specification page and <code>specification/a2a.proto</code> at the <code>v1.0.0</code> tag, read 2026-11-07 (<a href="#sources">section 13</a>).</dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../../design/ground-rules.md">GR-3</a>). The JSON on this page is schematic unless it says otherwise, and no wire example was checked against a reference implementation.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#summary">1. Short answer</a> ·
+  <a href="#scope">1a. Reduced first delivery</a> ·
+  <a href="#today">2. What exists today</a> ·
+  <a href="#four">3. Four questions, four answers</a> ·
+  <a href="#diagrams">4. Animated diagrams</a> ·
+  <a href="#destination">5. Destination</a> ·
+  <a href="#participants">5a. Participants</a> ·
+  <a href="#identity">6. Identity</a> ·
+  <a href="#tasks">7. Tasks and results</a> ·
+  <a href="#failure">8. Failure and honesty</a> ·
+  <a href="#work">9. The extra work</a> ·
+  <a href="#compare">10. Alternatives</a> ·
+  <a href="#decisions">11. Recommendations and choices</a> ·
+  <a href="#gaps">12. Gaps</a> ·
+  <a href="#sources">13. Sources</a>
+</nav>
+
+<p class="prose small"><b>Labels.</b>
+  <span class="tag t-user">USER</span> the user's own requirement.
+  <span class="tag t-code">CODE</span> read in Ratatoskr source, not seen running.
+  <span class="tag t-doc">SPEC</span> read in the A2A specification or proto.
+  <span class="tag t-arch">PROPOSAL</span> the architect's suggestion.
+  <span class="tag t-unv">OPEN</span> undecided. <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+</p>
+<p class="prose small muted">The diagrams have Play, Pause, Back, Next and Replay, and nothing moves until you press Play. If your system asks for reduced motion, Play steps through without animation and more slowly. With JavaScript off the diagrams are not drawn; the prose of each section says the same.</p>
+
+<h2 id="summary">1. Short answer</h2>
+<div class="note">
+  <p><b>One example runs through the whole page.</b> Claude on the Mac asks Codex on Ubuntu to review a retry loop. Codex needs one clarification. Claude answers. Codex returns the review. That is today a message, a reply message, and a human reading two terminals. With A2A it is one task with a question, an answer and a result.</p>
+  <p><b>Three things answer three different questions, and they must never be mixed up.</b> The <b>endpoint</b> says where the message is going. The <b>credential</b> says who is asking. The gateway's <b>policy</b> says whether that asker may use that route. The public <b>card</b> only describes an endpoint; it authorizes nothing. And A2A's <code>ROLE_USER</code> or <code>ROLE_AGENT</code> says which side of one exchange wrote a message, not who anyone is.</p>
+  <p><b>Recommendation for destination.</b> The gateway serves one A2A endpoint per exact session, such as <code>https://gateway/a2a/agents/SESSION_ID</code> (illustrative), using the standard JSON-RPC binding. A friendly name like <code>codex@ubuntu</code> is looked up once, at send time. A conversation never moves to a replacement session. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>Recommendation for identity.</b> Start with <b>host-delegated identity validated by the gateway</b>: the daemon names the acting session, the gateway checks it is the current session of the authenticated host, and the gateway, not the sender, writes the origin that the target sees. Outside clients get their own gateway-issued credentials. Add gateway-issued, memory-only <b>session credentials</b> later if you want a stolen pairing file to stop being enough to impersonate sessions. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>What this costs.</b> Phase 1 is the smaller part of: an A2A server in the gateway, a task store and migrations, agent-facing tools for questions and results, an asynchronous wake path, a credential system, and adapters. <a href="#scope">Section 1a</a> says exactly what is in it. <a href="#work">Section 9</a> sizes the whole design. Nothing here must be built now.</p>
+</div>
+
+
+<h2 id="scope">1a. Reduced first delivery (user-accepted 2026-11-08)</h2>
+<p class="prose">The operator recommended shrinking the first A2A phase, and the user accepted that for this ADR (<span class="tag t-user">USER</span> accepted; the exact list below is my wording of it, <span class="tag t-arch">PROPOSAL</span>). <b>No build is authorised.</b></p>
+
+<div class="note"><p><b>The one acceptance story.</b> Claude on the Mac asks Codex on Ubuntu to review a retry loop, through the gateway. Codex asks one clarification (<code>INPUT_REQUIRED</code>). Claude answers, correlated to that task. Codex returns the result explicitly. Either side can read the status and result by polling. That round trip is the first delivery. Diagrams 2 to 5 show it; diagram 6 is a later phase.</p></div>
+
+<h3>Phase 1: what is in</h3>
+<ul class="prose">
+  <li><b>Standard A2A message exchange</b> in the standard JSON-RPC binding, from the A2A v1.0.0 proto: a direct reply where no task is needed, and a tracked task where one is.</li>
+  <li><b>Task, context and session kept distinct.</b> The task id is the unit of work, the context id groups related tasks, and neither is a Ratatoskr session id.</li>
+  <li><b>Participants, not only managed sessions.</b> A destination is a participant: a managed Ratatoskr session, or an externally managed service that enrols, registers and speaks A2A (<a href="#participants">section 5a</a>). Phase 1 specifies that contract and one reference adapter; it builds no marketplace, no NAT tunnel, no federation and no SDK suite.</li>
+  <li><b>Exact destination binding.</b> One endpoint per exact session, and a session replacement is rejected, never followed (<a href="#destination">section 5</a>). A configured list of destinations with plain name-to-endpoint resolution is enough; there is no discovery.</li>
+  <li><b>Essential authentication and ownership.</b> The gateway authenticates the caller, writes the origin the target sees, and checks that a caller may only read tasks it owns or is party to (<a href="#identity">section 6</a>). These are foundations, not deferred.</li>
+  <li><b>Clarification and answer.</b> <code>INPUT_REQUIRED</code>, then a correlated answer on the same task.</li>
+  <li><b>Explicit completion and results.</b> <code>COMPLETED</code>, <code>FAILED</code> and <code>REJECTED</code> only from an explicit report or a system event. A turn ending is never completion.</li>
+  <li><b>Task retrieval by polling:</b> <code>GetTask</code>, and <code>ListTasks</code> scoped to the caller.</li>
+  <li><b>Kept as they are:</b> the harness MCP, hooks, PTY and readiness adapters and the internal delivery receipts stay separate from A2A task state. Fail immediately when the target is offline, no replay, and an uncertain dispatch is reported as uncertain.</li>
+</ul>
+
+<h3>Deferred, and kept out of phase 1</h3>
+<div class="table-wrap"><table>
+  <tr><th>Item</th><th>Where it goes</th></tr>
+  <tr><td>Streaming (<code>SendStreamingMessage</code>), <code>SubscribeToTask</code>, push notifications</td><td>Not in phase 1. Declared off in the capabilities and answered with the standard errors (below).</td></tr>
+  <tr><td>Cancellation as a user workflow</td><td>Not a first workflow. The protocol obligations and the error handling are documented below instead of deleted.</td></tr>
+  <tr><td>External marketplace, federation across organisations, public-internet exposure; several protocol bindings; a Ratatoskr-run connector for services behind NAT</td><td>Later. The design leaves room for them; nothing builds them.</td></tr>
+  <tr><td>Standard A2A <i>clients</i> calling in (ingress) with their own credentials</td><td>Selected direction (2026-11-08), built after the participant contract; the same enrolment applies. Not the same role as a destination service (<a href="#participants">section 5a</a>).</td></tr>
+  <tr><td>Workers and remote dispatch</td><td>Not in this ADR.</td></tr>
+  <tr><td>Other harness adapters (Pi, OpenCode)</td><td>After Claude and Codex work.</td></tr>
+  <tr><td>The Graph tab and host cards (<a href="../../0005-host-agent-cards-and-graph/index.html">ADR-0005</a>)</td><td>Unchanged and separate: host-level metadata, <b>not</b> a claim of A2A task support.</td></tr>
+</table></div>
+
+<h3>Compliance qualification (technical obligations, not user features)</h3>
+<p class="prose">Shrinking the product list does not shrink what a standard server owes. These rows are what the specification requires of an interoperable server; they are <b>not</b> product scope the user asked for. What I found in the specification (read 2026-11-08; the section numbers are the page's). This is a reading, not a conformance test: <b>no reference implementation or conformance suite was run, and the spec has no conformance section.</b></p>
+<div class="table-wrap"><table>
+  <tr><th>Obligation</th><th>What the spec says</th><th>Phase 1 consequence</th></tr>
+  <tr><td>Operations</td><td><span class="tag t-doc">SPEC</span> 3.1: the eleven operations are "the fundamental capabilities that all A2A implementations must support". The spec labels none of them optional, but 3.1.7, 3.1.11 and 3.5.1 gate streaming, <code>SubscribeToTask</code>, the push-notification operations and the extended card behind capability flags.</td><td>Serve <code>SendMessage</code>, <code>GetTask</code>, <code>ListTasks</code> and <code>CancelTask</code>, which have no capability gate. <code>ListTasks</code> is a compliance duty, not a wish: it "MUST return only tasks visible to the authenticated client and MUST use cursor-based pagination" (3.1.4).</td></tr>
+  <tr><td>Capabilities must not overclaim</td><td><span class="tag t-doc">SPEC</span> 3.3.4: if <code>streaming</code> is false or absent, <code>SendStreamingMessage</code> and <code>SubscribeToTask</code> "MUST return UnsupportedOperationError"; if <code>pushNotifications</code> is false or absent, the push-config operations "MUST return PushNotificationNotSupportedError"; if <code>extendedAgentCard</code> is false or absent, <code>GetExtendedAgentCard</code> "MUST return UnsupportedOperationError".</td><td>Declare streaming, push and extended card false and return exactly those errors. Phase 1 therefore implements the <i>refusals</i> of seven operations, not their features.</td></tr>
+  <tr><td>Cancellation</td><td><span class="tag t-doc">SPEC</span> 3.1.5: "the server will attempt to cancel the task, but success is not guaranteed", including where "cancellation might not be supported at its current stage". The stated errors are <code>TaskNotCancelableError</code> and <code>TaskNotFoundError</code>. The spec does not say a server may refuse the operation as a whole.</td><td>The operation exists. <span class="tag t-unv">OPEN</span> whether phase 1 always answers <code>TaskNotCancelableError</code> for a working task (simple and honest) or implements the honest "stays working until the worker confirms" behaviour of <a href="#failure">section 8</a>. I recommend the first, and I mark the choice as needing the user.</td></tr>
+  <tr><td>Version</td><td><span class="tag t-doc">SPEC</span> 3.6.2: servers "MUST process requests using the semantics of the requested A2A-Version (matching Major.Minor)", and "MUST return a VersionNotSupportedError" otherwise; an empty value is read as 0.3.</td><td>Read the <code>A2A-Version</code> header, serve 1.0, refuse others with that error. Decide what an empty header means for a server that only speaks 1.0.</td></tr>
+  <tr><td>Authentication and authorization</td><td><span class="tag t-doc">SPEC</span> 3.3.2: servers "MUST reject requests with invalid or missing authentication credentials" and "MUST return an authorization error when the authenticated client lacks required permissions", and "MUST NOT reveal the existence of resources the client is not authorized to access". No JSON-RPC code for unauthenticated is given.</td><td>A denied target looks the same as a missing one. Choose and document the unauthenticated JSON-RPC error, since the spec does not give one.</td></tr>
+  <tr><td>Errors</td><td><span class="tag t-doc">SPEC</span> 3.3.2 names the A2A errors, and 5.4 requires them to be mapped to the binding. The numeric JSON-RPC codes (-32001 to -32009) came from a model-written summary of 5.4, not verbatim text. <span class="tag t-unv">UNVERIFIED</span></td><td>Check the code table against the proto and the spec text before writing any server.</td></tr>
+  <tr><td>Immediate return</td><td><span class="tag t-doc">SPEC</span> 3.1.1 says <code>SendMessage</code> "MUST return immediately" while 3.2.2 describes blocking and non-blocking modes (the spec disagrees with itself, <a href="#gaps">section 12</a>).</td><td>Decide the behaviour with the user before building; the page follows the proto.</td></tr>
+</table></div>
+<p class="prose"><b>The qualification in one sentence.</b> A server that claims A2A must implement four operations fully and refuse the other seven by the standard's own errors; it may not claim streaming, push or an extended card it does not have, and it must not invent a private subset while saying it is interoperable. If the user prefers not to carry those obligations, the honest alternative is to call the first delivery "A2A-shaped" and not claim interoperability, which is a different decision from this one.</p>
+
+<h3>Related records</h3>
+<p class="prose">In the user's order, the A2A first delivery comes first. <a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a> (OpenRig operator integration) and <a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a> (agent discovery tool) depend on it and are separate proposals; nothing in this ADR builds or authorises either.</p>
+
+<h2 id="today">2. What exists today</h2>
+<p class="prose">The current contract is a small custom protocol. Every statement below was read in the source. <span class="tag t-code">CODE</span></p>
+<div class="table-wrap"><table>
+  <tr><th>Piece</th><th>What it does</th><th>Where</th></tr>
+  <tr><td>The agent's tool</td><td>One MCP tool, <code>ratatoskr_send</code>, with <code>to</code>, <code>body</code> and optional <code>reply_to</code>. There is no tool for a question, a status or a result.</td><td><a class="src" href="../../../../internal/server/mcp.go#L35"><code>internal/server/mcp.go:35</code></a></td></tr>
+  <tr><td>Who the sender is</td><td>Each session has its own MCP bearer token. The token resolves to that session, and the tool takes the sender from that, never from the arguments: "the one thing this tool must never do is send as somebody else".</td><td><a class="src" href="../../../../internal/server/server.go#L249"><code>internal/server/server.go:249</code></a> and <a class="src" href="../../../../internal/server/mcp.go#L90"><code>internal/server/mcp.go:90</code></a></td></tr>
+  <tr><td>Daemon to gateway</td><td>A host bearer credential (the gateway keeps only its hash). The request body is <code>{id, from, to, reply_to, body}</code> with <code>from</code> a bare local name.</td><td><a class="src" href="../../../../internal/protocol/wire.go#L126"><code>internal/protocol/wire.go:126</code></a></td></tr>
+  <tr><td>What the gateway checks</td><td>It takes the host from the credential and looks the sender up as a <b>current session of that host</b>; it builds <code>name@host</code> itself; it will not let one sender take over another's message id.</td><td><a class="src" href="../../../../internal/gateway/send.go#L66"><code>internal/gateway/send.go:66</code></a>, <a class="src" href="../../../../internal/gateway/send.go#L94"><code>internal/gateway/send.go:94</code></a></td></tr>
+  <tr><td>Results the sender sees</td><td><code>host_stored</code>, <code>session_gone</code>, <code>destination_unreachable</code>, <code>delivery_uncertain</code> and others. "Host stored" means the host has it, not that it was delivered.</td><td><a class="src" href="../../../../internal/protocol/connected.go#L39"><code>internal/protocol/connected.go:39</code></a></td></tr>
+  <tr><td>Delivery into the model</td><td>The daemon pastes the text into the harness's terminal when it is free, and tracks queued, held, pasted, accepted. Hooks (SessionStart, UserPromptSubmit, Stop, PermissionRequest, PostToolUse) tell it what the harness is doing.</td><td><a class="src" href="../../../../internal/protocol/protocol.go#L30"><code>internal/protocol/protocol.go:30</code></a></td></tr>
+  <tr><td>What is missing</td><td>No task, no lifecycle, no "I need input", no result object, no ownership of a conversation, no way for a non-Ratatoskr client to call it, and no policy about who may message whom.</td><td>not present</td></tr>
+</table></div>
+<p class="prose"><b>The trust today, stated plainly.</b> The host credential authenticates the <i>host</i>. The daemon on that host is trusted to name the right session, and the gateway checks only that the name is a current session of that host. Any process of the owner on that host that can read the host credential can send as any session there. <span class="tag t-code">CODE</span> the network contract's same-user note. A2A does not change that by itself.</p>
+
+<h2 id="four">3. Four questions, four answers</h2>
+<div class="table-wrap"><table class="cmp">
+  <tr><th>Question</th><th>What answers it</th><th>What does <b>not</b> answer it</th></tr>
+  <tr><td>Where is this going?</td><td>The <b>endpoint</b>: the URL of one exact session.</td><td>A friendly name, the card, the message body, the <code>tenant</code> field, a context id.</td></tr>
+  <tr><td>Who is asking?</td><td>The <b>credential</b> on the request, validated by the gateway, plus the gateway's check that the named session is current.</td><td><code>ROLE_USER</code>, <code>body.from</code>, a name in the text, the public card.</td></tr>
+  <tr><td>May they?</td><td>The gateway's <b>policy</b> for that requester and that target.</td><td>Having the URL, having a valid credential, or the card listing a skill.</td></tr>
+  <tr><td>What did the target receive and do?</td><td>Explicit <b>task states and artifacts</b> that the target reports through tools.</td><td>A delivery receipt, a hook firing, a turn ending, or silence.</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>An A2A role is not an identity.</b> <span class="tag t-doc">SPEC</span> The proto: <code>ROLE_USER</code> means "the message is from the client to the server" and <code>ROLE_AGENT</code> "from the server to the client". It marks direction inside one exchange. The spec says "Identity information is handled at the protocol layer, not within A2A semantics" (section 7).</li>
+  <li><b>A public card does not authorize calls.</b> The card is information that anyone may fetch. The spec expects the server to "authenticate every incoming request" (7.4) and to authorize on "the authenticated identity and its own policies" (7.5).</li>
+  <li><b>Message, task and context ids are not session ids.</b> <span class="tag t-doc">SPEC</span> <code>messageId</code> "is created by the message creator"; <code>Task.id</code> is "generated by the server"; <code>contextId</code> is "the contextual collection of interactions (tasks and messages)". A session id names a running terminal session. Three different things, kept in three different columns of any table that records them.</li>
+</ul>
+
+<h2 id="diagrams">4. Animated diagrams</h2>
+<p class="prose">Press <b>Play</b>, or step with <b>Next</b>. Each step lights the parts involved and lists what is <b>verified</b> at that point and what is <b>not proven</b>. Labels such as <code>Bearer &lt;session token&gt;</code> are illustrative; no real credential appears on this page.</p>
+
+<figure class="anim" data-diagram="d1" data-label="Before and after: custom messages versus A2A"><figcaption class="t">Diagram 1. The custom contract today, and the same send as A2A (background)</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<figure class="anim" data-diagram="d2" data-label="Friendly name, directory, card and exact endpoint"><figcaption class="t">Diagram 2. From a friendly name to the exact endpoint</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<figure class="anim" data-diagram="d3" data-label="Identity proof chain"><figcaption class="t">Diagram 3. Who is asking: the proof chain, hop by hop</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<figure class="anim" data-diagram="d4" data-label="Round trip with a clarification and a result"><figcaption class="t">Diagram 4. The whole round trip: ask, clarify, answer, result</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<figure class="anim" data-diagram="d5" data-label="Session replacement"><figcaption class="t">Diagram 5. A replaced session is rejected, not silently followed</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<figure class="anim" data-diagram="d6" data-label="Standard client ingress"><figcaption class="t">Diagram 6. A standard A2A client calling in, with its own credential (ingress role; built after the participant contract)</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+
+<h2 id="destination">5. Destination: which session is this for</h2>
+<p class="prose small muted">This section describes <b>managed sessions</b>. <a href="#participants">Section 5a</a> generalises it to participants; the exact-session rules below are the session-bound case of it.</p>
+<p class="prose">A2A's model is one agent per endpoint URL. A card describes an agent and lists its interface URL(s). <span class="tag t-doc">SPEC</span> The proto's <code>AgentInterface</code> has a required <code>url</code>, <code>protocol_binding</code> and <code>protocol_version</code>, and an optional <code>tenant</code> described only as the "Tenant ID to be used in the request when calling the agent". A standard client sends to the URL it is given, with no knowledge of Ratatoskr.</p>
+<h3>The proposal: one endpoint per exact session</h3>
+<ul class="prose">
+  <li><b>The gateway serves the endpoints.</b> <code>https://gateway/a2a/agents/SESSION_ID</code> is illustrative. The session id is the gateway's session id (a UUID, new for every registration), so the URL names exactly one running session and no other. <span class="tag t-code">CODE</span> <a class="src" href="../../../../internal/protocol/wire.go#L61"><code>internal/protocol/wire.go:61</code></a> <span class="tag t-arch">PROPOSAL</span></li>
+  <li><b>Standard binding, standard fields.</b> The card says binding <code>JSONRPC</code>, protocol version <code>1.0</code>, and that URL. A generic client needs no custom required field, no <code>tenant</code> and no proprietary routing header. <span class="tag t-doc">SPEC</span> <code>JSONRPC</code> is one of the three core binding values.</li>
+  <li><b>The friendly name is a lookup, once.</b> <code>codex@ubuntu</code> resolves through the gateway's existing directory to the current session id when the send happens. The model never sees a URL.</li>
+  <li><b>Existing work never moves.</b> A task and its context are bound to the session they started in. If that session ends, they end (diagram 5). A new send to the same friendly name starts new work in the new session, visibly.</li>
+  <li><b>Gateway-centred by your choice, not by A2A.</b> The spec does not require a gateway. <span class="tag t-user">USER</span> chose a central gateway for Ratatoskr; every endpoint here lives on it.</li>
+  <li><b>Do not misuse <code>tenant</code>.</b> It is a path or field the server may or may not interpret. Using it to select a session would work only for clients that know to fill it in, which is the proprietary routing this design avoids.</li>
+</ul>
+<h3>One host, many sessions</h3>
+<p class="prose">A host is not a session. One host can run many sessions, of the same harness or different ones, and each is its own destination. The design above already routes by session, so this is a clarification, not a new mechanism. Example (invented ids): Host <code>mac</code> has three sessions.</p>
+<div class="table-wrap"><table>
+  <tr><th></th><th>S1: <code>claude</code></th><th>S2: <code>codex</code></th><th>S3: <code>codex-review</code></th></tr>
+  <tr><td>Session id (opaque)</td><td><code>...c1a4</code></td><td><code>...b208</code></td><td><code>...e55a</code></td></tr>
+  <tr><td>Endpoint</td><td>its own URL</td><td>its own URL</td><td>its own URL</td></tr>
+  <tr><td>Lifecycle</td><td>ends when S1 ends</td><td>ends when S2 ends</td><td>ends when S3 ends</td></tr>
+  <tr><td>Tasks</td><td>bound to S1</td><td>bound to S2</td><td>bound to S3</td></tr>
+  <tr><td>Credential binding</td><td>host credential plus S1 named by the daemon, checked as current for host <code>mac</code></td><td>the same host credential plus S2</td><td>the same host credential plus S3</td></tr>
+  <tr><td>If it ends</td><td>S2 and S3 and the host are unaffected</td><td>S1 and S3 are unaffected; S2's open tasks end as "session ended"</td><td>S1 and S2 are unaffected; S3's open tasks end</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>The host stays connected when one session ends.</b> The host's stream, heartbeat and host card (ADR-0005) belong to the host, not to any session. A host card describes the host and is not one session's card.</li>
+  <li><b>Never redirected.</b> A message or reply for S2 after S2 ends is refused. It is not forwarded to S3 even though S3 is also a Codex on the same host.</li>
+  <li><b>The session id.</b> It must be globally unique and opaque, never reused, and mean one thing: one registration of one session on one host. <span class="tag t-code">CODE</span> today the gateway issues a new id for every registration and stores it with the host and the session's local name; the previous session of that name is ended when a new one registers, and a daemon connecting ends that host's earlier sessions <a class="src" href="../../../../internal/gateway/sessions.go#L6"><code>internal/gateway/sessions.go:6</code></a>. The id does not carry the daemon instance as a column that I found, and the exact local session (the terminal or pane) is the daemon's own mapping, which the gateway never sees. Whether the id should also encode the daemon instance is <span class="tag t-unv">OPEN</span>; I do not claim either way.</li>
+</ul>
+<figure class="anim" data-diagram="d9" data-label="One host with many sessions"><figcaption class="t">Diagram 9. One host, three sessions: independent routes, one ends</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+
+<h3>Friendly names and ambiguity</h3>
+<ul class="prose">
+  <li><b>Today (code).</b> The gateway's directory is keyed by host and local name, with one open session per name and at most 8 open sessions per host. <a class="src" href="../../../../internal/gateway/sessions.go#L29"><code>internal/gateway/sessions.go:29</code></a> So <code>codex@mac</code> is unambiguous only because registering a second session with the same name replaces the first. Names must match <code>^[a-z0-9_-]{1,32}$</code>. Which names the daemon will actually hand out to a second Codex on the same host I did not check. This is a property of the current directory and its naming, <b>not</b> a limit of the proposed A2A routing.</li>
+  <li><b>Proposal.</b> Routing is by exact session id and does not depend on there being one session per harness. <code>codex@mac</code> is a display alias and a lookup key, never an identity. Two Codex sessions on one host are addressed unambiguously only by <b>distinct registered names</b> (<code>codex</code>, <code>codex-review</code>) or by the exact endpoint selected from the list.</li>
+  <li><b>Ambiguity is refused.</b> If a lookup could match more than one live session (for example an alias that is not unique, or a harness kind rather than a name), the gateway refuses the resolution and returns the exact candidates. It never picks one. A model or person then chooses an exact endpoint. <span class="tag t-arch">PROPOSAL</span></li>
+</ul>
+
+<h3>Where the per-session card lives</h3>
+<p class="prose">The spec's well-known location is the domain root, <code>https://{server_domain}/.well-known/agent-card.json</code> (8.2); it also lists registries and catalogs and "direct configuration" as ways to find a card. <span class="tag t-doc">SPEC</span> It does not define a path-scoped well-known location. This design serves each session's card at <code>.../a2a/agents/SESSION_ID/.well-known/agent-card.json</code> (a choice, not a spec rule) and hands the URL to clients by direct configuration or through Ratatoskr's own directory. <span class="tag t-unv">UNVERIFIED</span> Whether third-party clients accept a card at such a path; they would if given its URL. A listing endpoint for humans is a Ratatoskr feature, not an A2A one.</p>
+<p class="prose">A schematic per-session card (not schema-validated against a reference implementation; the security field shapes were derived from the proto's field names by the protobuf JSON mapping):</p>
+<pre class="wire">{
+  "name": "codex@ubuntu",
+  "description": "Codex session on Ubuntu.",
+  "supportedInterfaces": [{ "url": "https://gateway/a2a/agents/0192...9d31",
+                            "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }],
+  "version": "1",
+  "capabilities": { "streaming": false, "pushNotifications": false },
+  "securitySchemes": { "gatewayBearer": { "httpAuthSecurityScheme": { "scheme": "Bearer" } } },
+  "securityRequirements": [ { "schemes": { "gatewayBearer": { "list": [] } } } ],
+  "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
+  "skills": [ ... ]
+}</pre>
+<p class="prose"><span class="tag t-doc">SPEC</span> In the proto, <code>SecurityScheme</code> is a oneof of API key, HTTP auth, OAuth2, OpenID Connect and mutual TLS; <code>HTTPAuthSecurityScheme</code> has a required <code>scheme</code> ("Bearer") and an optional <code>bearer_format</code>; <code>SecurityRequirement</code> is <code>map&lt;string, StringList&gt; schemes</code>. The card <b>declares</b> that a Bearer credential is needed. It does not grant one.</p>
+
+<h3>Routing the other operations</h3>
+<div class="table-wrap"><table>
+  <tr><th>Operation</th><th>How it is routed</th></tr>
+  <tr><td><code>SendMessage</code></td><td><b>Phase 1.</b> To the exact-session URL. Without a task id: a new task in a new or given context. With a task id: it must belong to this endpoint and to the caller.</td></tr>
+  <tr><td><code>GetTask</code></td><td><b>Phase 1</b> (this is the polling path). Looked up in the gateway's task store by id, <b>scoped to this endpoint and the caller</b>. Answered from the store, so it works while the target is busy or offline.</td></tr>
+  <tr><td><code>ListTasks</code></td><td><b>Phase 1.</b> Only this endpoint's tasks that the caller owns. <span class="tag t-doc">SPEC</span> 3.1.4: it "MUST return only tasks visible to the authenticated client".</td></tr>
+  <tr><td><code>CancelTask</code></td><td><b>Phase 1 obligation, not a user workflow.</b> Same lookup. Phase 1 answer is an open choice in <a href="#scope">section 1a</a>; honest semantics in <a href="#failure">section 8</a>.</td></tr>
+  <tr><td><code>SubscribeToTask</code></td><td><b>Later, not phase 1.</b> In phase 1 the capability is off and the call returns <code>UnsupportedOperationError</code>. Later design: server-sent events from the gateway, fed by the same store and live updates. <span class="tag t-doc">SPEC</span> A terminal task returns <code>UnsupportedOperationError</code>.</td></tr>
+</table></div>
+<p class="prose">The host Graph tab of ADR-0005 is unchanged: nodes remain hosts, built from host cards and message counts. Per-session A2A cards are a different surface and do not become graph nodes.</p>
+
+
+<h2 id="participants">5a. Participants: managed sessions and externally managed services</h2>
+<p class="prose">Section 5 assumed every destination is a terminal session Ratatoskr launched. The goal is wider: OpenRig, an independent Pi, or a custom service should be able to join. A <b>participant</b> is an authenticated, addressable agent or service. A managed session is one implementation of it; an externally managed service is another. <span class="tag t-user">USER</span> direction, clarified 2026-11-08; the mechanics are <span class="tag t-arch">PROPOSAL</span>.</p>
+
+<h3>Two kinds, one destination model</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Managed session</th><th>Externally managed participant</th></tr>
+  <tr><td>Who launches, stops and restores it</td><td>Ratatoskr (<code>rtk</code> and its daemon)</td><td>Its owner's own system (OpenRig, Pi, a service). Ratatoskr never does.</td></tr>
+  <tr><td>Needs from Ratatoskr</td><td>A daemon-owned process and terminal, hooks, local MCP, readiness adapters</td><td><b>None of those.</b> No required daemon, PTY, hooks or local MCP. Its queues and internal structure stay its own.</td></tr>
+  <tr><td>Identity that stays fixed</td><td>The session id. A replacement is a new participant.</td><td>A stable <b>participant id</b> issued at enrolment. It survives reconnects and restarts if the owner declares it should.</td></tr>
+  <tr><td>Lifecycle binding</td><td><b>session</b>: ends with the session; work is never moved to a replacement.</td><td><b>service</b>: lasts while the enrolment is valid; the owner's declared policy says what a restart does to open tasks.</td></tr>
+  <tr><td>How it authenticates</td><td>Host delegation (<a href="#identity">section 6</a>): the host credential plus a named session</td><td>Its <b>own</b> scoped, independently revocable credential from enrolment</td></tr>
+  <tr><td>How the gateway reaches it</td><td>The daemon's outbound stream</td><td>See the transport options below</td></tr>
+  <tr><td>Appears as a host node in the Graph tab?</td><td>Yes, through its host (ADR-0005)</td><td><b>Not forced.</b> The Graph stays host-based and this page does not change it.</td></tr>
+</table></div>
+<p class="prose"><b>Four ids that must never be mixed up:</b> the <i>participant id</i> (who, stable per its lifecycle binding), the <i>connection id</i> (one live link, changes on every reconnect and must not rotate the participant), the <i>session id</i> (a managed session only), and the <i>task id</i> (one unit of work). A reconnect of an external service keeps its participant id; a managed session that restarts gets a new one.</p>
+
+<h3>Two roles that look alike</h3>
+<ul class="prose">
+  <li><b>An external service as destination:</b> something other participants send work to. It is registered at an endpoint and gets tasks.</li>
+  <li><b>A standard A2A client as ingress:</b> something that calls in to ask for work, with its own credential, and is never a destination. Diagram 6 shows this role. Both use the same enrolment but have different policies.</li>
+</ul>
+
+<h3>Who builds what, and where adapters live</h3>
+<div class="table-wrap"><table>
+  <tr><th>Piece</th><th>Owner and location</th><th>Note</th></tr>
+  <tr><td>Standard network API, schemas, a worked example and a conformance contract for participants</td><td>Ratatoskr, in this repository</td><td>The thing external authors build against. Its form (documents, an SDK, a test harness) is not chosen.</td></tr>
+  <tr><td>Enrolment, registration, authentication, routing, task interoperability</td><td>Ratatoskr (gateway)</td><td>Needed even for a service that already speaks the selected A2A: it needs no harness-specific bridge but still has to be enrolled, registered and routed.</td></tr>
+  <tr><td>Built-in adapters for harnesses Ratatoskr manages (Claude, Codex, and Pi when <code>rtk</code> launches it)</td><td>Ratatoskr, internal</td><td>They stay internal. A Pi that <code>rtk</code> manages is <b>not</b> an independent Pi participant.</td></tr>
+  <tr><td>An adapter for a system that does not speak the selected A2A</td><td>A separate process or package, maintained near the source system (an optional <code>integrations/openrig</code> folder is acceptable)</td><td>The gateway never depends on OpenRig or Pi internals. <a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a> is the OpenRig-specific case.</td></tr>
+  <tr><td>Launch, stop, restore, queues and internal structure of an external system</td><td>The owner's system</td><td>Not Ratatoskr's, and nothing here changes that.</td></tr>
+</table></div>
+
+<h3>Endpoint, card and catalog for both kinds</h3>
+<ul class="prose">
+  <li><b>Endpoint.</b> Each participant has one endpoint on the gateway, shown in this page as <code>.../agents/ID</code> (illustrative): for a managed session the id is the session id; for an external participant it is the stable participant id. The destination rules of section 5 hold for both: the endpoint fixes the destination, and a friendly name is resolved once at send time.</li>
+  <li><b>Card.</b> Each endpoint has its own card. A <i>public card confers no write or send authority</i>. For an external participant the card content is supplied by its owner at registration and checked by the same strict rules as ADR-0005's host card.</li>
+  <li><b>Catalog.</b> The gateway's directory lists participants of both kinds with their lifecycle binding. This is what <a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a> would show a model later; it is a consumer, not a requirement here.</li>
+</ul>
+
+<h3>Transport to an external service: two options</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>A. Gateway calls a registered URL</th><th>B. A connector dials out to the gateway</th></tr>
+  <tr><td>How it works</td><td>The owner registers the service's A2A URL. The gateway sends standard A2A to it.</td><td>An adapter or connector on the owner's side opens an outbound stream to the gateway, as the daemon does.</td></tr>
+  <tr><td>What the service must do</td><td>Be a standard A2A server reachable from the gateway.</td><td>Run the connector and speak a Ratatoskr-specific stream.</td></tr>
+  <tr><td>Behind NAT or an opaque orchestrator</td><td>No, unless something makes it reachable.</td><td>Yes.</td></tr>
+  <tr><td>Core impact</td><td>No custom persistent stream is demanded of a standard service.</td><td>A custom protocol to specify, secure and version.</td></tr>
+  <tr><td>Standard or Ratatoskr-specific</td><td>Standard A2A plus Ratatoskr's registration</td><td>Ratatoskr-specific</td></tr>
+</table></div>
+<p class="prose"><b>Recommendation.</b> Make A the baseline for phase 1's reference adapter, because it asks nothing non-standard of the service. Treat B as an optional future connector. <span class="tag t-unv">OPEN</span> The user has <b>not authorised building both</b>, and nothing is built.</p>
+<p class="prose"><b>Registration rules for A (owner-controlled).</b> Only the owner, with an admin credential, registers an endpoint. The gateway then makes outbound requests to a URL it was given, which is the same class of risk as ADR-0005's card poller, so the same rules apply: an IP address, not a name; a dial-time check of the address against a deny list; no redirects followed; no proxy; size and time caps. <span class="tag t-code">CODE</span> <a class="src" href="../../../../internal/gateway/carddial.go#L6"><code>internal/gateway/carddial.go:6</code></a> <b>TLS is never silently bypassed.</b> The standard says production interface URLs must use HTTPS; today ADR-0005's polling accepts plain HTTP on loopback and Tailscale addresses and HTTPS with a pinned certificate on a LAN, and a task carries content and a bearer credential, so the registration must say plainly which of those it allows (<span class="tag t-unv">OPEN</span>). Public-internet destinations are not enabled. The gateway itself has no public mode and no HTTPS on a tailnet address, so a service that must call the gateway back is limited to the networks the gateway already listens on.</p>
+
+<h3>Enrolment and credentials</h3>
+<ul class="prose">
+  <li><b>Scoped and independently revocable.</b> The owner enrols a participant and gets a credential naming <i>that participant only</i>: what it may send to, and what it may read. Revoking it affects nothing else. The host pairing key is <b>not</b> reused as a universal owner credential. The credential is shown once and stored as a hash, like the pairing secrets.</li>
+  <li><b>Source attribution.</b> The gateway knows the participant from its credential and writes the origin; the message body's <code>from</code> is never trusted. A registered external service answering a task is authenticated the same way when it reports back.</li>
+  <li><b>Standard or Ratatoskr-specific.</b> A2A defines how a server <i>declares</i> authentication schemes (the card's security fields) and requires servers to reject bad credentials; I did not find in what I read a standard for enrolling a participant or issuing its credential. So enrolment and registration are <b>Ratatoskr-specific admin operations</b>; the authentication on A2A calls stays standard. <span class="tag t-unv">UNVERIFIED</span> beyond the sections read.</li>
+</ul>
+
+<h3>Enrolment, registration, send, reply, revoke</h3>
+<figure class="anim" data-diagram="d8" data-label="External participant lifecycle"><figcaption class="t">Diagram 7. The life of an external participant: enrol, register, send, reply, revoke</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<h3>Managed Claude to an externally managed service</h3>
+<p class="prose">The ownership boundary is the point: on the external side there is no <code>rtk</code> terminal, no hooks and no local MCP, and the owner's system keeps its own queues.</p>
+<figure class="anim" data-diagram="d7" data-label="Managed session to external participant"><figcaption class="t">Diagram 8. A managed Claude, the gateway, and an externally managed service</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The sections below say the same in prose.</p></noscript></figure>
+<p class="prose small muted">Diagrams 2 and 3 above each gain a second scene for an external participant. Version, error, task-ownership and cancellation obligations in <a href="#scope">section 1a</a> apply to every participant. Offline targets fail immediately, there is no replay, and no new permission, nested worker or offline policy is introduced here.</p>
+
+<h2 id="identity">6. Identity: who is really asking</h2>
+<p class="prose small muted">Host delegation (option H below) is a trust boundary for <b>managed sessions on a paired host</b>. It is not a universal proof of identity and does not apply to external participants, which have their own credentials (<a href="#participants">section 5a</a>).</p>
+<h3>What the target can actually rely on</h3>
+<p class="prose">The target daemon cannot check the requester itself. It can check that the frame came over its own authenticated link to the gateway. So the chain is: the gateway authenticates and authorizes the requester; the gateway writes an <b>origin</b> record (requester kind, host, session, task id, policy decision) into the internal frame; the target trusts the origin because of <i>who sent the frame</i>, not because of anything in the message body. <code>body.from</code> proves nothing. <span class="tag t-arch">PROPOSAL</span></p>
+<h3>Two ways to authenticate a Ratatoskr session to the gateway</h3>
+<div class="table-wrap"><table class="cmp">
+  <tr><th></th><th>H. Restricted host delegation</th><th>S. Gateway-issued session credentials</th></tr>
+  <tr><td>What is presented</td><td>The existing host credential, plus the name of the acting session.</td><td>A per-session credential the gateway issued when that session registered.</td></tr>
+  <tr><td>What the gateway verifies</td><td>Host is authentic; the named session is a <b>current session of that host</b> (it already does this); policy allows requester to target.</td><td>The session credential maps to exactly one current session; policy applies.</td></tr>
+  <tr><td>Stolen <code>pairing.json</code> (the host credential)</td><td>Can act as <b>any</b> current session on that host. This is today's behaviour.</td><td>Cannot act as a session: the file does not hold session credentials.</td></tr>
+  <tr><td>Compromised or malicious daemon</td><td>Can act as any session on its host.</td><td>Can act as any session on its host: it holds the credentials in memory.</td></tr>
+  <tr><td>Other process of the same user</td><td>Can read the host credential file. Equal to a stolen file.</td><td>Must read the daemon's memory, which is harder but not impossible (OS-dependent, <span class="tag t-unv">UNVERIFIED</span> here).</td></tr>
+  <tr><td>New machinery</td><td>None for sessions.</td><td>Issue on session registration, keep only a hash, send to the daemon, hold in memory, revoke on end, restart and unpair. A schema change.</td></tr>
+  <tr><td>External A2A clients</td><td>Not applicable.</td><td>Not applicable: they need their own principal credentials either way.</td></tr>
+</table></div>
+<p class="prose"><b>Recommendation (minimal and practical).</b> Start with <b>H</b>. It is what the system already trusts, it adds no credential storage for sessions, and it makes the gateway, not the sender, the source of the origin the target sees. Add <b>S</b> only if you want a stolen pairing file to stop being enough. <b>Principal credentials for outside clients are needed in either case</b>, so a credential table is part of the first phase anyway. <span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span> Your choice of H first, or S from the start.</p>
+
+<h3>Credentials: issued, stored, revoked</h3>
+<div class="table-wrap"><table>
+  <tr><th>Credential</th><th>Issued</th><th>Stored</th><th>Revoked</th></tr>
+  <tr><td>MCP session token (exists)</td><td>When the daemon starts a session</td><td>In the daemon, and in the harness's hook file for that session <span class="tag t-code">CODE</span> <a class="src" href="../../../../internal/server/hookfile.go#L36"><code>internal/server/hookfile.go:36</code></a></td><td>When the session ends or the daemon stops</td></tr>
+  <tr><td>Host credential (exists)</td><td>At pairing, once</td><td>Gateway: hash only. Host: <code>pairing.json</code>, mode 0600</td><td>Unpair; re-pair replaces</td></tr>
+  <tr><td>Session credential (option S)</td><td>In the answer to a session registration</td><td>Gateway: hash only. Daemon: memory only, never written, never shown to the model</td><td>Session end, host reconnect (which ends earlier sessions), unpair</td></tr>
+  <tr><td>External principal (new)</td><td>By the owner with a gateway admin command, shown once, like a pairing code</td><td>Gateway: hash only, with a name and an allowed-target list</td><td>An admin command; optional expiry</td></tr>
+</table></div>
+<p class="prose">On <b>unpair</b>, the host's credential and every credential derived from it are removed, and its non-final tasks end as failed. On <b>daemon restart</b>, earlier sessions end (as today) and their tasks end with them.</p>
+
+<h3>Terminating A2A is not proxying it</h3>
+<div class="table-wrap"><table>
+  <tr><th></th><th>Gateway terminates A2A (recommended)</th><th>Gateway proxies A2A to the target</th></tr>
+  <tr><td>Who is the A2A server</td><td>The gateway</td><td>The target daemon</td></tr>
+  <tr><td>Task state lives</td><td>In the gateway's database</td><td>On the target host</td></tr>
+  <tr><td>Target offline</td><td>GetTask still answers from the store</td><td>No answer</td></tr>
+  <tr><td>Daemon needs a listener</td><td>No, it keeps dialing out</td><td>Yes, with the reachability problems ADR-0005 already met</td></tr>
+  <tr><td>Where identity is checked</td><td>Once, at the gateway</td><td>Forwarded identity the target must trust</td></tr>
+</table></div>
+
+<h3>Trust limits, stated plainly</h3>
+<ul class="prose">
+  <li><b>The gateway is the root of trust.</b> If it is compromised, every origin, ownership and policy decision can be forged. Signed assertions would not fix this: they only prove the gateway signed, and the gateway holds the key.</li>
+  <li><b>The same-user limit stays.</b> Agents run as the owner and can read files and, depending on the OS, process memory. Neither H nor S isolates them from a compromised host.</li>
+  <li><b>Authentication is not worker permission.</b> It says who may ask. What Codex then does is governed by its own permission prompts, hooks and gates, unchanged.</li>
+  <li><b>The existing HTTP risks remain.</b> The gateway may run plain HTTP on loopback, a Tailscale address, or a LAN with an explicit flag, and refuses a public address. <span class="tag t-code">CODE</span> <a class="src" href="../../../../internal/gateway/listen.go#L3"><code>internal/gateway/listen.go:3</code></a> A bearer token over plain LAN HTTP is readable on that LAN. A2A says production use "MUST" be encrypted (7.1) and an interface URL "must be a valid absolute HTTPS URL in production". <span class="tag t-doc">SPEC</span> Outside clients are therefore only as safe as the transport you give them. <span class="tag t-unv">OPEN</span> No tailnet HTTPS support exists or is claimed.</li>
+  <li><b>A label shown to a model is not a gate.</b> Codex is told who asked; it can still be persuaded by the text.</li>
+</ul>
+
+<h2 id="tasks">7. Tasks, questions and results</h2>
+<p class="prose">The task layer is what the current system lacks, and what makes "ask, clarify, result" a thing the system knows instead of two terminals a human reads.</p>
+<h3>A schematic send</h3>
+<pre class="wire"><span class="c"># Schematic. Not validated against a reference implementation.</span>
+POST /a2a/agents/0192...9d31
+A2A-Version: 1.0
+Authorization: Bearer &lt;illustrative token&gt;
+Content-Type: application/json
+
+{ "jsonrpc": "2.0", "id": "1", "method": "SendMessage",
+  "params": { "message": { "messageId": "m-01", "role": "ROLE_USER",
+                            "parts": [ { "text": "Review the retry loop in client.go." } ] },
+              "configuration": { "returnImmediately": true } } }</pre>
+<p class="prose">What the spec and proto say about these pieces: <code>A2A-Version</code> is sent "with each request" (3.6.1). JSON-RPC uses PascalCase method names such as <code>SendMessage</code> and <code>GetTask</code> (9.1). <code>returnImmediately</code> true "returns immediately after creating the task"; false, the default, makes the call wait until the task is final or needs input. <span class="tag t-doc">SPEC</span> The response is a Task or a Message (a proto <code>oneof</code>); how JSON-RPC wraps that, the exact enum spelling in JSON, and the endpoint path were <span class="tag t-unv">UNVERIFIED</span>: the spec page's own examples disagree with the proto in places (section 12).</p>
+
+<h3>How task states mean something in Ratatoskr</h3>
+<div class="table-wrap"><table>
+  <tr><th>A2A state</th><th>Means here</th><th>Set by</th></tr>
+  <tr><td><code>SUBMITTED</code></td><td>The gateway accepted the request and dispatched it to the target host. Not that the model has read it.</td><td>Gateway</td></tr>
+  <tr><td><code>WORKING</code></td><td>The target's harness took the prompt (today's <code>accepted</code> receipt).</td><td>Target daemon, through the adapter</td></tr>
+  <tr><td><code>INPUT_REQUIRED</code></td><td>The worker explicitly asked a question. The question is the status message.</td><td>The worker, by a tool call</td></tr>
+  <tr><td><code>COMPLETED</code>, <code>FAILED</code>, <code>REJECTED</code></td><td>The worker explicitly reported that, or the system ended it (the session ended: <code>FAILED</code>).</td><td>The worker by tool, or the gateway</td></tr>
+  <tr><td><code>CANCELED</code></td><td>Cancellation actually took effect (section 8).</td><td>Gateway, on confirmation</td></tr>
+  <tr><td><code>AUTH_REQUIRED</code></td><td>Not used in the first version.</td><td>none</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>No "Stop means completed".</b> A harness hook such as Stop says a model turn ended. It is evidence the model went quiet, nothing more. A task finishes only by an explicit report. If a turn ends with no report, the task stays <code>WORKING</code> and carries a metadata flag, "turn ended without a report", that a person or the sender can see. <span class="tag t-arch">PROPOSAL</span></li>
+  <li><b>Delivery receipts stay separate.</b> <code>host_stored</code>, <code>pasted</code>, <code>accepted</code> and the uncertain results are adapter facts about getting text into a terminal. They are recorded on the task's delivery record, not mistaken for task states. <span class="tag t-code">CODE</span> they exist today as message states.</li>
+  <li><b>New agent-facing tools</b> are needed, because the worker must be able to say "I need input" and "here is the result": one to report a state with a message and optional artifact, one for the sender to reply to a task, and one to read a task. The existing send tool stays and returns the task id. Tool names are an <span class="tag t-unv">OPEN</span> detail.</li>
+  <li><b>Results are artifacts.</b> <span class="tag t-doc">SPEC</span> <code>Artifact</code> needs an id and at least one <code>Part</code> (text, bytes, a URL or structured data). First version: text artifacts.</li>
+</ul>
+
+<h3>The asynchronous wake</h3>
+<p class="prose">When Codex asks a question, the gateway knows at once and can tell the Mac daemon over its stream. But a daemon holding an event is not a model reading it. The daemon must put the question in front of Claude's model, which means <b>injecting it as a prompt when Claude is free</b>, the same adapter path ratatoskr messages use now: held while busy, pasted when idle, tracked as pasted and accepted. <span class="tag t-code">CODE</span> That path can hold, miss, or be ignored by the model. Nothing in A2A makes a model attentive. For an external client, "the wake" is simply polling or a subscription.</p>
+<p class="prose"><b>MCP, hooks and the terminal remain adapter mechanics.</b> They are how a task reaches and leaves a particular harness. A harness that later offers a native session API could replace hooks as the detector of turn boundaries. It would not replace A2A as the way outside parties and Ratatoskr sessions talk. <span class="tag t-arch">PROPOSAL</span> Pi and OpenCode would each need their own adapter; nothing about them is examined here.</p>
+
+<h2 id="failure">8. Failure, uncertainty and honesty</h2>
+<div class="table-wrap"><table>
+  <tr><th>Case</th><th>What happens</th></tr>
+  <tr><td>Target host not live, or its session gone</td><td><b>Fail immediately</b>; no task is created and nothing is queued for later. <span class="tag t-user">USER</span> policy: no offline replay. The error says which.</td></tr>
+  <tr><td>Offered to the host, no acknowledgement in time</td><td>The task is <code>SUBMITTED</code> with the delivery marked <b>uncertain</b>, as <code>delivery_uncertain</code> is today. It is not retried and not reported as failed: it may have arrived. <span class="tag t-code">CODE</span> <a class="src" href="../../../../internal/protocol/connected.go#L36"><code>internal/protocol/connected.go:36</code></a></td></tr>
+  <tr><td>Duplicate request</td><td>The spec says only that Send Message "MAY be idempotent" and a server "may utilize the messageId to detect duplicate messages" (3.3.1). <span class="tag t-doc">SPEC</span> This design dedupes on (caller, messageId) from the task store, and the ledger already refuses to let another sender reuse an id. <span class="tag t-code">CODE</span> No exactly-once claim is made across a crash. <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td><code>CancelTask</code> before delivery</td><td>The task becomes <code>CANCELED</code> at once.</td></tr>
+  <tr><td><code>CancelTask</code> after delivery</td><td>The worker is told to stop (a notice in its terminal). The task <b>stays <code>WORKING</code></b> with a "cancel requested" flag until the worker reports, or the session ends. A2A has no "cancelling" state, so this is honest rather than neat. If it is already final: <code>TaskNotCancelableError</code>.</td></tr>
+  <tr><td>Wrong caller or wrong endpoint</td><td>A plain not-found. <span class="tag t-doc">SPEC</span> Servers "SHOULD NOT distinguish between 'does not exist' and 'not authorized'" (3.3.2).</td></tr>
+  <tr><td>Session replaced</td><td>Non-final tasks end <code>FAILED</code> with "session ended". Replies to them are refused (diagram 5).</td></tr>
+  <tr><td>Auth failures</td><td>The spec names no A2A error type or JSON-RPC code for authentication or authorization, only "HTTP 401", "HTTP 403" or "JSON-RPC custom error". <span class="tag t-doc">SPEC</span> 3.3.2. The Ratatoskr codes would be our own, kept outside the reserved A2A range.</td></tr>
+</table></div>
+
+<h2 id="work">9. The extra work</h2>
+<p class="prose">Rough, relative sizes, my estimates, not measurements, for the <b>whole</b> design. <b>Phase 1 is the subset in <a href="#scope">section 1a</a>:</b> in the first row only <code>SendMessage</code>, <code>GetTask</code>, <code>ListTasks</code> and the refusal of the rest are in, streaming is later, and outside principals are later. Nothing is committed to.</p>
+<div class="table-wrap"><table>
+  <tr><th>Area</th><th>What it takes</th><th>Size</th></tr>
+  <tr><td>Protocol and server</td><td>A JSON-RPC A2A server in the gateway: SendMessage, GetTask, ListTasks, CancelTask, SubscribeToTask, with the required headers and errors; request and response types validated against the proto. Phase 1 stops at the four operations plus the standard refusals; streaming and subscribe are later.</td><td>L (phase 1 is the smaller part)</td></tr>
+  <tr><td>Client side for Ratatoskr</td><td>The daemon speaks A2A to the gateway for its own sessions (and keeps the old route working during migration).</td><td>M</td></tr>
+  <tr><td>Discovery and routing</td><td>Per-session endpoints and cards, name-to-session resolution, replacement handling, a listing for humans.</td><td>M</td></tr>
+  <tr><td>External participants</td><td>Enrolment and scoped, revocable credentials; owner-controlled endpoint registration with the dial rules above; the participant contract and one reference adapter. A connector (option B), a marketplace and an SDK suite are not in phase 1.</td><td>M</td></tr>
+  <tr><td>Identity and policy</td><td>Option H wiring and origin records; principal credentials and admin commands; a policy table (who may reach which target; default for your own sessions, deny for outsiders); optionally option S.</td><td>M to L</td></tr>
+  <tr><td>Task store</td><td>New gateway tables for tasks, messages, artifacts and events; migration; ownership; retention; the lifecycle rules above.</td><td>L</td></tr>
+  <tr><td>Agent-facing tools and results</td><td>The report, reply and read tools; artifacts; the "turn ended without a report" flag.</td><td>M</td></tr>
+  <tr><td>Wake and adapters</td><td>Injecting questions and results into Claude and Codex, per harness; Pi and OpenCode adapters from scratch.</td><td>M per harness</td></tr>
+  <tr><td>Compatibility and rollout</td><td>The old route and tool keep working until the A2A path is trusted; wire version and schema versions; docs and a test guide.</td><td>M</td></tr>
+</table></div>
+<p class="prose"><b>Phases (proposed, none authorised).</b> <b>0</b> policy and credential tables, the task schema, nothing exposed. <b>1</b> the reduced first delivery of <a href="#scope">section 1a</a>: one endpoint per exact session, <code>SendMessage</code>, <code>GetTask</code>, <code>ListTasks</code>, <code>CancelTask</code> handling and the standard refusals, text only, the report, reply and read tools and the wake for Claude and Codex, proved by one round trip on configured destinations. <b>2</b> streaming and subscribe. <b>3</b> outside principals and their credentials. <b>4</b> other harness adapters. Each phase is shippable alone and unverified until you let it be run. OpenRig integration and discovery are not phases of this ADR (<a href="../../0008-openrig-operator-integration/index.html">ADR-0008</a>, <a href="../../0009-agent-discovery-tool/index.html">ADR-0009</a>).</p>
+
+<h2 id="compare">10. Alternatives for the destination</h2>
+<div class="table-wrap"><table>
+  <tr><th>Option</th><th>How a standard client picks a session</th><th>Problem</th></tr>
+  <tr><td><b>Per-session card and endpoint</b> (recommended)</td><td>It is given the session's URL.</td><td>One card per live session, so cards come and go with sessions. Session names are visible to whoever holds a URL.</td></tr>
+  <tr><td>Host aggregate card (ADR-0005) as the A2A endpoint</td><td>It cannot. One host, many sessions.</td><td>Needs a routing hint the client does not know to send. Misuses <code>tenant</code> or a proprietary field, which is what the request ruled out.</td></tr>
+  <tr><td>A catalog of per-session cards</td><td>It reads a list and chooses.</td><td>The spec mentions catalogs but defines none, so the catalog would be Ratatoskr's. Useful for humans; not required for the standard path.</td></tr>
+  <tr><td>Routed host service (the gateway keeps one host agent and picks the session from the message)</td><td>It must put a session hint in the message or a header.</td><td>Hidden routing in the text; ambiguity; a wrong guess goes to the wrong terminal.</td></tr>
+</table></div>
+
+<h2 id="decisions">11. Recommendations and choices</h2>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>Recommendation</th><th>Status</th></tr>
+  <tr><td>1</td><td>Destination model</td><td>Per-session endpoint on the gateway, standard JSON-RPC binding</td><td><span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>2</td><td>Gateway terminates A2A</td><td>Yes, not a transparent proxy</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>3</td><td>Session identity</td><td>Restricted host delegation first; session credentials later if wanted</td><td><span class="tag t-unv">OPEN</span> your call</td></tr>
+  <tr><td>4</td><td>Outside A2A clients in scope</td><td>Built after the participant contract (phase 3); the user selected this direction</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>5</td><td>Default policy among your own sessions</td><td>Allowed, as today; outsiders denied by default</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>6</td><td>Completion</td><td>Only by explicit report, never by a turn ending</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>7</td><td>Offline target</td><td>Fail immediately, no replay</td><td><span class="tag t-user">USER</span> standing policy</td></tr>
+  <tr><td>8</td><td>Cancellation</td><td>Honest: stays working until confirmed</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>9</td><td>Transport for outside clients</td><td>Not decided. The gateway has no public mode and no tailnet HTTPS</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>10</td><td>Task retention</td><td>Not proposed</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>11</td><td>Push notifications</td><td>Out of scope: they would need the gateway to call out to client URLs (SSRF)</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>17</td><td>Participant model</td><td>A destination is a participant; a managed session is one kind with a session-bound lifetime, an external service another with a service-bound lifetime</td><td><span class="tag t-user">USER</span> direction; <span class="tag t-arch">PROPOSAL</span> mechanics</td></tr>
+  <tr><td>18</td><td>Transport to an external service</td><td>Baseline: the gateway calls a registered URL (option A). A connector is a future option</td><td><span class="tag t-unv">OPEN</span> not authorised to build both</td></tr>
+  <tr><td>19</td><td>TLS and address classes for registered URLs</td><td>Reuse ADR-0005's dial rules; say which of loopback, Tailscale and pinned-LAN are allowed; no silent bypass; no public destinations yet</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>20</td><td>Enrolment API and credential form</td><td>Ratatoskr-specific admin operations; per-participant, scoped, revocable, shown once</td><td><span class="tag t-unv">OPEN</span> shape not chosen</td></tr>
+  <tr><td>21</td><td>What a service restart does to open tasks</td><td>Declared by the owner; the gateway records only what it observed</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>22</td><td>Form of the contract for external authors (documents, SDK, conformance tests)</td><td>Documents and one worked example first</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>23</td><td>Ambiguous friendly names</td><td>Refuse and return the exact candidates; never choose. A name resolves only when unique</td><td><span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span> whether to encode the daemon instance in the session id</td></tr>
+  <tr><td>13</td><td>Phase 1 scope</td><td>The reduced list in section 1a, proved by one round trip</td><td><span class="tag t-user">USER</span> accepted the reduction; <span class="tag t-arch">PROPOSAL</span> the exact list</td></tr>
+  <tr><td>14</td><td>Claim of interoperability</td><td>Only with the four operations and the standard refusals; otherwise call it A2A-shaped</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>15</td><td>Phase 1 cancel answer</td><td><code>TaskNotCancelableError</code> for a working task</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>12</td><td>Build now?</td><td>No requirement to. ADR-0005 stays card-only.</td><td><span class="tag t-user">USER</span></td></tr>
+</table></div>
+
+<h2 id="gaps">12. Gaps and spec inconsistencies</h2>
+<ul class="prose">
+  <li><b>Wire examples are schematic.</b> No example was validated against a reference implementation. Enum spelling in JSON, the JSON-RPC result wrapper and the endpoint path (the spec shows <code>/rpc</code> only as an example) were not verified.</li>
+  <li><b>The spec disagrees with itself in places.</b> It says SendMessage "MUST return immediately" (3.1.1) while also making the call block by default (3.2.2); it requires PascalCase JSON-RPC method names (9.1) but shows <code>category/action</code> (9.3); it says <code>application/json</code> for JSON-RPC (9.1) and uses <code>application/a2a+json</code> elsewhere (14.1.1); it shows lowercase task states in examples while the proto uses <code>TASK_STATE_*</code>. The proto is the stated normative source (1.4), so this page follows the proto and flags the rest.</li>
+  <li><b>Not found in the spec:</b> a path-scoped well-known location; any A2A error name for authentication or authorization; a rule on <code>messageId</code> uniqueness scope; a section named "task immutability" (the closest text is in 3.4.2 and 3.4.3).</li>
+  <li><b>Read 2026-11-08 for the compliance table (section 1a):</b> 3.1, 3.2.6, 3.3.1 to 3.3.4, 3.5.1, 3.6 and 4.4.3, mostly verbatim; the numeric error codes of 5.4 and section 5.1 came from summaries only. The spec has no conformance section. <span class="tag t-unv">UNVERIFIED</span></li>
+  <li><b>External participants:</b> the enrolment and credential mechanics, the allowed address and TLS classes for registered URLs, and the lifetime of tasks across a service restart are proposals without source evidence. I did not find a standard enrolment API for A2A in the sections read.</li>
+  <li><b>Not read verbatim:</b> section 7.6 (in-task authorization), the push-notification config tables, and the OAuth flow messages. Section 7.6 might matter for <code>AUTH_REQUIRED</code>, which this design does not use.</li>
+  <li><b>Not examined:</b> Pi and OpenCode, native harness session APIs, and whether Claude and Codex can be woken reliably by a prompt injected at an arbitrary time. Today's pasting works only on the cases that have been observed; much of it has not been run since the daemon change.</li>
+  <li><b>Unchanged:</b> MCP, hooks and gates for managed sessions, the SSH entry, the Network and Graph tabs (hosts stay the Graph's nodes), workers and remote dispatch.</li>
+</ul>
+
+<h2 id="sources">13. Sources</h2>
+<ul class="prose small">
+  <li><b>Ratatoskr</b> (working tree on <code>2f65bf0</code>; line numbers move as the code does): the files cited above, read, not run.</li>
+  <li><b>A2A:</b> <a href="https://a2a-protocol.org/v1.0.0/specification/">the v1.0.0 specification page</a> and the normative <a href="https://raw.githubusercontent.com/a2aproject/A2A/v1.0.0/specification/a2a.proto"><code>specification/a2a.proto</code> at the v1.0.0 tag</a>, both read 2026-11-07. Sections quoted: 3.1, 3.2, 3.3, 3.4, 3.6, 4.4, 5.4, 7, 8.2, 9, 13. Some page sections were summarised, not read verbatim (listed in section 12). The tag was not resolved to a commit hash.</li>
+  <li><b>Context:</b> <a href="../../0005-host-agent-cards-and-graph/index.html">ADR-0005</a>, <a href="../../0002-cross-machine-messaging/index.html">ADR-0002</a>, <a href="../../0003-per-host-daemon/index.html">ADR-0003</a>, <a href="../../0001-mcp-agent-messaging/index.html">ADR-0001</a> and <a href="../../../design/ground-rules.md">GR-3</a>.</li>
+  <li><b>The request:</b> the user's words as relayed by the operator on 2026-11-07.</li>
+</ul>
+</div>
+
+<script>
+
+
+
+
+
+
+
+
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll(':scope > [role="tablist"] > [role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  function setupListbox(box) {
+    var rows = Array.prototype.slice.call(box.querySelectorAll('[role="option"]'));
+    function pick(i, focus) {
+      rows.forEach(function (r, n) {
+        var on = n === i;
+        r.setAttribute('aria-selected', on ? 'true' : 'false');
+        r.tabIndex = on ? 0 : -1;
+        var d = document.getElementById(r.getAttribute('data-detail'));
+        if (d) d.hidden = !on;
+      });
+      if (focus) rows[i].focus();
+    }
+    rows.forEach(function (r, i) {
+      r.addEventListener('click', function () { pick(i, false); });
+      r.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowDown') n = Math.min(i + 1, rows.length - 1);
+        if (e.key === 'ArrowUp') n = Math.max(i - 1, 0);
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = rows.length - 1;
+        if (n !== null) { e.preventDefault(); pick(n, true); }
+      });
+    });
+    pick(0, false);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-listbox]'), setupListbox);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+}());
+
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduced = false; }
+
+  function el(name, attrs, parent) {
+    var n = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // N(id, x, y, w, h, kind, l1, l2)
+  function N(id, x, y, w, h, kind, l1, l2) { return { id: id, x: x, y: y, w: w, h: h, kind: kind, l1: l1, l2: l2 }; }
+  // E(id, from, to, label, cls, via)
+  function E(id, a, b, label, cls, via) { return { id: id, a: a, b: b, label: label, cls: cls || '', via: via || [] }; }
+  // S(title, text, lit, edges, packet, ok, no, dead)
+  function S(title, text, lit, edges, packet, ok, no, dead) { return { title: title, text: text, lit: lit || [], edges: edges || [], packet: packet || null, ok: ok || [], no: no || [], dead: dead || [] }; }
+
+  var BASE = [
+    N('claude', 14, 28, 150, 46, 'claude', 'Claude', 'session ...c1a4 on the Mac'),
+    N('dmac', 14, 150, 150, 46, 'dm', 'Mac daemon', 'holds the tokens'),
+    N('gw', 305, 86, 150, 62, 'gw', 'Gateway', 'central, by your choice'),
+    N('dub', 596, 150, 150, 46, 'dm', 'Ubuntu daemon', 'dials out to the gateway'),
+    N('codex', 596, 28, 150, 46, 'codex', 'Codex', 'session ...9d31 on Ubuntu')
+  ];
+  var BASE_E = [
+    E('e1', 'claude', 'dmac', 'MCP tool + session token'),
+    E('e2', 'dmac', 'gw', 'HTTP, host credential'),
+    E('e3', 'gw', 'dub', 'outbound stream'),
+    E('e4', 'dub', 'codex', 'terminal, hooks, MCP')
+  ];
+
+  var D = {};
+
+  D.d1 = { w: 760, h: 230, nodes: BASE, edges: BASE_E, scenes: [
+    { name: 'Today: the custom contract', steps: [
+      S('Claude calls the one tool', 'The model calls ratatoskr_send with a destination "codex@ubuntu" and a body. The MCP server knows the sender from the session token in the request, never from the tool arguments.', ['claude', 'dmac'], ['e1'], ['e1', 'to + body'], ['The sender comes from the token, not the model.'], ['Nothing but the token says which session this is.']),
+      S('The daemon posts to the gateway', 'The Mac daemon sends {id, from:"claude", to:"codex@ubuntu", body} to POST /v1/messages with the host credential. It names the sender as a bare local name.', ['dmac', 'gw'], ['e2'], ['e2', 'POST /v1/messages'], ['The gateway knows which host sent it.'], ['Which session on that host is asserted by the daemon.']),
+      S('The gateway checks and records', 'The gateway takes the host from the credential, looks up the sender as a current session of that host, finds the recipient\'s current session, and writes a ledger row.', ['gw'], [], null, ['Sender is a current session on the authenticated host.', 'Recipient name resolved to a current session.'], ['Nothing checks that this sender may talk to that recipient.']),
+      S('The Ubuntu host saves it', 'The gateway offers the message on its stream; the Ubuntu daemon saves it and acknowledges. The tool result is host_stored.', ['gw', 'dub'], ['e3'], ['e3', 'offer'], ['The destination host has the text saved.'], ['Not read. Not acted on.']),
+      S('Delivery into Codex is terminal text', 'When Codex is free, the daemon pastes the text into its terminal. A reply is another message, with reply_to. There is no task, no state, no question or answer type.', ['dub', 'codex'], ['e4'], ['e4', 'paste'], ['Delivery states: queued, pasted, accepted...'], ['No task. No "needs input". No result object.'])
+    ] },
+    { name: 'Proposed: A2A through the gateway', steps: [
+      S('Same tool, different wire', 'Claude still calls the same tool. The Mac daemon now turns it into an A2A SendMessage, so any standard client could have made the same call.', ['claude', 'dmac'], ['e1'], ['e1', 'same tool'], ['No change for the model.'], ['The model never sees a URL or a credential.']),
+      S('One request to the exact session', 'JSON-RPC SendMessage to https://gateway/a2a/agents/SESSION_ID (illustrative). The endpoint says who the destination is. The credential says who is asking. Neither is in the message body.', ['dmac', 'gw'], ['e2'], ['e2', 'SendMessage'], ['Destination: the exact session in the URL.'], ['Requester: see the identity chain below.']),
+      S('The gateway authorizes and makes a task', 'It authenticates the caller, applies its policy for this route, creates a Task in SUBMITTED, and records the caller as the task\'s owner. It answers with the Task.', ['gw'], [], null, ['Authenticated caller.', 'Route allowed by gateway policy.', 'Task owned by the caller.'], ['Policy is who may ask, not what the worker may do.']),
+      S('The gateway, not the sender, vouches', 'The gateway forwards to the Ubuntu daemon over the same outbound stream, with origin context it set itself. The body is not trusted for identity.', ['gw', 'dub'], ['e3'], ['e3', 'deliver + origin'], ['Origin set by the gateway.'], ['body.from, if present, proves nothing.']),
+      S('Work and answers are tasks and messages', 'Codex reports through explicit tools: needs input, completed, failed. Those become task states and artifacts that the sender reads with GetTask, a subscription, or a wake-up.', ['dub', 'codex'], ['e4'], ['e4', 'wake + tools'], ['Explicit status and results.'], ['A turn ending (Stop) never means completed.'])
+    ] }
+  ] };
+
+  D.d2 = { w: 760, h: 230, nodes: [
+    N('claude', 14, 28, 150, 46, 'claude', 'Claude', 'writes to="codex@ubuntu"'),
+    N('dmac', 14, 150, 150, 46, 'dm', 'Mac daemon', 'resolves the name'),
+    N('gw', 305, 86, 150, 62, 'gw', 'Gateway', 'directory + A2A endpoints'),
+    N('codex', 596, 28, 150, 46, 'codex', 'Codex', 'session ...9d31'),
+    N('svc', 596, 160, 150, 46, 'ext', 'External service', 'participant ...5e07')
+  ], edges: [
+    E('e1', 'claude', 'dmac', 'friendly name'),
+    E('e2', 'dmac', 'gw', 'directory lookup / card / call'),
+    E('e3', 'gw', 'codex', 'the exact session', 'dash', [[525, 117], [525, 51]]),
+    E('e4', 'gw', 'svc', 'registered URL', 'dash', [[525, 117], [525, 183]])
+  ], scenes: [{ name: 'Friendly name to exact endpoint', steps: [
+    S('A friendly name is only a lookup key', '"codex@ubuntu" is what a model or a person types. It is not what an A2A call is addressed to.', ['claude', 'dmac'], ['e1'], ['e1', 'codex@ubuntu'], ['The model needs no URL.'], ['The name is not an identity and not a stable address.']),
+    S('The directory resolves it, now', 'The gateway\'s existing directory maps codex@ubuntu to the current session ID 0192...9d31 on host ubuntu. Resolution happens at send time, once.', ['dmac', 'gw'], ['e2'], ['e2', 'who is codex@ubuntu?'], ['Current session id, from the gateway.'], ['It may be a different session tomorrow.']),
+    S('The card describes that one session', 'GET .../a2a/agents/0192...9d31/.well-known/agent-card.json (a path-scoped location this design chooses; A2A section 8.2 names only the domain root). The card\'s interface URL, binding JSONRPC and version are what a standard client reads. The card is discovery metadata and authorizes nothing.', ['dmac', 'gw'], ['e2'], ['e2', 'agent card'], ['Interface URL, binding and version.', 'Security scheme declared (Bearer).'], ['Not a permission. Not proof the session is alive.']),
+    S('The call goes to the exact session', 'SendMessage is POSTed to the interface URL from the card. The gateway checks that session 9d31 is still current. If it is not, the call fails: it is never redirected to a replacement.', ['dmac', 'gw', 'codex'], ['e2', 'e3'], ['e3', 'SendMessage'], ['Destination fixed by the URL.'], ['No tenant, no custom routing metadata needed.'])
+  ] }, { name: 'An external participant', steps: [
+    S('A stable participant, not a session', '"review-bot@acme" resolves to participant id ...5e07, enrolled by its owner. Its id stays the same across reconnects and restarts for as long as the enrolment is valid. It is not a session id and it is not a connection id.', ['claude', 'dmac', 'gw'], ['e1', 'e2'], ['e2', 'who is review-bot@acme?'], ['Stable participant id, from the gateway directory.'], ['No daemon or terminal is implied on its side.']),
+    S('Its card says where it is', 'The card was registered by its owner and is public metadata. It names the interface URL and authentication scheme. It gives nobody permission to send.', ['gw', 'svc'], [], null, ['Owner-registered card and URL.'], ['A public card authorizes nothing.']),
+    S('The call goes to the registered URL', 'The gateway checks the sender may reach this participant, then posts standard A2A to the registered URL, using the address and TLS rules the owner registered under. It does not follow redirects.', ['gw', 'svc'], ['e4'], ['e4', 'SendMessage'], ['Destination fixed by the registration.'], ['Not a transparent proxy; no redirect followed.'])
+  ] }] };
+
+  D.d3 = { w: 760, h: 230, nodes: BASE.concat([N('svc', 305, 186, 150, 40, 'ext', 'External service', 'own credential')]), edges: BASE_E.concat([E('e5', 'svc', 'gw', 'A2A, own Bearer', 'dash')]), scenes: [{ name: 'Who is asking, hop by hop', steps: [
+    S('Hop 1: the model to the MCP server', 'Each session gets its own MCP bearer token when the daemon starts it. The server maps the token to that session, and the send tool reads the sender from that mapping.', ['claude', 'dmac'], ['e1'], ['e1', 'Bearer <session token>'], ['The token maps to one session.', 'The tool ignores any "from" the model might supply.'], ['It cannot tell whether the model or another process of the same user used the token.']),
+    S('Hop 2: the daemon to the gateway', 'The daemon calls the gateway with the HOST credential. In the host-delegated option it also names the acting session; in the session-credential option it presents a gateway-issued session credential.', ['dmac', 'gw'], ['e2'], ['e2', 'Bearer <host> + session'], ['The host is authenticated (credential, and TLS if configured).'], ['Which session: asserted by the daemon unless a session credential is used.']),
+    S('Hop 3: the gateway decides', 'The gateway checks that the named session is the current session of that host, checks its policy for requester and target, and binds the new task to the requester.', ['gw'], [], null, ['Requester is a current session on an authenticated host.', 'Target is allowed for this requester.', 'Task owner recorded.'], ['It does not decide what Codex may do once it has the text.']),
+    S('Hop 4: the gateway to the target daemon', 'The gateway sends the work over the target daemon\'s own authenticated outbound stream, with an origin record the gateway wrote (requester, task, decision).', ['gw', 'dub'], ['e3'], ['e3', 'deliver {origin}'], ['The frame came from the authenticated gateway link.', 'Origin is gateway-set.'], ['A compromised gateway can say anything. body.from is not evidence.']),
+    S('Hop 5: the daemon to Codex', 'The daemon shows Codex a label such as "from claude@mac, verified by the gateway", then the text. The label comes from the daemon, not from the sender.', ['dub', 'codex'], ['e4'], ['e4', 'labelled text'], ['The label is the daemon\'s own.'], ['Codex is a language model and can be talked into things. A label is not a permission.'])
+  ] }, { name: 'An external participant asks', steps: [
+    S('Its own credential, not a host key', 'The owner enrolled this participant and the gateway issued a credential naming it alone. It is scoped, can be revoked on its own, and is not the host pairing key.', ['svc'], [], null, ['Scoped to one participant.'], ['Not a universal owner credential.']),
+    S('The gateway authenticates the principal', 'The service calls the gateway with that Bearer credential. The gateway looks up the participant it belongs to. Host delegation is not involved: that trust boundary belongs to managed hosts only.', ['svc', 'gw'], ['e5'], ['e5', 'Bearer <participant>'], ['Principal known from the credential.'], ['Not proven by anything in the body.']),
+    S('The gateway writes the origin', 'It checks its policy for this participant and target, binds the task to the participant, and writes the origin the target sees. A "from" field in the message is ignored.', ['gw'], [], null, ['Origin written by the gateway.'], ['body.from proves nothing.']),
+    S('Revoking ends it', 'When the owner revokes the credential, the next call is rejected, the endpoint is disabled, and open tasks end with a reason. Nothing else about the owner\'s system changes.', ['gw', 'svc'], ['e5'], ['e5', 'rejected'], ['Independently revocable.'], ['No effect on managed hosts.'], ['svc'])
+  ] }] };
+
+  D.d4 = { w: 760, h: 230, nodes: BASE, edges: BASE_E, scenes: [{ name: 'Ask, clarify, answer, result', steps: [
+    S('1. Claude asks', 'SendMessage: "Review the retry loop in client.go." It gets back Task T1, state SUBMITTED, context C1. SUBMITTED means the gateway accepted and dispatched it, not that Codex has read it.', ['claude', 'dmac', 'gw'], ['e1', 'e2'], ['e2', 'SendMessage'], ['Task T1 exists, owned by Claude\'s session.'], ['Not delivered to the model yet.']),
+    S('2. The Ubuntu host takes it', 'The Ubuntu daemon saves it (a delivery receipt, kept separate from the task) and wakes Codex when it is free. The task becomes WORKING when Codex begins.', ['gw', 'dub', 'codex'], ['e3', 'e4'], ['e4', 'wake Codex'], ['Receipts host_stored, pasted, accepted stay internal.'], ['The turn ending (Stop) is not a state change.']),
+    S('3. Codex needs to ask', 'Codex calls a tool: needs input, "Retry on 4xx too?". The gateway sets T1 to INPUT_REQUIRED with that question as the status message.', ['codex', 'dub', 'gw'], ['e4', 'e3'], ['e3', 'INPUT_REQUIRED', 'rev'], ['An explicit, correlated question.'], ['Nothing infers "waiting" from silence.']),
+    S('4. Claude is woken', 'The Mac daemon is told over its stream. It must actually get the question in front of Claude\'s model: it holds it until Claude is free, then injects it as a prompt, the same wake path messages use today.', ['gw', 'dmac', 'claude'], ['e2', 'e1'], ['e1', 'wake Claude', 'rev'], ['The event reaches the daemon.'], ['Delivery to a model is not guaranteed: it is an adapter step that can be held, missed or ignored.']),
+    S('5. Claude answers the same task', 'A new message with taskId T1 and contextId C1 to the same URL. The gateway checks Claude\'s session owns T1 and that T1 belongs to this endpoint.', ['claude', 'dmac', 'gw'], ['e1', 'e2'], ['e2', 'SendMessage {T1,C1}'], ['Owner matches. Task matches endpoint.'], ['A different caller, or a different endpoint, would get a plain not-found.']),
+    S('6. Codex finishes with a result', 'Codex calls a tool: completed, with the review as an artifact. T1 becomes COMPLETED and the artifact is stored. Claude is woken, or reads it with GetTask or a subscription.', ['codex', 'dub', 'gw', 'dmac', 'claude'], ['e4', 'e3', 'e2', 'e1'], ['e3', 'COMPLETED + artifact', 'rev'], ['An explicit result, kept in the gateway.'], ['If Codex never reports, T1 stays WORKING and is flagged "turn ended without a report".'])
+  ] }] };
+
+  D.d5 = { w: 760, h: 250, nodes: [
+    N('claude', 14, 28, 150, 46, 'claude', 'Claude', 'owns task T1'),
+    N('gw', 305, 100, 150, 62, 'gw', 'Gateway', 'tasks bound to sessions'),
+    N('old', 596, 18, 150, 46, 'codex', 'Codex ...9d31', 'the session T1 runs in'),
+    N('new', 596, 170, 150, 46, 'codex', 'Codex ...77e0', 'same name, new session')
+  ], edges: [
+    E('e1', 'claude', 'gw', 'A2A calls'),
+    E('e2', 'gw', 'old', 'endpoint of 9d31', '', [[525, 131], [525, 41]]),
+    E('e3', 'gw', 'new', 'endpoint of 77e0', '', [[525, 131], [525, 193]])
+  ], scenes: [{ name: 'The session is replaced', steps: [
+    S('T1 is running in session 9d31', 'Claude\'s task T1 is bound to session ...9d31, whose endpoint is .../agents/9d31.', ['claude', 'gw', 'old'], ['e1', 'e2'], ['e2', 'T1 WORKING'], ['Task bound to the exact session.'], []),
+    S('Codex is restarted', 'A new Codex starts with the same friendly name. The gateway registers session ...77e0 and ends ...9d31. Every non-final task on 9d31 becomes FAILED with the reason "session ended".', ['gw', 'old', 'new'], [], null, ['T1 is FAILED, honestly.'], ['T1 is not moved to the new session.'], ['old']),
+    S('A reply to T1 is refused', 'Claude replies with taskId T1 to the 9d31 endpoint. The task is final and the endpoint is gone, so the call fails with a clear error. It is never forwarded to 77e0.', ['claude', 'gw'], ['e1'], ['e1', 'reply to T1'], ['An error that says the session ended.'], ['No silent redirect. No new task under the old one.'], ['old']),
+    S('A new message starts a new conversation', 'If Claude writes to "codex@ubuntu" again, the name is resolved again, now to 77e0, and a new task T2 in a new context starts there. Nothing from C1 is carried over unless Claude includes it.', ['claude', 'gw', 'new'], ['e1', 'e3'], ['e3', 'T2 SUBMITTED'], ['The move to the new session is a visible, explicit new send.'], ['The new session knows nothing of T1 or C1.'], ['old'])
+  ] }] };
+
+  D.d6 = { w: 760, h: 250, nodes: [
+    N('ext', 14, 28, 150, 46, 'ext', 'External A2A client', 'a standard library, not Ratatoskr'),
+    N('gw', 305, 86, 150, 62, 'gw', 'Gateway', 'terminates A2A'),
+    N('dub', 596, 150, 150, 46, 'dm', 'Ubuntu daemon', 'adapter'),
+    N('codex', 596, 28, 150, 46, 'codex', 'Codex', 'session ...9d31')
+  ], edges: [
+    E('e1', 'ext', 'gw', 'standard JSON-RPC, Bearer'),
+    E('e3', 'gw', 'dub', 'outbound stream'),
+    E('e4', 'dub', 'codex', 'terminal, hooks, MCP')
+  ], scenes: [{ name: 'A standard client, no Ratatoskr code', steps: [
+    S('Configured by you, not discovered (later phase)', 'The owner gives the client the exact session\'s card URL (direct configuration) and a credential the gateway issued for this client. The card is public and authorizes nothing.', ['ext'], [], null, ['A credential issued to a named principal.'], ['No custom field is required of the client.']),
+    S('It reads the card and calls SendMessage', 'GET the card, then POST SendMessage to the interface URL with A2A-Version and Authorization: Bearer. The request is plain A2A.', ['ext', 'gw'], ['e1'], ['e1', 'SendMessage'], ['Authenticated principal.'], ['The client\'s claimed role (ROLE_USER) is not its identity.']),
+    S('The gateway applies policy', 'An external principal gets only the targets the owner listed for it, default none. A denied target looks the same as a missing one.', ['gw'], [], null, ['Principal allowed for this session.'], ['Allowed means "may ask", not "may make the worker do anything".']),
+    S('Same task machinery', 'The task, its questions and its artifacts are the ones a Ratatoskr session would see. The external client reads them with GetTask or ListTasks. (SubscribeToTask is a later phase.)', ['gw', 'dub', 'codex'], ['e3', 'e4'], ['e3', 'deliver {origin: principal}'], ['Origin says an external principal asked.'], ['Codex is told it is an outside party, and that proves nothing about intent.']),
+    S('Another principal cannot see it', 'A second client asking GetTask for that task gets TaskNotFound: the server does not distinguish "missing" from "not yours".', ['ext', 'gw'], ['e1'], ['e1', 'GetTask (other client)'], ['Tasks are scoped to their owner.'], [])
+  ] }] };
+
+
+  D.d7 = { w: 760, h: 270, nodes: [
+    N('claude', 14, 95, 150, 46, 'claude', 'Managed Claude', 'launched by rtk'),
+    N('dmac', 14, 190, 150, 46, 'dm', 'Mac daemon', 'rtk side'),
+    N('gw', 255, 90, 150, 62, 'gw', 'Gateway', 'terminates A2A'),
+    N('svc', 520, 40, 170, 46, 'ext', 'External service', 'its own process'),
+    N('own', 520, 170, 170, 56, 'ext', 'Owner\'s system', 'OpenRig, Pi or custom: queues, lifecycle')
+  ], edges: [
+    E('e1', 'claude', 'dmac', 'MCP send'),
+    E('e2', 'dmac', 'gw', 'host + session'),
+    E('e3', 'gw', 'svc', 'standard A2A to the registered URL'),
+    E('e4', 'svc', 'own', 'the owner\'s own interface', 'dash')
+  ], scenes: [{ name: 'Managed to external and back', steps: [
+    S('Claude asks, as it does for any peer', 'The managed Claude calls the send tool for review-bot@acme. Nothing about the call tells it the target is not a terminal.', ['claude', 'dmac', 'gw'], ['e1', 'e2'], ['e2', 'SendMessage'], ['Same tool, same exact-destination rule.'], ['The sender field is not trusted.']),
+    S('The gateway sends standard A2A', 'It resolves the participant, checks policy, and posts to the URL the owner registered. The service needs no rtk, no hooks and no local MCP, and no custom stream.', ['gw', 'svc'], ['e3'], ['e3', 'SendMessage + origin'], ['Task bound to the participant.'], ['No rtk terminal on this side.']),
+    S('The owner\'s system does its own thing', 'The service hands the work to whatever the owner runs: a queue, a launch, a human. That is the owner\'s lifecycle and structure; Ratatoskr sees none of it and controls none of it.', ['svc', 'own'], ['e4'], ['e4', 'internal'], ['Ownership boundary is here.'], ['Ratatoskr does not launch, stop or restore this.']),
+    S('The reply is an explicit report', 'The service reports INPUT_REQUIRED, COMPLETED or FAILED to the gateway with its own credential. Only an explicit report completes the task; its internal queue closing does not.', ['svc', 'gw'], ['e3'], ['e3', 'result', 'rev'], ['Authenticated as this participant.'], ['Nothing is inferred from silence.']),
+    S('Claude reads it', 'Claude polls GetTask, or is woken by its daemon, and sees the result. If the service had been offline at the start, the send would have failed immediately and nothing would be replayed.', ['gw', 'dmac', 'claude'], ['e2', 'e1'], ['e1', 'COMPLETED', 'rev'], ['Polled retrieval works.'], ['No replay of a failed send.'])
+  ] }] };
+
+  D.d8 = { w: 760, h: 250, nodes: [
+    N('own', 14, 95, 150, 56, 'ext', 'Owner', 'enrols and revokes'),
+    N('gw', 255, 86, 160, 62, 'gw', 'Gateway', 'admin + A2A'),
+    N('svc', 520, 28, 170, 46, 'ext', 'External service', 'participant ...5e07'),
+    N('snd', 520, 160, 170, 46, 'claude', 'A sender', 'managed or external')
+  ], edges: [
+    E('e1', 'own', 'gw', 'admin operation'),
+    E('e2', 'svc', 'gw', 'register + A2A, own Bearer'),
+    E('e3', 'snd', 'gw', 'SendMessage')
+  ], scenes: [{ name: 'Enrol to revoke', steps: [
+    S('1. Enrol', 'The owner, using an admin command on the gateway host, creates a participant. The gateway issues its id and a scoped credential, shown once and stored as a hash. The shape of this operation is Ratatoskr-specific and not yet chosen.', ['own', 'gw'], ['e1'], ['e1', 'enrol'], ['Scoped to this participant.', 'Independently revocable.'], ['Not the host pairing key.']),
+    S('2. Register', 'The service presents the credential and registers its card and, for option A, its A2A URL. The URL passes the owner-controlled address, redirect and TLS rules or is refused.', ['svc', 'gw'], ['e2'], ['e2', 'register URL + card'], ['Owner-controlled registration.'], ['A public card confers no authority.']),
+    S('3. Send', 'A sender asks for the participant. The gateway checks policy and delivers standard A2A to the registered URL. A restart of the service does not change its participant id.', ['snd', 'gw', 'svc'], ['e3', 'e2'], ['e3', 'SendMessage'], ['Stable id across reconnects.'], ['Connection, participant, session and task ids stay distinct.']),
+    S('4. Reply', 'The service answers with its own credential: a question, a result or a failure. The gateway attributes it to this participant, never to anything in the body.', ['svc', 'gw', 'snd'], ['e2', 'e3'], ['e2', 'report', 'rev'], ['Source attribution by credential.'], ['body.from is ignored.']),
+    S('5. Revoke', 'The owner revokes the credential. The next call is rejected, the endpoint is disabled, open tasks end as FAILED with a reason, and new sends to it fail immediately. Nothing else is affected.', ['own', 'gw'], ['e1'], ['e1', 'revoke'], ['Takes effect at once.'], ['No effect on any other participant.'], ['svc'])
+  ] }] };
+
+
+  D.d9 = { w: 760, h: 270, nodes: [
+    N('snd', 14, 110, 150, 46, 'claude', 'A sender', 'wants S2 specifically'),
+    N('gw', 225, 100, 150, 62, 'gw', 'Gateway', 'one endpoint per session'),
+    N('d', 440, 108, 130, 46, 'dm', 'Host mac daemon', 'one host, one link'),
+    N('s1', 616, 14, 130, 46, 'claude', 'S1 claude', '...c1a4'),
+    N('s2', 616, 112, 130, 46, 'codex', 'S2 codex', '...b208'),
+    N('s3', 616, 210, 130, 46, 'codex', 'S3 codex-review', '...e55a')
+  ], edges: [
+    E('e1', 'snd', 'gw', 'to the S2 endpoint'),
+    E('e2', 'gw', 'd', 'host link'),
+    E('e3', 'd', 's1', 'S1', 'dash', [[590, 131], [590, 37]]),
+    E('e4', 'd', 's2', 'S2'),
+    E('e5', 'd', 's3', 'S3', 'dash', [[590, 131], [590, 233]])
+  ], scenes: [{ name: 'Independent sessions on one host', steps: [
+    S('Three sessions, one host', 'Host mac runs S1 (Claude), S2 (Codex) and S3 (a second Codex named codex-review). Each has its own opaque id and its own endpoint. They share the host\'s link and host credential, nothing else.', ['gw', 'd', 's1', 's2', 's3'], [], null, ['Each session is its own destination.'], ['A host card is not any one session.']),
+    S('A send goes to exactly S2', 'The sender used the S2 endpoint. The gateway checks S2 is current for host mac and passes it down the host link, naming S2. Tasks created are bound to S2.', ['snd', 'gw', 'd', 's2'], ['e1', 'e2', 'e4'], ['e2', 'task for S2'], ['Route and task are bound to S2.'], ['S1 and S3 see nothing.']),
+    S('S2 ends; the host stays', 'S2 is closed. The host link, its heartbeat and its host card carry on. S2\'s open tasks end as FAILED "session ended". S1 and S3 are untouched.', ['gw', 'd', 's1', 's3'], [], null, ['Host stays connected.', 'Other sessions keep running.'], ['S2\'s tasks do not survive.'], ['s2']),
+    S('A late reply is refused, not redirected', 'The sender replies to the old S2 task. S2 is gone, so the call fails with a clear error. It is not forwarded to S3, although S3 is also a Codex on the same host.', ['snd', 'gw'], ['e1'], ['e1', 'reply to S2 task'], ['An error names the ended session.'], ['Never redirected to S3.'], ['s2']),
+    S('An ambiguous name is refused', 'If two Codex sessions answered to one alias, the gateway would refuse the lookup and return both exact endpoints. The sender must select one. With distinct registered names, codex and codex-review, each resolves by itself.', ['snd', 'gw', 's2', 's3'], ['e1'], ['e1', 'codex@mac ?'], ['Exact endpoint selected from the candidates.'], ['The gateway does not guess.'])
+  ] }] };
+
+  function setup(fig) {
+    var cfg = D[fig.getAttribute('data-diagram')];
+    if (!cfg) return;
+    var svg = el('svg', { viewBox: '0 0 ' + cfg.w + ' ' + cfg.h, role: 'img', 'aria-label': fig.getAttribute('data-label') || 'Diagram' });
+    var byId = {};
+    cfg.nodes.forEach(function (n) { byId[n.id] = n; });
+    var edgeEls = {};
+    cfg.edges.forEach(function (e) {
+      var a = byId[e.a], b = byId[e.b];
+      var pts = [[a.x + a.w / 2, a.y + a.h / 2]].concat(e.via).concat([[b.x + b.w / 2, b.y + b.h / 2]]);
+      var g = el('g', { 'class': 'de ' + e.cls }, svg);
+      el('polyline', { points: pts.map(function (p) { return p.join(','); }).join(' ') }, g);
+      var mid = pts[Math.floor(pts.length / 2) - (pts.length % 2 === 0 ? 1 : 0)];
+      var m2 = pts[Math.floor(pts.length / 2)];
+      var tx = (mid[0] + m2[0]) / 2, ty = (mid[1] + m2[1]) / 2 - 6;
+      var t = el('text', { x: tx, y: ty }, g); t.textContent = e.label;
+      edgeEls[e.id] = { g: g, pts: pts };
+    });
+    var nodeEls = {};
+    cfg.nodes.forEach(function (n) {
+      var g = el('g', { 'class': 'dn ' + n.kind }, svg);
+      el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 7 }, g);
+      var t1 = el('text', { x: n.x + n.w / 2, y: n.y + 19, 'class': 'l1' }, g); t1.textContent = n.l1;
+      var t2 = el('text', { x: n.x + n.w / 2, y: n.y + 35, 'class': 'l2' }, g); t2.textContent = n.l2;
+      nodeEls[n.id] = g;
+    });
+    var dot = el('circle', { r: 7, 'class': 'pk', cx: -20, cy: -20 }, svg);
+    var dotl = el('text', { x: -20, y: -20, 'class': 'pk-l' }, svg);
+
+    var scenesBar = fig.querySelector('.scenes');
+    var prev = fig.querySelector('[data-prev]'), next = fig.querySelector('[data-next]'), play = fig.querySelector('[data-play]'), replay = fig.querySelector('[data-replay]');
+    var pos = fig.querySelector('.pos2'), cap = fig.querySelector('.cap'), tr = fig.querySelector('.tr');
+    fig.insertBefore(svg, fig.querySelector('.ctl2'));
+    var scene = 0, step = 0, timer = null, raf = null;
+
+    cfg.scenes.forEach(function (s, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = s.name;
+      b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+      b.addEventListener('click', function () { stop(); scene = i; step = 0; draw(); });
+      scenesBar.appendChild(b);
+    });
+    if (cfg.scenes.length < 2) scenesBar.style.display = 'none';
+
+    function stop() { if (timer) { clearInterval(timer); timer = null; } play.textContent = 'Play'; play.setAttribute('aria-pressed', 'false'); }
+    function movePacket(s) {
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      if (!s.packet) { dot.setAttribute('cx', -20); dot.setAttribute('cy', -20); dotl.setAttribute('x', -20); dotl.setAttribute('y', -20); dotl.textContent = ''; return; }
+      var path = edgeEls[s.packet[0]].pts;
+      var rev = s.packet[0] && s.packet[2] === 'rev';
+      var pts = rev ? path.slice().reverse() : path;
+      var end = pts[pts.length - 1];
+      function put(x, y) { dot.setAttribute('cx', x); dot.setAttribute('cy', y); dotl.setAttribute('x', x); dotl.setAttribute('y', y - 11); }
+      dotl.textContent = s.packet[1];
+      if (reduced) { put((pts[0][0] + end[0]) / 2, (pts[0][1] + end[1]) / 2); return; }
+      var t0 = null, dur = 900;
+      function frame(ts) {
+        if (t0 === null) t0 = ts;
+        var p = Math.min(1, (ts - t0) / dur), seg = (pts.length - 1) * p, i = Math.min(pts.length - 2, Math.floor(seg)), f = seg - i;
+        put(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+        if (p < 1) raf = requestAnimationFrame(frame); else raf = null;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    function list(items) { return items.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); }
+    function draw() {
+      var sc = cfg.scenes[scene], s = sc.steps[step];
+      Array.prototype.forEach.call(scenesBar.children, function (b, i) { b.setAttribute('aria-pressed', i === scene ? 'true' : 'false'); });
+      Object.keys(nodeEls).forEach(function (id) {
+        nodeEls[id].classList.toggle('lit', s.lit.indexOf(id) !== -1);
+        nodeEls[id].classList.toggle('dead', s.dead.indexOf(id) !== -1);
+      });
+      Object.keys(edgeEls).forEach(function (id) { edgeEls[id].g.classList.toggle('lit', s.edges.indexOf(id) !== -1); });
+      movePacket(s);
+      cap.innerHTML = '<h4>' + esc(s.title) + '</h4><p>' + esc(s.text) + '</p><div class="chips"><div class="ok"><h5>Verified here</h5><ul>' + (s.ok.length ? list(s.ok) : '<li>Nothing new.</li>') + '</ul></div><div class="no"><h5>Not verified / not proven</h5><ul>' + (s.no.length ? list(s.no) : '<li>Nothing new.</li>') + '</ul></div></div>';
+      pos.textContent = sc.name + ': step ' + (step + 1) + ' of ' + sc.steps.length;
+      prev.disabled = step === 0;
+      next.disabled = step === sc.steps.length - 1;
+      tr.innerHTML = sc.steps.map(function (x, i) { return '<li' + (i === step ? ' class="cur"' : '') + '>' + esc(x.title) + '</li>'; }).join('');
+    }
+    prev.addEventListener('click', function () { stop(); if (step > 0) { step--; draw(); } });
+    next.addEventListener('click', function () { stop(); var n = cfg.scenes[scene].steps.length; if (step < n - 1) { step++; draw(); } });
+    replay.addEventListener('click', function () { stop(); step = 0; draw(); });
+    play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      var n = cfg.scenes[scene].steps.length;
+      if (step >= n - 1) { step = 0; draw(); }
+      play.textContent = 'Pause'; play.setAttribute('aria-pressed', 'true');
+      timer = setInterval(function () {
+        if (step < n - 1) { step++; draw(); } else { stop(); }
+      }, reduced ? 6000 : 3800);
+    });
+    draw();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('figure.anim'), setup);
+}());
+</script>
+</body>
+</html>
