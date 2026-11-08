@@ -24,7 +24,7 @@ ls -l "<GW_STATE>.copy-before-cards"
 Expect:
 
 - A full copy of the gateway state directory exists, with its database file and pairing files, and the gateway is stopped.
-- Do the migration steps below on a **copy** of the directory first if you can (point `--state` at the copy). Do not rely on the automatic backup alone.
+- Do the migration steps below on a **copy** of the directory first if you can (set `XDG_STATE_HOME` to the copy in the gateway's terminal). Do not rely on the automatic backup alone.
 
 - **Restarting a daemon ends its agents.** Rebuilding means stopping each daemon with `rtk daemon stop --yes`.
 - **Skill scan:** a new daemon scans your user-scope Claude and Codex skill folders by itself at start, in the background, whether or not the card listener is on. It reads files and runs `<harness> --version`, and publishes nothing.
@@ -86,7 +86,8 @@ Starting the gateway upgrades an existing database. **This is the step that has 
 **G1 gateway**
 
 ```sh
-rtk gateway --listen <the address you used before> --state "<GW_STATE>"
+export XDG_STATE_HOME="<GW_STATE>"
+rtk gateway --listen <the address you used before>
 ```
 
 Expect:
@@ -199,7 +200,8 @@ A stored card is a record of what the gateway last saw. It is not proof that any
 **G1 gateway**
 
 ```sh
-rtk gateway --listen <the same address> --state "<GW_STATE>"
+export XDG_STATE_HOME="<GW_STATE>"
+rtk gateway --listen <the same address>
 ```
 
 Expect:

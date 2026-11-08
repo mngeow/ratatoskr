@@ -17,7 +17,7 @@ Hard rules (decided; do not change without the user):
 5. **Offline fails at once; nothing is queued.** No persistent inbox, no replay. See section 6 for the one bounded in-memory hand-over.
 6. **Honest results.** The existing send result vocabulary is reused unchanged; an uncertain case is never reported as a failure; stored is not delivered, delivered is not read.
 7. **Any authenticated participant may contact any registered session** (host sessions and participant sessions), and any host session may contact a participant session. There are no per-session grants in v1. This is the user's decision 7 and is not inherited from any A2A answer.
-8. **No public listener.** LAN and tailnet (and loopback) only, owner-configured, with the same address-class rules `PlanListen` enforces. The participant API has its **own listener**, off unless the owner asks for it (section 2).
+8. **No public listener.** LAN and tailnet (and loopback) only, owner-configured, with the same address-class rules `PlanListen` enforces. The participant API has its **own listener**, on by default at the host listen IP on port 7790 and disabled by `--participant-listen off` (section 2).
 9. **No A2A.** Nothing from the deferred A2A branch is imported or reused. `feat/a2a-participants` is not merged.
 10. **No claim that any external harness works.** Docs describe the contract, how to integrate and what is untested.
 11. Do not touch host cards, `card.yaml`, the Network and Graph tabs' behaviour, card polling, SSH entry or the open prompt-box issue. No unrelated refactor.
@@ -31,8 +31,8 @@ Because the existing listener has one transport per address (the host protocol s
 
 | Flag | Meaning |
 | --- | --- |
-| `--participant-listen ADDR` | Serve the participant API on ADDR (IP literal with an explicit port, the same parsing as `--listen`; hostnames, port 0, the unspecified address and public addresses are refused). **Without this flag the participant API is not served at all.** The host listener never serves `/participant/*`: it refuses it, with `400 version_mismatch` when the request lacks the host protocol header and `404 not_found` when it has it, because the untouched host `Handler` runs `withVersion` before routing |
-| `--participant-allow-lan` | Required for a LAN address (10.x, 172.16-31.x, 192.168.x, fc00::/7), as `--allow-lan` is for the host listener. Refused for any other class |
+| `--participant-listen ADDR` | Serve the participant API on ADDR (IP literal with an explicit port, the same parsing as `--listen`; hostnames, port 0, the unspecified address and public addresses are refused). **Without this flag the participant API is served at the default address** (rule below); `--participant-listen off` disables it. The host listener never serves `/participant/*`: it refuses it, with `400 version_mismatch` when the request lacks the host protocol header and `404 not_found` when it has it, because the untouched host `Handler` runs `withVersion` before routing |
+| `--participant-allow-lan` | Required for an explicit LAN address (10.x, 172.16-31.x, 192.168.x, fc00::/7), as `--allow-lan` is for the host listener. Refused for any other class. For the **defaulted** address the host's `--allow-lan` counts as this opt-in (ruling below) |
 | `--participant-insecure-http` | The explicit opt-in for plain HTTP. Allowed on a tailnet or LAN address; refused on loopback (where plain HTTP needs no opt-in) |
 
 Transport by address class, planned by a new `PlanParticipantListen` that reuses `parseAddressAs` and the class logic of `planListenAs` (subject "participant listener"):
@@ -43,6 +43,16 @@ Transport by address class, planned by a new `PlanParticipantListen` that reuses
 | LAN (with `--participant-allow-lan`) | **HTTPS**, pinned certificate | Plain HTTP, same warning |
 | Loopback | Plain HTTP (the traffic never leaves the machine); the flags are refused | n/a |
 | Anything else | Refused with the reason | Refused |
+
+**Default address (user, 2026-11-08, relayed by the operator: "It should still listen on port 7790 for participants even if the flag is not explicitly specified").** When `--participant-listen` is absent, the participant listener is **on**, at **the IP of the host `--listen` address on port 7790**. That is the interface and address class the owner already chose, and `PlanListen` has already refused a wildcard, a hostname and a public address for it, so the default never reaches further than the host listener. The participant table above then applies unchanged to that address: loopback plain; tailnet **HTTPS** (plain only with `--participant-insecure-http`, with the warning; the host's plain tailnet behaviour is never inherited); LAN as ruled next.
+
+- **LAN ruling (architect, 2026-11-08, option (a)).** For a defaulted address, the host's `--allow-lan` counts as the opt-in, so a LAN gateway serves **HTTPS** on `<LAN IP>:7790`. Plain HTTP still needs `--participant-insecure-http`; the host's `--insecure-http` is **never** inherited. Why not (b) or (c): (b) leaves the default off on a LAN, which is not what the user asked for; (c) refuses every existing LAN start command. The added exposure is a second, credentialed service on the interface the owner already opted into, announced at startup and using the pinned certificate; nothing can use it without an owner-approved pairing code. An *explicit* LAN address still needs `--participant-allow-lan`.
+- **Opt-out.** `--participant-listen off` (the literal word) turns the API off and gives exactly the flag-less path of before this ruling (lifecycle rule 8). It mirrors the daemon's `--card-listen off`. `off` combined with `--participant-allow-lan` or `--participant-insecure-http` is refused as a contradiction.
+- **Explicit `ADDR`** works as before and is not rewritten.
+- **Collision.** If the host `--listen` port is 7790, the default would collide: startup is **refused**, naming both escapes (`--participant-listen ADDR` or `--participant-listen off`, or a different host port). No fallback port.
+- **Bind failure on the default** is fatal, exactly as for an explicit address (section on lifecycle, rule 5: nothing is left bound). No silent skip.
+- **Status line.** Startup prints one line per listener (as before); for the participant listener it says when the address was **defaulted** (for example `participant API: https://<ip>:7790 (default: host listen address, port 7790; --participant-listen off disables)`), so no exposure is silent.
+- **Behaviour change.** A gateway started with the same command as before now also serves the participant API. This is the user's instruction, and the pairing requirement means the listener serves nothing useful to anyone without an owner-minted code.
 
 *Loopback is the architect's reading,* since the instruction names the tailnet and the LAN only; it changes nothing for those two. If the user wants HTTPS on loopback as well, it is a one-line change to the table.
 
@@ -67,7 +77,7 @@ Both servers belong to one `rtk gateway --listen` process. Required behaviour, f
 5. **Partial-start rollback.** If the second listener cannot be bound or its identity refused, every listener already bound is closed and nothing is left bound (the same identity-before-bind rule as `run.go`).
 6. **One `Store`:** one open, one lock, one migration, shared by both servers. The participant listener never opens the database itself.
 7. **Endpoint metadata:** participant endpoint metadata (the address and scheme the owner commands print) is written to its **own file** and never overwrites the host endpoint file, which stays byte-for-byte as today.
-8. **API off means unchanged, with one narrow exception.** Without `--participant-listen`, the startup path, its output and its files are exactly today's, **except** that a stale `participant-endpoint.json` left by an earlier run with the API on is removed, so that no file claims a listener that is not running. The removal happens under the gateway lock, only when the path is a regular file (anything else is left alone and reported), and never touches the host endpoint file.
+8. **API off means unchanged, with one narrow exception.** With `--participant-listen off`, the startup path, its output and its files are exactly today's, **except** that a stale `participant-endpoint.json` left by an earlier run with the API on is removed, so that no file claims a listener that is not running. The removal happens under the gateway lock, only when the path is a regular file (anything else is left alone and reported), and never touches the host endpoint file.
 
 ## 3. Identity and addressing
 
@@ -344,3 +354,5 @@ Everything. In particular: the long-poll behaviour across proxies; the hand-over
 ## 18. Status
 
 Contract written 2026-11-08 on `feat/adapter-integration` before any code, and revised the same day when the user's instruction replaced the first TLS reading (section 2). Nothing has been run.
+
+**Update 2026-11-08 (default port 7790):** section 2 now carries the default-address rules, the LAN ruling (option a), the `off` value, the collision and bind-failure rules and the startup status line. This is a documentation change only; the code change is backend's, untested, and nothing was run.

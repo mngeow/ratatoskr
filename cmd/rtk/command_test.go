@@ -222,10 +222,15 @@ func TestParseCommandLANFlags(t *testing.T) {
 			want: command{kind: kindGatewayServe, listen: "127.0.0.1:7777", participantListen: "192.168.1.20:7790", participantAllowLAN: true, participantInsecureHTTP: true},
 		},
 		{
-			// Accepted here and refused by PlanParticipantListen: no rule in the parser.
+			// Applies to the default address; PlanParticipantListen decides, there is no rule in the parser.
 			name: "a participant flag without --participant-listen",
 			args: []string{"gateway", "--listen", "100.64.0.1:7777", "--participant-allow-lan"},
 			want: command{kind: kindGatewayServe, listen: "100.64.0.1:7777", participantAllowLAN: true},
+		},
+		{
+			name: "the participant API turned off",
+			args: []string{"gateway", "--listen", "100.64.0.1:7777", "--participant-listen", "off"},
+			want: command{kind: kindGatewayServe, listen: "100.64.0.1:7777", participantListen: "off"},
 		},
 		{
 			name: "the participant admin command passes through",

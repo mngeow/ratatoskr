@@ -241,7 +241,7 @@ Nothing is resent automatically, and `accepted` means only that the harness took
 | Command | Where |
 | --- | --- |
 | `rtk` | Plain local window, no gateway |
-| `rtk gateway --listen ADDR [--allow-lan [--insecure-http]] [--card-poll-interval 5s]` | Gateway machine |
+| `rtk gateway --listen ADDR [--allow-lan [--insecure-http]] [--card-poll-interval 5s] [--participant-listen ADDR\|off [--participant-allow-lan] [--participant-insecure-http]]` | Gateway machine. The participant API is on by default at the `--listen` IP, port 7790 |
 | `rtk gateway pair HOST`, `unpair HOST`, `hosts`, `log`, `show ID`, `card-target set\|show\|clear` | Gateway machine |
 | `rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 \| --insecure-http]` | Each machine with agents |
 | `rtk daemon [--foreground] [--card-listen ADDR\|off]`, `status`, `stop`, `network` | Each machine with agents |
@@ -293,7 +293,7 @@ An **optional** HTTP+JSON API on the gateway for **external adapters**, written 
 
 How it fits, in outline:
 
-- The owner starts a **second listener** with `rtk gateway --listen ADDR --participant-listen ADDR2`. It is off unless asked for, LAN and tailnet (and loopback) only, **HTTPS by default** with the gateway's own pinned certificate, and plain HTTP only with `--participant-insecure-http`.
+- The participant API has its **own listener**, **on by default** at the IP of `--listen` on **port 7790**, so every `rtk gateway --listen` command above also serves it. `--participant-listen ADDR` picks another address and `--participant-listen off` turns it off. It is LAN and tailnet (and loopback) only, **HTTPS by default** on a LAN or tailnet address with the gateway's own pinned certificate, and plain HTTP only with `--participant-insecure-http`: the host's `--insecure-http` is never inherited. On a defaulted LAN address the host's `--allow-lan` is the opt-in; an explicit LAN address needs `--participant-allow-lan`. If the host listener already uses port 7790, startup is refused until you choose another address or `off`.
 - The owner enrols an adapter with `rtk gateway participant pair ID`, which prints a single-use code and the certificate pins. `participant list` and `participant revoke ID` manage them.
 - The adapter redeems the code, registers named sessions (`coder@pi-lab`), sends with `POST /participant/v1/messages` and receives by **long-polling** `GET /participant/v1/inbox`. A send to an offline participant fails at once; nothing is queued.
 - Managed Claude and Codex sessions message a participant session with the existing `ratatoskr_send`; no change was made to them.

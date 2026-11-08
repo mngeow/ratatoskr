@@ -24,15 +24,16 @@ const (
 	shutdownGrace = 5 * time.Second // UNTESTED guess
 )
 
-// Run serves one gateway until ctx ends, with the participant API off.
+// Run serves one gateway until ctx ends, with the participant API off (Run predates it and keeps its
+// behaviour; `rtk gateway` goes through RunWith).
 //
 // UNTESTED.
 func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, cardPoll time.Duration, status io.Writer) error {
-	return RunWith(ctx, stateDir, listen, allowLAN, insecureHTTP, ParticipantOptions{}, cardPoll, status)
+	return RunWith(ctx, stateDir, listen, allowLAN, insecureHTTP, ParticipantOptions{Listen: ParticipantListenOff}, cardPoll, status)
 }
 
 // RunWith serves one gateway until ctx ends, and a second listener for the participant API when
-// participant.Listen is set.
+// participant.Listen is not ParticipantListenOff.
 //
 // The order is part of the contract: the addresses and the flags are validated before any file or lock
 // is touched (both plans, and they must not name the same endpoint), so a mistyped address or a flag that
@@ -46,7 +47,7 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 //
 // UNTESTED.
 func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, participant ParticipantOptions, cardPoll time.Duration, status io.Writer) error {
-	plan, participantPlan, err := planBoth(listen, allowLAN, insecureHTTP, participant)
+	plan, participantPlan, participantDefaulted, err := planBoth(listen, allowLAN, insecureHTTP, participant)
 	if err != nil {
 		return err
 	}
@@ -120,6 +121,10 @@ func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTT
 	if participantPlan != nil {
 		participantListener, err = ListenFor(participantSubject, participantPlan.Addr)
 		if err != nil {
+			if participantDefaulted {
+				err = fmt.Errorf("%w (%s was the default participant address; use %s IP:PORT to choose another, or %s %s to turn the participant API off)",
+					err, participantPlan.Addr, FlagParticipantListen, FlagParticipantListen, ParticipantListenOff)
+			}
 			// Roll back: nothing is left bound.
 			_ = listener.Close()
 			return err
@@ -193,7 +198,7 @@ func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTT
 		if participantHTTPS {
 			participantFingerprint = identityFingerprint
 		}
-		for _, line := range participantStatusLines(*participantPlan, participantListener.Addr().String(), participantFingerprint, spkiPin) {
+		for _, line := range participantStatusLines(*participantPlan, participantListener.Addr().String(), participantDefaulted, participantFingerprint, spkiPin) {
 			fmt.Fprintln(status, line)
 		}
 	}

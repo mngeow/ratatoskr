@@ -35,9 +35,9 @@ func TestPlanParticipantListenTable(t *testing.T) {
 		wantTrans Transport
 		wantErr   string
 	}{
-		{name: "off", wantOff: true},
-		{name: "allow-lan without a listener", options: ParticipantOptions{AllowLAN: true}, wantErr: FlagParticipantListen},
-		{name: "insecure without a listener", options: ParticipantOptions{InsecureHTTP: true}, wantErr: FlagParticipantListen},
+		{name: "off", options: ParticipantOptions{Listen: ParticipantListenOff}, wantOff: true},
+		{name: "off with allow-lan", options: ParticipantOptions{Listen: ParticipantListenOff, AllowLAN: true}, wantErr: ParticipantListenOff},
+		{name: "off with insecure", options: ParticipantOptions{Listen: ParticipantListenOff, InsecureHTTP: true}, wantErr: ParticipantListenOff},
 
 		{name: "loopback", options: ParticipantOptions{Listen: "127.0.0.1:7790"}, wantClass: ClassLoopback, wantTrans: TransportPlain},
 		{name: "loopback v6", options: ParticipantOptions{Listen: "[::1]:7790"}, wantClass: ClassLoopback, wantTrans: TransportPlain},
@@ -92,25 +92,102 @@ func TestPlanParticipantListenTable(t *testing.T) {
 
 // TestPlanBothRefusesTheSameEndpointAndValidatesBoth.
 func TestPlanBothRefusesTheSameEndpointAndValidatesBoth(t *testing.T) {
-	if _, _, err := planBoth("100.64.0.1:7777", false, false, ParticipantOptions{Listen: "100.64.0.1:7777"}); err == nil ||
+	if _, _, _, err := planBoth("100.64.0.1:7777", false, false, ParticipantOptions{Listen: "100.64.0.1:7777"}); err == nil ||
 		!strings.Contains(err.Error(), "same address") {
 		t.Fatalf("identical endpoints: %v", err)
 	}
 	// Same address, different port: fine.
-	host, part, err := planBoth("100.64.0.1:7777", false, false, ParticipantOptions{Listen: "100.64.0.1:7790"})
-	if err != nil || part == nil || host.Addr.Port() != 7777 || part.Addr.Port() != 7790 {
-		t.Fatalf("planBoth = %+v %+v %v", host, part, err)
+	host, part, defaulted, err := planBoth("100.64.0.1:7777", false, false, ParticipantOptions{Listen: "100.64.0.1:7790"})
+	if err != nil || part == nil || defaulted || host.Addr.Port() != 7777 || part.Addr.Port() != 7790 {
+		t.Fatalf("planBoth = %+v %+v %v %v", host, part, defaulted, err)
 	}
 	// A bad host plan wins even when the participant plan is fine, and the other way round.
-	if _, _, err := planBoth("8.8.8.8:7777", false, false, ParticipantOptions{Listen: "127.0.0.1:7790"}); err == nil {
+	if _, _, _, err := planBoth("8.8.8.8:7777", false, false, ParticipantOptions{Listen: "127.0.0.1:7790"}); err == nil {
 		t.Fatal("a public host address was accepted")
 	}
-	if _, _, err := planBoth("127.0.0.1:7777", false, false, ParticipantOptions{Listen: "8.8.8.8:7790"}); err == nil {
+	if _, _, _, err := planBoth("127.0.0.1:7777", false, false, ParticipantOptions{Listen: "8.8.8.8:7790"}); err == nil {
 		t.Fatal("a public participant address was accepted")
 	}
 	// Off: the host plan alone, and a nil participant plan.
-	if _, part, err := planBoth("127.0.0.1:7777", false, false, ParticipantOptions{}); err != nil || part != nil {
+	if _, part, _, err := planBoth("127.0.0.1:7777", false, false, ParticipantOptions{Listen: ParticipantListenOff}); err != nil || part != nil {
 		t.Fatalf("participant off: %+v %v", part, err)
+	}
+}
+
+// TestParticipantListenDefaults: with no --participant-listen the participant API is on at the host --listen
+// IP, port 7790, and the participant flag table applies to that address unchanged.
+func TestParticipantListenDefaults(t *testing.T) {
+	tests := []struct {
+		name         string
+		listen       string
+		hostAllowLAN bool
+		hostInsecure bool
+		options      ParticipantOptions
+		wantAddr     string
+		wantTrans    Transport
+		wantErr      string
+	}{
+		{name: "loopback", listen: "127.0.0.1:7777", wantAddr: "127.0.0.1:7790", wantTrans: TransportPlain},
+		{name: "loopback v6", listen: "[::1]:7777", wantAddr: "[::1]:7790", wantTrans: TransportPlain},
+		{name: "loopback with a participant flag", listen: "127.0.0.1:7777", options: ParticipantOptions{InsecureHTTP: true}, wantErr: "loopback"},
+		{name: "tailnet is HTTPS", listen: "100.64.0.1:7777", wantAddr: "100.64.0.1:7790", wantTrans: TransportHTTPS},
+		{name: "tailnet plain only on request", listen: "100.64.0.1:7777", options: ParticipantOptions{InsecureHTTP: true}, wantAddr: "100.64.0.1:7790", wantTrans: TransportPlain},
+		{name: "tailnet never inherits the host's plain HTTP", listen: "100.64.0.1:7777", hostInsecure: false, wantAddr: "100.64.0.1:7790", wantTrans: TransportHTTPS},
+		{name: "tailnet with allow-lan", listen: "100.64.0.1:7777", options: ParticipantOptions{AllowLAN: true}, wantErr: FlagParticipantAllowLAN},
+		// Option (a): the host's --allow-lan is the opt-in of the default. See hostAllowLANCountsForDefault.
+		{name: "LAN with the host allow-lan is HTTPS", listen: "192.168.1.20:7777", hostAllowLAN: true, wantAddr: "192.168.1.20:7790", wantTrans: TransportHTTPS},
+		{name: "LAN plain still needs the participant flag", listen: "192.168.1.20:7777", hostAllowLAN: true, options: ParticipantOptions{InsecureHTTP: true}, wantAddr: "192.168.1.20:7790", wantTrans: TransportLANHTTP},
+		{name: "LAN never inherits the host's insecure-http", listen: "192.168.1.20:7777", hostAllowLAN: true, hostInsecure: true, wantAddr: "192.168.1.20:7790", wantTrans: TransportHTTPS},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, part, defaulted, err := planBoth(tc.listen, tc.hostAllowLAN, tc.hostInsecure, tc.options)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), FlagParticipantListen+" "+ParticipantListenOff) {
+					t.Fatalf("a defaulted refusal must name both escapes: %v", err)
+				}
+				return
+			}
+			if err != nil || part == nil || !defaulted {
+				t.Fatalf("planBoth = %+v defaulted %v err %v", part, defaulted, err)
+			}
+			if part.Addr.String() != tc.wantAddr || part.Transport != tc.wantTrans {
+				t.Fatalf("participant plan = %v %v, want %s %v", part.Addr, part.Transport, tc.wantAddr, tc.wantTrans)
+			}
+		})
+	}
+}
+
+// TestParticipantDefaultCollisionNamesBothEscapes: --listen on port 7790 collides with the default, and the
+// refusal does not read as if the user had typed 7790.
+func TestParticipantDefaultCollisionNamesBothEscapes(t *testing.T) {
+	_, _, _, err := planBoth("100.64.0.1:7790", false, false, ParticipantOptions{})
+	if err == nil {
+		t.Fatal("the defaulted participant address collided with --listen and was accepted")
+	}
+	for _, want := range []string{"default", FlagParticipantListen + " IP:PORT", FlagParticipantListen + " " + ParticipantListenOff} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the message %q lacks %q", err, want)
+		}
+	}
+	// Off and an explicit address are both ways out.
+	if _, part, _, err := planBoth("100.64.0.1:7790", false, false, ParticipantOptions{Listen: ParticipantListenOff}); err != nil || part != nil {
+		t.Fatalf("off: %+v %v", part, err)
+	}
+	if _, part, _, err := planBoth("100.64.0.1:7790", false, false, ParticipantOptions{Listen: "100.64.0.1:7791"}); err != nil || part == nil {
+		t.Fatalf("explicit: %+v %v", part, err)
+	}
+}
+
+// TestParticipantExplicitAddressOverridesTheDefault: an explicit address is used as typed and is not marked
+// defaulted.
+func TestParticipantExplicitAddressOverridesTheDefault(t *testing.T) {
+	_, part, defaulted, err := planBoth("100.64.0.1:7777", false, false, ParticipantOptions{Listen: "127.0.0.1:9000"})
+	if err != nil || defaulted || part == nil || part.Addr.String() != "127.0.0.1:9000" {
+		t.Fatalf("planBoth = %+v %v %v", part, defaulted, err)
 	}
 }
 
@@ -119,10 +196,11 @@ func TestRunWithValidatesBeforeTouchingAnyState(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "state")
 	var status bytes.Buffer
 	for _, options := range []ParticipantOptions{
-		{Listen: "192.168.1.20:7790"},               // LAN without --participant-allow-lan
-		{AllowLAN: true},                            // flag without a listener
-		{Listen: "127.0.0.1:7777"},                  // same endpoint as the host
-		{Listen: "100.64.0.1:7790", AllowLAN: true}, // flag that does not apply
+		{Listen: "192.168.1.20:7790"},                  // LAN without --participant-allow-lan
+		{Listen: ParticipantListenOff, AllowLAN: true}, // flag with off
+		{AllowLAN: true},                               // flag that does not apply to the loopback default
+		{Listen: "127.0.0.1:7777"},                     // same endpoint as the host
+		{Listen: "100.64.0.1:7790", AllowLAN: true},    // flag that does not apply
 	} {
 		if err := RunWith(context.Background(), stateDir, "127.0.0.1:7777", false, false, options, 0, &status); err == nil {
 			t.Fatalf("RunWith accepted %+v", options)
@@ -190,7 +268,7 @@ func TestParticipantStatusLines(t *testing.T) {
 			if plan.Transport == TransportHTTPS {
 				fingerprint, pin = testFingerprint, testSPKIPin
 			}
-			joined := strings.Join(participantStatusLines(*plan, plan.Addr.String(), fingerprint, pin), "\n")
+			joined := strings.Join(participantStatusLines(*plan, plan.Addr.String(), false, fingerprint, pin), "\n")
 			for _, part := range tc.want {
 				if !strings.Contains(joined, part) {
 					t.Fatalf("lines %q do not contain %q", joined, part)

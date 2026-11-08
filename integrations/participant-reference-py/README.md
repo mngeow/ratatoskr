@@ -16,9 +16,13 @@ Python 3.8 or newer. No third-party packages, no `internal/` imports, no network
 
 ## What the owner does first, on the gateway
 
-The participant API has its own listener and must be running before pairing can print anything usable:
+The participant API has its own listener and must be running before pairing can print anything usable.
+It is on by default, at the IP of `--listen` on port 7790 (HTTPS on a tailnet or LAN address), so a plain
+gateway start is enough:
 
-    rtk gateway --listen 100.x.y.z:7800 --participant-listen 100.x.y.z:7801
+    rtk gateway --listen 100.x.y.z:7777        # participant API at https://100.x.y.z:7790
+
+`--participant-listen ADDR` picks another address, and `--participant-listen off` turns the API off.
 
 Then mint a participant and a one-time pairing code. This prints the code once, the participant API
 URL the adapter should use, and, because that listener is HTTPS, two pins:

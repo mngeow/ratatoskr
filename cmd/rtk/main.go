@@ -38,9 +38,11 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
        rtk gateway --listen ADDR [--card-poll-interval 5s]
                                               how often the gateway polls registered card targets (2s to 1h, default 5s)
-       rtk gateway --listen ADDR --participant-listen ADDR [--participant-allow-lan] [--participant-insecure-http]
-                                              also serve the participant API on its own address (HTTPS by default on a
-                                              Tailscale or LAN address; off unless --participant-listen is given)
+       rtk gateway --listen ADDR [--participant-listen ADDR|off] [--participant-allow-lan] [--participant-insecure-http]
+                                              the participant API listens on the --listen IP, port 7790, unless you give
+                                              an address or off (HTTPS by default on a Tailscale or LAN address; the host
+                                              --allow-lan also allows the default LAN address; --insecure-http is never
+                                              inherited)
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway

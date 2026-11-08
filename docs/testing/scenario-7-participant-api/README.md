@@ -6,7 +6,7 @@ A small HTTP+JSON API on the gateway lets an external **adapter** pair as a **pa
 
 > **Expected results come from reading the code and the contract.** The team has not run any of this, and no external harness is claimed to work. Tell the team when something differs. Replace each `<PLACEHOLDER>`.
 
-> **One step changes a real database.** Migration `0003` (two new tables) has never run against any database, and runs at `rtk gateway --listen` with the automatic backup. **Copy the gateway state directory first.** Do the migration on a copy (`--state` pointing at it) if you can.
+> **One step changes a real database.** Migration `0003` (two new tables) has never run against any database, and runs at `rtk gateway --listen` with the automatic backup. **Copy the gateway state directory first.** Do the migration on a copy if you can, with `XDG_STATE_HOME` set to it in the gateway's terminal.
 
 > **The adapter used here is the Python reference adapter** (`integrations/participant-reference-py/adapter.py`, standard library only, its own [README](../../../integrations/participant-reference-py/README.md)). It has never been run either. Below, `ADAPTER` stands for `python3 integrations/participant-reference-py/adapter.py` and `<URL>`, `<PIN>`, `<CRED_FILE>` for the values `participant pair` printed and the credential file you choose. Its common flags are `--url`, `--pin sha256:<hex>` (the **certificate SHA-256**; it refuses the SPKI pin), `--credential-file` and, only for a plain-HTTP listener, `--insecure-http`; the environment variables `RATATOSKR_URL`, `RATATOSKR_PIN` and `RATATOSKR_CREDENTIAL_FILE` do the same. Every command runs discovery first.
 
@@ -29,24 +29,30 @@ Use a **new** build identifier. As in scenario 5: `go build -ldflags "-X main.ve
 
 ## 3. Start the gateway with the participant listener
 
-The participant API has **its own listener**, off unless you ask. Use a different address from the host listener. On a tailnet or LAN address it is **HTTPS by default**.
+The participant API has **its own listener**, **on by default** at the IP of `--listen` on **port 7790**, so the usual start command is enough. On a tailnet or LAN address it is **HTTPS by default**. `--participant-listen <ADDR>` picks another address; `--participant-listen off` turns it off.
 
 **G1 gateway**
 
 ```sh
-rtk gateway --listen <GW_ADDR:7777> --participant-listen <GW_ADDR:7790>
-# a LAN address also needs --participant-allow-lan
+export XDG_STATE_HOME="<GW_STATE>"
+rtk gateway --listen <GW_IP>:7777
+# the participant API is now at <GW_IP>:7790; a LAN address needs --allow-lan as before
 ```
 
 Expect:
 
-- The host lines first, unchanged, then participant lines: the address, a statement that the transport is HTTPS, the **certificate SHA-256** and the **SPKI key pin**, each labelled as a different rule.
+- The host lines first, unchanged, then participant lines: the address marked as the **default** (with how to change or disable it), a statement that the transport is HTTPS, the **certificate SHA-256** and the **SPKI key pin**, each labelled as a different rule.
 - `participant-endpoint.json` in the gateway directory. The host `endpoint.json` is as before.
 - The host side keeps working: `rtk gateway hosts` and your managed agents behave as in scenario 2 or 3.
-- Without `--participant-listen` the gateway starts exactly as before, and a stale `participant-endpoint.json` is removed.
-- The participant address and the host address must differ, or startup is refused.
+- With `--participant-listen off` the gateway starts exactly as before this feature, and a stale `participant-endpoint.json` is removed.
+- With `--participant-listen <GW_IP>:7795` the API moves there, and the status line no longer says default.
+- On a **LAN** address the host's `--allow-lan` is enough for the default (HTTPS). `--allow-lan --insecure-http` keeps the host plain but the participant API stays **HTTPS**; it is plain only with `--participant-insecure-http`, and then prints a warning. An explicit LAN `--participant-listen` needs `--participant-allow-lan`.
 
-Check the refusal as well: start with `--participant-insecure-http` on a **loopback** address and expect it to be refused; start on a **public** address and expect it to be refused.
+Check the refusals as well:
+- `--listen <GW_IP>:7790` (the host on the default port): refused, naming `--participant-listen ADDR` and `off`.
+- Something else already on port 7790: startup fails; there is no fallback port.
+- `--participant-listen off --participant-insecure-http`: refused as a contradiction.
+- `--participant-insecure-http` on a **loopback** address: refused. A **public** address: refused.
 
 ## 4. Pair a participant
 
@@ -62,7 +68,7 @@ Expect:
 - A single-use code on the first line (valid 10 minutes), `participant: pi-lab`, the API address, and, over HTTPS, both pins with labels.
 - `list` shows `pi-lab` as enrolled, no last poll, not live, 0 sessions.
 - **Names:** `rtk gateway participant pair <a host name>` is refused; `rtk gateway pair pi-lab` is refused once `pi-lab` exists; a name that was once a host (even after `unpair`) is refused.
-- With the participant listener **stopped**, `participant pair` says so and prints no code.
+- With the participant listener **off** or the gateway stopped, `participant pair` says so and prints no code.
 
 ## 5. The adapter pairs, registers and polls
 
@@ -152,7 +158,7 @@ Expect: the command says what it ended (sessions, unused codes) and that a parke
 
 Stop the gateway with Ctrl+C while an adapter's poll is parked.
 
-Expect: the gateway exits within about 5 seconds (the parked poll is cancelled and answered empty), no listener is left bound, and restarting without `--participant-listen` removes the stale `participant-endpoint.json`.
+Expect: the gateway exits within about 5 seconds (the parked poll is cancelled and answered empty), no listener is left bound, and restarting with `--participant-listen off` removes the stale `participant-endpoint.json`.
 
 ## 13. What to report
 
