@@ -2,7 +2,7 @@
 
 A small HTTP+JSON API on the gateway lets an external **adapter** pair as a **participant**, register named sessions, send to any registered session and receive through a long-poll inbox. This scenario builds on the machines of scenario 2 or 3: a gateway VM, the Mac and VM-B, each with a running managed agent. You add one participant, an adapter, and check the flows between it and a managed Claude or Codex.
 
-**This is the short form, for reading on a VM or on GitHub.** The authoritative description is the [spec](../../spec/participant-api/README.md) and the [implementation contract](../../implementation/participant-api-contract.md). Run it when you choose; nothing here is ordered.
+**This is the short form, for reading on a VM or on GitHub.** The [full HTML guide](../index.html#s7) has the same steps with a diagram, fill-in fields and copy buttons. The authoritative description is the [spec](../../spec/participant-api/README.md) and the [implementation contract](../../implementation/participant-api-contract.md). Run it when you choose; nothing here is ordered.
 
 > **Expected results come from reading the code and the contract.** The team has not run any of this, and no external harness is claimed to work. Tell the team when something differs. Replace each `<PLACEHOLDER>`.
 

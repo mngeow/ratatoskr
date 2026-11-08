@@ -298,7 +298,7 @@ How it fits, in outline:
 - The adapter redeems the code, registers named sessions (`coder@pi-lab`), sends with `POST /participant/v1/messages` and receives by **long-polling** `GET /participant/v1/inbox`. A send to an offline participant fails at once; nothing is queued.
 - Managed Claude and Codex sessions message a participant session with the existing `ratatoskr_send`; no change was made to them.
 
-A single-file, standard-library-only **Python reference adapter** ([`integrations/participant-reference-py/`](integrations/participant-reference-py/README.md), also never run) shows the contract is not Go-specific. An adapter must pin the gateway certificate, which a stock `curl` cannot do against it; the spec explains why and shows a Python recipe, also untested. Test steps: [scenario 7](docs/testing/scenario-7-participant-api/README.md).
+A single-file, standard-library-only **Python reference adapter** ([`integrations/participant-reference-py/`](integrations/participant-reference-py/README.md), also never run) shows the contract is not Go-specific. An adapter must pin the gateway certificate, which a stock `curl` cannot do against it; the spec explains why and shows a Python recipe, also untested. Test steps: [scenario 7](docs/testing/scenario-7-participant-api/README.md), also in the [HTML guide](docs/testing/index.html#s7).
 
 ## Roadmap (proposals, nothing built)
 
