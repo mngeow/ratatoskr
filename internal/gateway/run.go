@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"time"
 )
@@ -23,18 +24,30 @@ const (
 	shutdownGrace = 5 * time.Second // UNTESTED guess
 )
 
-// Run serves one gateway until ctx ends.
-//
-// The order is part of the contract: the address and the flags are validated before any
-// file or lock is touched, so a mistyped address or a flag that does not apply fails
-// without creating state; then the database is opened under the gateway lock, so a
-// second gateway on the same state directory is refused before a socket exists; then the
-// directory is prepared; then, for HTTPS only, the identity is loaded or created; then
-// the address is bound.
+// Run serves one gateway until ctx ends, with the participant API off (Run predates it and keeps its
+// behaviour; `rtk gateway` goes through RunWith).
 //
 // UNTESTED.
 func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, cardPoll time.Duration, status io.Writer) error {
-	plan, err := PlanListen(listen, allowLAN, insecureHTTP)
+	return RunWith(ctx, stateDir, listen, allowLAN, insecureHTTP, ParticipantOptions{Listen: ParticipantListenOff}, cardPoll, status)
+}
+
+// RunWith serves one gateway until ctx ends, and a second listener for the participant API when
+// participant.Listen is not ParticipantListenOff.
+//
+// The order is part of the contract: the addresses and the flags are validated before any file or lock
+// is touched (both plans, and they must not name the same endpoint), so a mistyped address or a flag that
+// does not apply fails without creating state; then the database is opened ONCE under the gateway lock,
+// so a second gateway on the same state directory is refused before a socket exists; then the directory
+// is prepared; then, if EITHER listener is HTTPS, the one identity is loaded or created, before either
+// bind; then the host address is bound, then the participant address, and a failure of the second closes
+// the first.
+//
+// With the participant API off this is the single-listener startup it always was.
+//
+// UNTESTED.
+func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, participant ParticipantOptions, cardPoll time.Duration, status io.Writer) error {
+	plan, participantPlan, participantDefaulted, err := planBoth(listen, allowLAN, insecureHTTP, participant)
 	if err != nil {
 		return err
 	}
@@ -70,12 +83,25 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 	}
 
 	// HTTPS carries a pinned self-signed certificate, so the identity is loaded or
-	// created before the socket exists: a refused identity must not leave a bound
-	// address behind.
+	// created before any socket exists: a refused identity must not leave a bound
+	// address behind. One identity serves both listeners, loaded once, and either may be HTTPS
+	// without the other.
+	participantHTTPS := participantPlan != nil && participantPlan.Transport == TransportHTTPS
 	var cert tls.Certificate
+	identityFingerprint := ""
+	if plan.Transport == TransportHTTPS || participantHTTPS {
+		cert, identityFingerprint, err = LoadOrCreateIdentity(filepath.Join(dir, "tls"))
+		if err != nil {
+			return err
+		}
+	}
 	fingerprint := ""
 	if plan.Transport == TransportHTTPS {
-		cert, fingerprint, err = LoadOrCreateIdentity(filepath.Join(dir, "tls"))
+		fingerprint = identityFingerprint
+	}
+	spkiPin := ""
+	if participantHTTPS {
+		spkiPin, err = SPKIPin(cert.Certificate[0])
 		if err != nil {
 			return err
 		}
@@ -91,7 +117,28 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 		listener = tls.NewListener(listener, serverTLSConfig(cert))
 	}
 
+	var participantListener net.Listener
+	if participantPlan != nil {
+		participantListener, err = ListenFor(participantSubject, participantPlan.Addr)
+		if err != nil {
+			if participantDefaulted {
+				err = fmt.Errorf("%w (%s was the default participant address; use %s IP:PORT to choose another, or %s %s to turn the participant API off)",
+					err, participantPlan.Addr, FlagParticipantListen, FlagParticipantListen, ParticipantListenOff)
+			}
+			// Roll back: nothing is left bound.
+			_ = listener.Close()
+			return err
+		}
+		if participantHTTPS {
+			// A separate tls.Config, never shared with the host listener's.
+			participantListener = tls.NewListener(participantListener, serverTLSConfig(cert))
+		}
+	}
+
 	srv := NewServer(store, Options{})
+	if participantPlan != nil {
+		srv.EnableParticipantServer()
+	}
 
 	// The card poller runs for the life of the gateway, after the bind and independent of any viewer.
 	// It is built and started BEFORE Serve begins, so the server's reference to it is written before
@@ -103,26 +150,57 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 	})
 	defer stopCardPoller()
 
-	serveErr := make(chan error, 1)
+	serveErr := make(chan error, 2)
 	go func() {
 		serveErr <- srv.Serve(listener)
 	}()
+	if participantListener != nil {
+		go func() {
+			serveErr <- srv.ServeParticipant(participantListener)
+		}()
+	}
 
 	addr := listener.Addr().String()
 
 	// Written after a successful bind and before the status lines, so `rtk gateway
 	// pair` on this machine can print a ready command. Failing to record it is a
-	// startup failure: the listener stops again and the error is returned.
+	// startup failure: both servers stop again and the error is returned.
 	if err := WriteEndpoint(dir, plan, fingerprint); err != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancel()
 		return errors.Join(err, srv.Shutdown(shutdownCtx))
 	}
+	// The participant endpoint is its own file: the host endpoint file above is never touched by it. With the
+	// participant API off, a regular file left by an earlier run is removed so the owner commands do not print
+	// an address nothing serves; anything else at that name is left alone and reported.
+	if participantPlan != nil {
+		participantFingerprint := ""
+		if participantHTTPS {
+			participantFingerprint = identityFingerprint
+		}
+		if err := WriteParticipantEndpoint(dir, *participantPlan, participantFingerprint, spkiPin); err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+			defer cancel()
+			return errors.Join(err, srv.Shutdown(shutdownCtx))
+		}
+	} else if warning := RemoveStaleParticipantEndpoint(dir); warning != "" {
+		// Reported, never fatal, and the host endpoint file is not involved.
+		fmt.Fprintln(status, warning)
+	}
 
 	// Nothing secret in any of these lines: no credential, no pairing code, and the
-	// fingerprint is public.
+	// fingerprint is public. The host lines come first and are unchanged.
 	for _, line := range statusLines(plan, addr, dir, fingerprint) {
 		fmt.Fprintln(status, line)
+	}
+	if participantPlan != nil {
+		participantFingerprint := ""
+		if participantHTTPS {
+			participantFingerprint = identityFingerprint
+		}
+		for _, line := range participantStatusLines(*participantPlan, participantListener.Addr().String(), participantDefaulted, participantFingerprint, spkiPin) {
+			fmt.Fprintln(status, line)
+		}
 	}
 
 	select {
@@ -134,6 +212,17 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 		}
 		return nil
 	case err := <-serveErr:
+		if participantPlan != nil {
+			// Either server stopping on its own takes the other down with it: neither is left running
+			// alone.
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+			defer cancel()
+			shutdownErr := srv.Shutdown(shutdownCtx)
+			if err != nil {
+				return errors.Join(fmt.Errorf("gateway: serve: %w", err), shutdownErr)
+			}
+			return shutdownErr
+		}
 		if err != nil {
 			return fmt.Errorf("gateway: serve: %w", err)
 		}

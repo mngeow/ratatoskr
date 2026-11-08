@@ -1,0 +1,32 @@
+{
+  "name": "poll-with-offer",
+  "description": "A poll that finds an offer answers at once. One inbox serves every session of the participant: to is the session name and to_session the id the gateway meant. The adapter must ack it (example 13 or 14).",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1/inbox?wait=20",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "offers": [
+        {
+          "id": "msg-0100",
+          "from": "claude@vm-b",
+          "to": "coder",
+          "to_session": "00000000000000000000000000000001",
+          "reply_to": "msg-0001",
+          "body": "Looks fine. One question on line 40.",
+          "at": "2026-11-08T12:00:00Z"
+        }
+      ],
+      "replaced": false
+    }
+  }
+}

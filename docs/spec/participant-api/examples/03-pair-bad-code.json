@@ -1,0 +1,26 @@
+{
+  "name": "pair-bad-code",
+  "description": "An unknown, used or expired code is one answer; it never says which.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/pair",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "code": "FAKECODE9999",
+      "participant": "pi-lab"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "code": "bad_pairing_code",
+      "message": "that pairing code is not valid"
+    }
+  }
+}

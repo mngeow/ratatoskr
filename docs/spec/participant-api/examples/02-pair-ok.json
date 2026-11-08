@@ -1,0 +1,26 @@
+{
+  "name": "pair-ok",
+  "description": "The code is the secret, so no credential is sent. The credential is returned once; the gateway keeps only its hash.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/pair",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "code": "FAKECODE0001",
+      "participant": "pi-lab"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "participant": "pi-lab",
+      "credential": "FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY"
+    }
+  }
+}

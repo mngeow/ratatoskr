@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/offer.schema.json",
+  "title": "Offer",
+  "description": "One message offered once. from is set by the gateway.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$"
+    },
+    "from": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}@[a-z0-9-]{1,63}$",
+      "description": "name@host or name@participant, as the gateway established it."
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$",
+      "description": "The recipient session's name."
+    },
+    "to_session": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "The session id the gateway meant."
+    },
+    "reply_to": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$"
+    },
+    "body": {
+      "type": "string"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, UTC."
+    }
+  },
+  "required": [
+    "id",
+    "from",
+    "to",
+    "to_session",
+    "body",
+    "at"
+  ]
+}

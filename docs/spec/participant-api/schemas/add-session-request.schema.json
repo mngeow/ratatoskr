@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/add-session-request.schema.json",
+  "title": "Register session request",
+  "description": "POST /participant/v1/sessions. Registering a name again ends the earlier open session of that name. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

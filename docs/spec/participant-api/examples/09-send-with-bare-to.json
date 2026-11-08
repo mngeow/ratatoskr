@@ -1,0 +1,29 @@
+{
+  "name": "send-with-bare-to",
+  "description": "A participant has no 'this host', so a bare name is refused. The message names the field only.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "id": "msg-0004",
+      "from": "coder",
+      "to": "claude",
+      "body": "Hello"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "code": "bad_request",
+      "message": "invalid to"
+    }
+  }
+}

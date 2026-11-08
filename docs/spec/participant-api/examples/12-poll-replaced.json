@@ -1,0 +1,22 @@
+{
+  "name": "poll-replaced",
+  "description": "Only one poll is open per participant. A second poll displaces the first, which is answered at once with replaced:true. An adapter that sees this should check that it is not running twice.",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1/inbox?wait=20",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "offers": [],
+      "replaced": true
+    }
+  }
+}

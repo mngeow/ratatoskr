@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/send-response.schema.json",
+  "title": "Send response",
+  "description": "200 for every outcome the gateway decided, never a 4xx for a message it stored. A send whose answer did not arrive is uncertain, never failed. A client that meets a result it does not know treats it as uncertain, never as failed. gateway_uncertain is what a repeated id answers while the first send is still in progress. host_stored means the adapter or host has it, not that it was read.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$"
+    },
+    "result": {
+      "enum": [
+        "host_stored",
+        "session_gone",
+        "delivery_uncertain",
+        "gateway_uncertain",
+        "unknown_recipient",
+        "destination_unreachable"
+      ]
+    },
+    "detail": {
+      "type": "string"
+    },
+    "directory": {
+      "type": "array",
+      "items": {
+        "$ref": "directory-entry.schema.json"
+      },
+      "description": "Present for unknown_recipient."
+    }
+  },
+  "required": [
+    "id",
+    "result"
+  ]
+}

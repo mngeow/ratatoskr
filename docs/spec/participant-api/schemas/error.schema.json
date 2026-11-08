@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/error.schema.json",
+  "title": "Error",
+  "description": "The body of every non-2xx response (the host protocol's WireError). Switch on code, not on message. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "code": {
+      "enum": [
+        "bad_request",
+        "unsupported_contract",
+        "unauthorized",
+        "bad_pairing_code",
+        "not_found",
+        "too_many_sessions",
+        "internal"
+      ]
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "message"
+  ]
+}

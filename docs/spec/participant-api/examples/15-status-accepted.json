@@ -1,0 +1,24 @@
+{
+  "name": "status-accepted",
+  "description": "An optional delivery report. accepted is the adapter's own assertion that it handed the message to its harness. It is shown as a report and never changes a gate.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages/msg-0100/status",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "state": "accepted",
+      "at": "2026-11-08T12:00:00Z"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {}
+  }
+}

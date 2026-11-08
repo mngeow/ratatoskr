@@ -32,10 +32,17 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway pair HOST                  print a one-time code for HOST
        rtk gateway unpair HOST                remove HOST
        rtk gateway hosts                      list paired hosts and their state
+       rtk gateway participant pair ID|list|revoke ID
+                                              pair, list or revoke participants (external adapters)
        rtk gateway log [--follow] [--limit N] read the gateway's ledger
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
        rtk gateway --listen ADDR [--card-poll-interval 5s]
                                               how often the gateway polls registered card targets (2s to 1h, default 5s)
+       rtk gateway --listen ADDR [--participant-listen ADDR|off] [--participant-allow-lan] [--participant-insecure-http]
+                                              the participant API listens on the --listen IP, port 7790, unless you give
+                                              an address or off (HTTPS by default on a Tailscale or LAN address; the host
+                                              --allow-lan also allows the default LAN address; --insecure-http is never
+                                              inherited)
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway
@@ -140,7 +147,9 @@ func main() {
 
 	switch cmd.kind {
 	case kindGatewayServe:
-		err = gateway.Run(ctx, stateDir, cmd.listen, cmd.allowLAN, cmd.insecureHTTP, cmd.cardPollInterval, os.Stderr)
+		err = gateway.RunWith(ctx, stateDir, cmd.listen, cmd.allowLAN, cmd.insecureHTTP, gateway.ParticipantOptions{
+			Listen: cmd.participantListen, AllowLAN: cmd.participantAllowLAN, InsecureHTTP: cmd.participantInsecureHTTP,
+		}, cmd.cardPollInterval, os.Stderr)
 	case kindGatewayAdmin:
 		err = gateway.RunAdmin(ctx, stateDir, cmd.admin, os.Stdout, os.Stderr, nil)
 	case kindRuntimePair:

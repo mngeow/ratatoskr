@@ -1,0 +1,30 @@
+{
+  "name": "send-to-managed-session",
+  "description": "A send to a session on a paired host. host_stored means the recipient's host has the message, not that it was read. The client's HTTP timeout for this call must exceed the gateway's 8 s send wait; 10 s is recommended.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "id": "msg-0001",
+      "from": "coder",
+      "to": "claude@vm-b",
+      "body": "Please review the parser change."
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "id": "msg-0001",
+      "result": "host_stored",
+      "detail": "the recipient's host saved it"
+    }
+  }
+}

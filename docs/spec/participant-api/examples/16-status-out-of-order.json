@@ -1,0 +1,24 @@
+{
+  "name": "status-out-of-order",
+  "description": "A report that ranks below one already stored (here pasted after accepted) is accepted with the same 200 and has no effect; a later read still shows accepted. Reports are idempotent.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages/msg-0100/status",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "state": "pasted",
+      "at": "2026-11-08T12:00:00Z"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {}
+  }
+}

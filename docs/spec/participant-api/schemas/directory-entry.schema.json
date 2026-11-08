@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/directory-entry.schema.json",
+  "title": "Directory entry",
+  "description": "One agent the gateway knows, live or not.",
+  "type": "object",
+  "properties": {
+    "address": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}@[a-z0-9-]{1,63}$"
+    },
+    "host": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,63}$",
+      "description": "The host or participant id after the @."
+    },
+    "live": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "address",
+    "host",
+    "live"
+  ]
+}

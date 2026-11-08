@@ -1,0 +1,47 @@
+{
+  "name": "send-to-unknown-name",
+  "description": "An address the gateway has never seen is a 200 with unknown_recipient and the directory, not a 4xx.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "id": "msg-0002",
+      "from": "coder",
+      "to": "nobody@vm-b",
+      "body": "Anyone there?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "id": "msg-0002",
+      "result": "unknown_recipient",
+      "detail": "no agent has that address",
+      "directory": [
+        {
+          "address": "coder@pi-lab",
+          "host": "pi-lab",
+          "live": true
+        },
+        {
+          "address": "claude@vm-b",
+          "host": "vm-b",
+          "live": true
+        },
+        {
+          "address": "helper@lab-2",
+          "host": "lab-2",
+          "live": false
+        }
+      ]
+    }
+  }
+}

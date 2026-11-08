@@ -1,0 +1,23 @@
+{
+  "name": "ack-saved",
+  "description": "saved:true tells the gateway the adapter has the message. The sender is then told host_stored. It means the adapter has it, nothing more.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages/msg-0100/ack",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "saved": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {}
+  }
+}

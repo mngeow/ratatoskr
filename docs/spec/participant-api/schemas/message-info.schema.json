@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/message-info.schema.json",
+  "title": "Message info",
+  "description": "GET /participant/v1/messages/{id}: the gateway's current view of a message the caller sent or received.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$"
+    },
+    "result": {
+      "enum": [
+        "host_stored",
+        "session_gone",
+        "delivery_uncertain",
+        "gateway_uncertain",
+        "unknown_recipient",
+        "destination_unreachable"
+      ]
+    },
+    "result_reason": {
+      "type": "string"
+    },
+    "report": {
+      "enum": [
+        "held",
+        "delivering",
+        "pasted",
+        "accepted",
+        "unconfirmed",
+        "failed",
+        "interrupted"
+      ]
+    },
+    "report_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "result"
+  ]
+}

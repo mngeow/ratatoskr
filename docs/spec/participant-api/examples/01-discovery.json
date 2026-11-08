@@ -1,0 +1,23 @@
+{
+  "name": "discovery",
+  "description": "Discovery needs no credential and carries no secret. An adapter checks contract and versions before pairing.",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1",
+    "headers": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "contract": "1.0",
+      "versions": [
+        "1"
+      ],
+      "now": "2026-11-08T12:00:00Z"
+    }
+  }
+}

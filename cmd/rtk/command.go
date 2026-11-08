@@ -69,6 +69,12 @@ type command struct {
 	// cardPollInterval is `rtk gateway --card-poll-interval`; 0 means the default. The range is
 	// checked by gateway.Run, before any state is touched.
 	cardPollInterval time.Duration
+
+	// The participant API's three flags of `rtk gateway --listen`. Empty and false mean it is off.
+	// gateway.RunWith checks them against each other and against --listen before any state is touched.
+	participantListen       string
+	participantAllowLAN     bool
+	participantInsecureHTTP bool
 }
 
 const (
@@ -87,6 +93,7 @@ var adminCommands = map[string]bool{
 	"show":   true,
 
 	"card-target": true,
+	"participant": true,
 }
 
 // parseCommand turns the command line into one command.
@@ -139,6 +146,9 @@ func parseGateway(args []string) (command, error) {
 	allowLAN := fs.Bool("allow-lan", false, "")
 	insecureHTTP := fs.Bool("insecure-http", false, "")
 	cardPoll := fs.Duration("card-poll-interval", 0, "")
+	participantListen := fs.String("participant-listen", "", "")
+	participantAllowLAN := fs.Bool("participant-allow-lan", false, "")
+	participantInsecureHTTP := fs.Bool("participant-insecure-http", false, "")
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("%s (%v)", gatewayNeedsListen, err)
 	}
@@ -151,6 +161,8 @@ func parseGateway(args []string) (command, error) {
 	return command{
 		kind: kindGatewayServe, listen: *listen,
 		allowLAN: *allowLAN, insecureHTTP: *insecureHTTP, cardPollInterval: *cardPoll,
+		participantListen: *participantListen, participantAllowLAN: *participantAllowLAN,
+		participantInsecureHTTP: *participantInsecureHTTP,
 	}, nil
 }
 

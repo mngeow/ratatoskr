@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/send-request.schema.json",
+  "title": "Send request",
+  "description": "POST /participant/v1/messages. from must be an open session of the caller; to is name@host or name@participant (a bare name is refused). The same id from the same sender applied twice stores and offers once. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$",
+      "description": "Chosen by the sender."
+    },
+    "from": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}@[a-z0-9-]{1,63}$"
+    },
+    "reply_to": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,64}$"
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "At most 64 KiB (65536 bytes) of UTF-8. The limit is in bytes; maxLength counts characters, so it is only a first check."
+    }
+  },
+  "required": [
+    "id",
+    "from",
+    "to",
+    "body"
+  ]
+}

@@ -34,12 +34,24 @@ const (
 //
 // UNTESTED.
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, host string) {
-	ctx := r.Context()
-
 	var request protocol.SendRequest
 	if !decodeBody(w, r, s.opts.MaxBodyBytes, &request) {
 		return
 	}
+	s.routeSend(w, r, host, request)
+}
+
+// routeSend is the one send routine, shared by the host route and the participant route. endpoint is the
+// sender's side of its address: the host name, or the participant id (a participant's sessions live in the
+// same table under its id). The recipient may be either kind: a host session, reached by a stream frame,
+// or a participant session, reached by the participant inbox.
+//
+// The only differences between the two senders are who the credential names and how the answer is framed;
+// the validation, the ledger writes, the duplicate-id rule and the result vocabulary are the same.
+//
+// UNTESTED.
+func (s *Server) routeSend(w http.ResponseWriter, r *http.Request, host string, request protocol.SendRequest) {
+	ctx := r.Context()
 
 	toName, toHost, ok := parseAddress(request.To)
 	switch {
@@ -152,6 +164,16 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request, host string)
 		}
 		s.answerFailure(ctx, w, request.ID, protocol.SendUnknownRecipient,
 			"no agent by that name has been seen", entries)
+		return
+	}
+
+	// A recipient is a participant if the part after @ is the id of an active participant. Revoked ones
+	// fall through to the host steps and are unreachable there.
+	if lastPoll, active, err := s.store.ParticipantState(ctx, toHost); err != nil {
+		internalError(w)
+		return
+	} else if active {
+		s.deliverToParticipant(ctx, w, request, fromAddress, toName, toHost, lastPoll, now)
 		return
 	}
 
@@ -332,3 +354,85 @@ func (s *Server) outcomeContext(ctx context.Context) (context.Context, context.C
 // outcomeWriteTimeout bounds the ledger writes made after a request's context may
 // have ended.
 const outcomeWriteTimeout = 5 * time.Second // UNTESTED guess
+
+// deliverToParticipant is steps 3 to 5 of a send whose recipient is a participant session.
+//
+// It is online if a poll is parked or its last poll began or ended within the live window (HostLive). The
+// offer goes into the participant's inbox and is held in memory only while this request waits for it, at
+// most AckWait: the next poll claims it, and if none does by then it is withdrawn atomically and the send
+// ends destination_unreachable. Once a poll has claimed it the outcome is unknowable until the ack, so the
+// ordinary rule applies: the ack decides, and silence is delivery_uncertain. Nothing is ever re-offered.
+//
+// UNTESTED.
+func (s *Server) deliverToParticipant(ctx context.Context, w http.ResponseWriter, request protocol.SendRequest, fromAddress, toName, toHost string, lastPoll, now time.Time) {
+	if !HostLive(lastPoll, s.phub.parked(toHost), now) {
+		s.answerFailure(ctx, w, request.ID, protocol.SendDestinationUnreachable,
+			"the participant is not polling", nil)
+		return
+	}
+
+	recipient, found, err := s.store.CurrentSession(ctx, toHost, toName)
+	if err != nil {
+		internalError(w)
+		return
+	}
+	if !found {
+		s.answerFailure(ctx, w, request.ID, protocol.SendSessionGone,
+			"that agent has no current session", nil)
+		return
+	}
+
+	writeCtx, endWrite := s.outcomeContext(ctx)
+	defer endWrite()
+	if err := s.store.SetToSession(writeCtx, request.ID, recipient.ID); err != nil {
+		internalError(w)
+		return
+	}
+
+	wake, forget := s.hub.expectAck(request.ID)
+	defer forget()
+
+	pending, err := s.phub.offer(toHost, protocol.Offer{
+		ID:        request.ID,
+		From:      fromAddress,
+		To:        toName,
+		ToSession: recipient.ID,
+		ReplyTo:   request.ReplyTo,
+		Body:      request.Body,
+		At:        now,
+	})
+	if err != nil {
+		s.answerFailure(ctx, w, request.ID, protocol.SendDestinationUnreachable,
+			"the participant's inbox is full", nil)
+		return
+	}
+
+	timer := time.NewTimer(s.opts.AckWait)
+	defer timer.Stop()
+
+	select {
+	case <-wake:
+	case <-timer.C:
+	case <-ctx.Done():
+	case <-s.closing:
+	}
+
+	// Never claimed by a poll: nothing reached the adapter, so this is a definite failure. A poll that
+	// arrives after this cannot receive the offer.
+	if s.phub.withdraw(toHost, pending) {
+		s.answerFailure(ctx, w, request.ID, protocol.SendDestinationUnreachable,
+			"the adapter did not poll in time", nil)
+		return
+	}
+
+	if !s.recordTimeout(writeCtx, request.ID) {
+		internalError(w)
+		return
+	}
+	row, _, err := s.store.Message(writeCtx, request.ID)
+	if err != nil {
+		internalError(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, sendResponseFor(row))
+}
