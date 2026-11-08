@@ -174,7 +174,7 @@ func TestSetCardTargetRules(t *testing.T) {
 	body, parsed := validTargetCard(t, "http://127.0.0.1:7778"+protocol.CardPath)
 	applied, err := store.RecordPoll(ctx, PollRecord{
 		Host: "vmb", TargetUpdatedAt: now, At: now, Outcome: protocol.PollOK, Status: 200,
-		CardJSON: string(body), Revision: parsed.Version, ETag: `"e1"`, Hash: card.Hash(body),
+		CardJSON: string(body), Revision: parsed.Version, Hash: card.Hash(body),
 	})
 	if err != nil || !applied {
 		t.Fatalf("RecordPoll applied=%t err=%v", applied, err)
@@ -224,7 +224,7 @@ func TestRecordPollSemantics(t *testing.T) {
 		t.Helper()
 		pr := PollRecord{Host: "vmb", TargetUpdatedAt: now, At: at, Outcome: outcome, Status: 200, Duration: 5 * time.Millisecond}
 		if body != nil {
-			pr.CardJSON, pr.Revision, pr.ETag, pr.Hash = string(body), version, `"e-`+version+`"`, card.Hash(body)
+			pr.CardJSON, pr.Revision, pr.Hash = string(body), version, card.Hash(body)
 		}
 		applied, err := store.RecordPoll(ctx, pr)
 		if err != nil {
@@ -245,14 +245,18 @@ func TestRecordPollSemantics(t *testing.T) {
 	if !rows["vmb"].LastOKAt.Equal(time.UnixMilli(now.UnixMilli())) {
 		t.Fatalf("a timeout moved last_ok_at: %v", rows["vmb"].LastOKAt)
 	}
-	// A 304 moves last_ok only.
-	record(now.Add(2*time.Minute), protocol.PollNotModified, nil, "")
+	// The same card again (an unchanged 200) moves last_ok_at and fetched_at and makes no revision.
+	record(now.Add(2*time.Minute), protocol.PollOK, first, "1")
 	rows, _ = store.CardRows(ctx)
 	if !rows["vmb"].LastOKAt.Equal(time.UnixMilli(now.Add(2 * time.Minute).UnixMilli())) {
-		t.Fatalf("304 did not move last_ok_at: %v", rows["vmb"].LastOKAt)
+		t.Fatalf("an unchanged 200 did not move last_ok_at: %v", rows["vmb"].LastOKAt)
 	}
 	if rows["vmb"].Hash != card.Hash(first) {
-		t.Fatal("304 changed the stored card")
+		t.Fatal("an unchanged 200 changed the stored card")
+	}
+	var unchangedRevisions int
+	if err := store.db.QueryRow(`SELECT count(*) FROM card_revisions WHERE host='vmb'`).Scan(&unchangedRevisions); err != nil || unchangedRevisions != 0 {
+		t.Fatalf("an unchanged 200 made %d revisions, %v", unchangedRevisions, err)
 	}
 
 	// A different good card: the old one becomes a revision.
@@ -295,7 +299,7 @@ func TestRecordPollPrunesAttemptsAndRevisions(t *testing.T) {
 		body := []byte(strings.Replace(string(base), `"version":"4"`, `"version":"`+string(rune('a'+i%26))+`"`, 1))
 		store.RecordPoll(ctx, PollRecord{
 			Host: "vmb", TargetUpdatedAt: now, At: now.Add(time.Duration(i) * time.Minute), Outcome: protocol.PollOK, Status: 200,
-			CardJSON: string(body), Revision: "r", ETag: `"e"`, Hash: card.Hash(body) + string(rune('a'+i)),
+			CardJSON: string(body), Revision: "r", Hash: card.Hash(body) + string(rune('a'+i)),
 		})
 	}
 	var revisions int
@@ -480,7 +484,7 @@ func TestGraphRouteEndToEnd(t *testing.T) {
 	body, parsed := validTargetCard(t, "http://127.0.0.1:7778"+protocol.CardPath)
 	if _, err := store.RecordPoll(context.Background(), PollRecord{
 		Host: "vmb", TargetUpdatedAt: now, At: now.Add(-10 * time.Second), Outcome: protocol.PollOK, Status: 200,
-		CardJSON: string(body), Revision: parsed.Version, ETag: `"e"`, Hash: card.Hash(body),
+		CardJSON: string(body), Revision: parsed.Version, Hash: card.Hash(body),
 	}); err != nil {
 		t.Fatalf("RecordPoll: %v", err)
 	}
@@ -520,13 +524,12 @@ func TestGraphRouteEndToEnd(t *testing.T) {
 }
 
 // TestPollExchange: the poller's request against a loopback test server, for each outcome the
-// contract names. The request carries no credential and only If-None-Match as a conditional.
+// contract names. The request carries no credential and no conditional header.
 func TestPollExchange(t *testing.T) {
 	var seen *http.Request
 	var status int
 	var contentType string
 	var respBody []byte
-	var etag string
 
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -536,9 +539,6 @@ func TestPollExchange(t *testing.T) {
 		seen = r
 		if contentType != "" {
 			w.Header().Set("Content-Type", contentType)
-		}
-		if etag != "" {
-			w.Header().Set("ETag", etag)
 		}
 		if status == 302 {
 			w.Header().Set("Location", "http://127.0.0.1:1/elsewhere")
@@ -562,29 +562,24 @@ func TestPollExchange(t *testing.T) {
 		status      int
 		contentType string
 		body        []byte
-		etag        string
-		stored      string
 		want        string
 		wantCard    bool
 	}{
-		{"valid card", 200, "application/json", good, `"e1"`, "", protocol.PollOK, true},
-		{"not modified with a stored card", 304, "", nil, "", `"e1"`, protocol.PollNotModified, false},
-		{"not modified with nothing stored", 304, "", nil, "", "", protocol.PollHTTPStatus, false},
-		{"redirect", 302, "", nil, "", "", protocol.PollRedirect, false},
-		{"server error", 500, "", nil, "", "", protocol.PollHTTPStatus, false},
-		{"not json", 200, "text/html", []byte("<html>"), "", "", protocol.PollInvalid, false},
-		{"bad card", 200, "application/json", []byte(`{"name":5}`), "", "", protocol.PollInvalid, false},
-		{"oversize", 200, "application/json", []byte(strings.Repeat(" ", protocol.MaxCardPollBytes+10)), "", "", protocol.PollOversize, false},
+		{"valid card", 200, "application/json", good, protocol.PollOK, true},
+		{"304 although nothing conditional was sent", 304, "", nil, protocol.PollHTTPStatus, false},
+		{"503 with a JSON body is no card", 503, "application/json", []byte(`{"error":"card_unavailable"}`), protocol.PollHTTPStatus, false},
+		{"redirect", 302, "", nil, protocol.PollRedirect, false},
+		{"server error", 500, "", nil, protocol.PollHTTPStatus, false},
+		{"not json", 200, "text/html", []byte("<html>"), protocol.PollInvalid, false},
+		{"bad card", 200, "application/json", []byte(`{"name":5}`), protocol.PollInvalid, false},
+		{"oversize", 200, "application/json", []byte(strings.Repeat(" ", protocol.MaxCardPollBytes+10)), protocol.PollOversize, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status, contentType, respBody, etag = tc.status, tc.contentType, tc.body, tc.etag
-			if tc.name == "valid card" {
-				etag = `"e1"`
-			}
+			status, contentType, respBody = tc.status, tc.contentType, tc.body
 			seen = nil
 
-			record := poller.exchange(context.Background(), target, tc.stored)
+			record := poller.exchange(context.Background(), target)
 			if record.Outcome != tc.want {
 				t.Fatalf("outcome = %q (%s), want %q", record.Outcome, record.Reason, tc.want)
 			}
@@ -599,8 +594,8 @@ func TestPollExchange(t *testing.T) {
 					t.Fatalf("the poll sent %s", header)
 				}
 			}
-			if got := seen.Header.Get("If-None-Match"); got != tc.stored {
-				t.Fatalf("If-None-Match = %q, want %q", got, tc.stored)
+			if got := seen.Header.Get("If-None-Match"); got != "" {
+				t.Fatalf("the poll sent If-None-Match %q", got)
 			}
 			if seen.Header.Get("Accept") != "application/json" {
 				t.Fatalf("Accept = %q", seen.Header.Get("Accept"))
@@ -625,7 +620,7 @@ func TestPollExchangeRefusedConnection(t *testing.T) {
 
 	target := CardTarget{Host: "vmb", Scheme: "http", Addr: addr, Class: ClassLoopback}
 	poller := newCardPoller(nil, time.Minute, time.Now, nil, nil)
-	record := poller.exchange(context.Background(), target, "")
+	record := poller.exchange(context.Background(), target)
 	if record.Outcome != protocol.PollRefused {
 		t.Fatalf("outcome = %q", record.Outcome)
 	}

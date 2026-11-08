@@ -58,7 +58,10 @@ func cardFileStatusLines(view *protocol.CardFileView) []string {
 	lines = append(lines, "card.yaml: "+escapeCardText(view.Path))
 	lines = append(lines, "file: "+cardFileStateText(view.File.State))
 	if view.File.Line > 0 || view.File.Message != "" {
-		line := "file problem"
+		line := "file status: "
+		if view.File.State == protocol.CardFileInvalid || view.File.State == protocol.CardFileMissing {
+			line = "file problem: "
+		}
 		if view.File.Line > 0 {
 			line = fmt.Sprintf("line %d: ", view.File.Line)
 		}
@@ -127,8 +130,8 @@ func cardFileStateText(state string) string {
 	switch state {
 	case protocol.CardFileOK:
 		return "valid"
-	case protocol.CardFileNeedsDescription:
-		return "needs description"
+	case protocol.CardFileDefaulted:
+		return "serving the default description; set description: in card.yaml"
 	case protocol.CardFileInvalid:
 		return "invalid"
 	case protocol.CardFileMissing:

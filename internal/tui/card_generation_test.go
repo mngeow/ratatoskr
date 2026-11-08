@@ -91,6 +91,21 @@ func TestCardListenerAndFileValidityStaySeparate(t *testing.T) {
 	}
 }
 
+func TestDefaultedCardIsServingWithoutErrorAndKeepsPath(t *testing.T) {
+	v := protocol.CardFileView{Path: "/owner/card.yaml", File: protocol.CardFileStatus{State: protocol.CardFileDefaulted, Message: "serving the default description; set description: in card.yaml"}, Served: &protocol.CardServed{Current: true}, Listener: protocol.CardListener{State: protocol.CardListenerListening, Addr: "0.0.0.0:7778"}}
+	text := strings.Join(cardFileStatusLines(&v), "\n")
+	for _, want := range []string{v.Path, v.File.Message, "served: the current card", "+ listening:"} {
+		if !strings.Contains(text, want) {
+			t.Fatal(want, text)
+		}
+	}
+	for _, unwanted := range []string{"file problem", "needs description", "unknown to this build", "no card is being served"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatal(unwanted, text)
+		}
+	}
+}
+
 func TestCardPreparedBytesEscapesAndRewriteReview(t *testing.T) {
 	d := &protocol.CardDraft{State: protocol.CardDraftPrepared, Argv: []string{"model", "a b", "\u202e"}, Payload: "one\t\x1b\xff\n", PayloadBytes: 8, Caveats: []string{"may load owner hooks and MCP"}}
 	text := strings.Join(cardDraftReviewLines(d), "\n")

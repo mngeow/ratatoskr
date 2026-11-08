@@ -93,8 +93,9 @@ type Loaded struct {
 	Decoded bool
 	// Valid says the file decoded and the projected card passes every rule.
 	Valid bool
-	// NeedsDescription says the only fault is the missing card description (the template state).
-	NeedsDescription bool
+	// Defaulted says the file's description is empty, so the card carries DefaultDescription instead
+	// (contract section 15). The file is never rewritten; Owner keeps the file's own empty value.
+	Defaulted bool
 }
 
 var yamlLine = regexp.MustCompile(`line (\d+)`)
@@ -147,16 +148,32 @@ func Load(data []byte, host string, evidence map[string]protocol.SkillEvidence) 
 	}
 
 	loaded.Decoded = true
-	loaded.Card = Project(loaded.Owner, host, evidence)
+	projected := loaded.Owner
+	if strings.TrimSpace(projected.Description) == "" {
+		loaded.Defaulted = true
+		projected.Description = DefaultDescription(projected.Name, host)
+	}
+	loaded.Card = Project(projected, host, evidence)
 	problems := Validate(loaded.Card, false)
 	problems = append(problems, CheckPublic(loaded.Card)...)
 	for _, problem := range problems {
 		fail(reader.lineFor(problem.Field), problem.Field, problem.Message)
 	}
 	loaded.Valid = len(loaded.Problems) == 0
-	loaded.NeedsDescription = len(loaded.Problems) == 1 && loaded.Problems[0].Field == "description" &&
-		strings.TrimSpace(loaded.Owner.Description) == ""
+	loaded.Defaulted = loaded.Defaulted && loaded.Valid
 	return loaded
+}
+
+// DefaultDescription is the card description served when the owner's is empty. It is plain and says
+// the owner wrote nothing.
+func DefaultDescription(name, host string) string {
+	if name == "" {
+		name = host
+	}
+	if name == "" {
+		name = "host"
+	}
+	return "Ratatoskr host daemon on " + name + ". The owner has not written a description."
 }
 
 // ownerReader walks the YAML tree. lines maps a field path to the line it is written on.
@@ -426,7 +443,8 @@ func Project(owner Owner, host string, evidence map[string]protocol.SkillEvidenc
 	}
 }
 
-// templateText is what a new card.yaml holds. It does not validate until description is filled.
+// templateText is what a new card.yaml holds. It is valid as it stands: an empty description serves the
+// default text.
 const templateText = `# Ratatoskr host card. Edit this file in your own editor; the daemon notices the change within
 # a couple of seconds and serves the new card.
 #
@@ -437,7 +455,8 @@ const templateText = `# Ratatoskr host card. Edit this file in your own editor; 
 
 name: "%s"          # shown to other hosts
 
-# REQUIRED. One sentence saying what this host is for. The card is not served until this is filled.
+# One sentence saying what this host is for. If it stays empty, the card says only that this is a
+# Ratatoskr host daemon and that the owner has not written a description.
 description: ""
 
 version: "1"        # digits only

@@ -34,8 +34,8 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway hosts                      list paired hosts and their state
        rtk gateway log [--follow] [--limit N] read the gateway's ledger
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
-       rtk gateway --listen ADDR [--card-poll-interval 60s]
-                                              how often the gateway polls registered card targets (10s to 1h)
+       rtk gateway --listen ADDR [--card-poll-interval 5s]
+                                              how often the gateway polls registered card targets (2s to 1h, default 5s)
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway

@@ -34,13 +34,16 @@ func problemAt(loaded Loaded, line int) *LineProblem {
 	return nil
 }
 
-func TestLoadTemplateNeedsADescription(t *testing.T) {
+func TestLoadTemplateServesTheDefaultDescription(t *testing.T) {
 	loaded := Load(Template("vmb"), "vmb", nil)
-	if loaded.Valid || !loaded.NeedsDescription || !loaded.Decoded {
-		t.Fatalf("template: valid=%v needs=%v decoded=%v problems=%+v", loaded.Valid, loaded.NeedsDescription, loaded.Decoded, loaded.Problems)
+	if !loaded.Valid || !loaded.Defaulted || !loaded.Decoded || len(loaded.Problems) != 0 {
+		t.Fatalf("template: valid=%v defaulted=%v decoded=%v problems=%+v", loaded.Valid, loaded.Defaulted, loaded.Decoded, loaded.Problems)
 	}
-	if len(loaded.Problems) != 1 || loaded.Problems[0].Line == 0 {
-		t.Fatalf("problems = %+v, want one with a line", loaded.Problems)
+	if want := "Ratatoskr host daemon on vmb. The owner has not written a description."; loaded.Card.Description != want {
+		t.Fatalf("description = %q", loaded.Card.Description)
+	}
+	if loaded.Owner.Description != "" || len(loaded.Card.Skills) != 0 {
+		t.Fatalf("owner description %q, skills %d", loaded.Owner.Description, len(loaded.Card.Skills))
 	}
 	if loaded.Owner.Drafting.Preset != PresetClaude {
 		t.Fatalf("template preset = %q", loaded.Owner.Drafting.Preset)
@@ -170,8 +173,12 @@ func TestLoadRefusesAliasesBadYAMLAndSize(t *testing.T) {
 	if loaded := Load([]byte("name: a\x00\n"), "h", nil); loaded.Decoded {
 		t.Fatal("NUL accepted")
 	}
-	if loaded := Load(nil, "h", nil); loaded.Valid || !loaded.NeedsDescription {
+	if loaded := Load(nil, "h", nil); !loaded.Valid || !loaded.Defaulted {
 		t.Fatalf("empty file: %+v", loaded)
+	}
+	// A written description is used as written, and a bad one is still an error.
+	if loaded := Load([]byte("description: Mine.\n"), "h", nil); !loaded.Valid || loaded.Defaulted || loaded.Card.Description != "Mine." {
+		t.Fatalf("written description: %+v", loaded)
 	}
 }
 

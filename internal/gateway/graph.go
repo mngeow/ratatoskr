@@ -280,7 +280,6 @@ func (s *Server) graphCard(st *graphState, host string, row CardRow, now time.Ti
 		State:         Freshness(now, row.LastOKAt, haveCard, row.LastResult, interval),
 		Restored:      row.Host != "" && !s.cards.polledSinceBoot(host),
 		Revision:      row.Revision,
-		ETag:          row.ETag,
 		LastOKAt:      protocol.FormatTime(row.LastOKAt),
 		LastAttemptAt: protocol.FormatTime(row.LastAttemptAt),
 		LastResult:    row.LastResult,

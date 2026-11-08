@@ -68,7 +68,6 @@ type renderedCard struct {
 	hash string
 	url  string
 	body []byte
-	etag string
 	ok   bool
 }
 
@@ -256,11 +255,11 @@ func (s *cardService) note(data []byte, stamp fileStamp, state string, line int,
 	switch {
 	case loaded.Valid:
 		s.status.State = protocol.CardFileOK
+		if loaded.Defaulted {
+			s.status.State = protocol.CardFileDefaulted
+			s.status.Message = "serving the default description; set description: in card.yaml"
+		}
 		s.adopt(loaded.Card)
-	case loaded.NeedsDescription:
-		s.status.State = protocol.CardFileNeedsDescription
-		s.status.Line = loaded.Problems[0].Line
-		s.status.Message = "description is required: say in a sentence what this host is for"
 	default:
 		s.status.State = protocol.CardFileInvalid
 		first := loaded.Problems[0]
@@ -287,34 +286,55 @@ func (s *cardService) adopt(projected protocol.HostCard) {
 }
 
 // servedBytes is the card as the listener serves it: canonical bytes with the card's own URL filled in
-// from the BOUND listener address (never from a request header), and the ETag of exactly those bytes.
+// from the BOUND listener address (never from a request header), .
 // ok is false when no card is served or the listener is not listening. The file is checked first, so
 // an edit is visible to the next request.
 //
 // UNTESTED.
-func (s *cardService) servedBytes() (body []byte, etag string, ok bool) {
+func (s *cardService) servedBytes() (body []byte, ok bool) {
+	body, _ = s.serve()
+	return body, body != nil
+}
+
+// The reasons a public 503 can give (contract section 15). They are fixed words: never the file's path,
+// a line, a value or an error's text.
+const (
+	unavailableOwnerFileInvalid = "owner_file_invalid"
+	unavailableOwnerFileMissing = "owner_file_missing"
+	unavailableListenerURL      = "listener_url_unavailable"
+	unavailableFailedValidation = "card_failed_validation"
+)
+
+// serve is servedBytes with the reason there is no card when there is none. The file is checked first.
+func (s *cardService) serve() (body []byte, reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refresh(false)
 
-	if s.served == nil || s.listener.State != protocol.CardListenerListening || s.listener.URL == "" {
-		return nil, "", false
+	if s.served == nil {
+		if s.status.State == protocol.CardFileMissing {
+			return nil, unavailableOwnerFileMissing
+		}
+		return nil, unavailableOwnerFileInvalid
+	}
+	if s.listener.State != protocol.CardListenerListening || s.listener.URL == "" {
+		return nil, unavailableListenerURL
 	}
 	if s.rendered.ok && s.rendered.hash == s.served.hash && s.rendered.url == s.listener.URL {
-		return s.rendered.body, s.rendered.etag, true
+		return s.rendered.body, ""
 	}
 
 	canonical, err := card.Canonical(card.WithURL(s.served.card, s.listener.URL))
 	if err != nil {
-		return nil, "", false
+		return nil, unavailableFailedValidation
 	}
 	// The same rules the gateway applies: a card this build would reject is not served.
 	if _, problems := card.Parse(canonical, card.Strict, true); len(problems) > 0 {
 		s.log.logf("the card is not valid as served; it is not served")
-		return nil, "", false
+		return nil, unavailableFailedValidation
 	}
-	s.rendered = renderedCard{hash: s.served.hash, url: s.listener.URL, body: canonical, etag: card.ETag(canonical), ok: true}
-	return s.rendered.body, s.rendered.etag, true
+	s.rendered = renderedCard{hash: s.served.hash, url: s.listener.URL, body: canonical, ok: true}
+	return s.rendered.body, ""
 }
 
 // view builds the answer. The caller holds the mutex.

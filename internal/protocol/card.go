@@ -119,7 +119,6 @@ type CardSkill struct {
 // connection.
 const (
 	PollOK          = "200"          // valid card
-	PollNotModified = "304"          // endpoint reachable, card unchanged
 	PollTimeout     = "timeout"      // connect or total time ran out
 	PollRefused     = "refused"      // connection refused or otherwise not made
 	PollRedirect    = "redirect"     // a 3xx; never followed
@@ -214,10 +213,10 @@ const DefaultCardListen = "0.0.0.0:7778"
 
 // States of the owner's card.yaml.
 const (
-	CardFileOK               = "ok"                // valid; this is the served card
-	CardFileNeedsDescription = "needs_description" // the template, or a file whose only fault is a missing description
-	CardFileInvalid          = "invalid"           // does not parse or validate; the last good card (if any) stays served
-	CardFileMissing          = "missing"           // no file; the daemon writes the template at start
+	CardFileOK        = "ok"        // valid; this is the served card
+	CardFileDefaulted = "defaulted" // valid and served, with the default description because the file's is empty; not an error
+	CardFileInvalid   = "invalid"   // does not parse or validate; the last good card (if any) stays served
+	CardFileMissing   = "missing"   // no file; the daemon writes the template at start
 )
 
 // CardListener is whether this daemon serves its card, and where. Addr and URL are set only when

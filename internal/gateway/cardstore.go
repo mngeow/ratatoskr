@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/mngeow/ratatoskr/internal/protocol"
 	"net/netip"
 	"time"
 )
@@ -35,7 +36,6 @@ type CardRow struct {
 	Host          string
 	CardJSON      string // canonical bytes of the last good card; "" when none
 	Revision      string
-	ETag          string
 	Hash          string
 	UnknownFields int
 	FetchedAt     time.Time
@@ -63,7 +63,6 @@ type PollRecord struct {
 
 	CardJSON      string
 	Revision      string
-	ETag          string
 	Hash          string
 	UnknownFields int
 }
@@ -229,7 +228,7 @@ func (s *Store) CardTargets(ctx context.Context) ([]CardTarget, []string, error)
 // UNTESTED.
 func (s *Store) CardRows(ctx context.Context) (map[string]CardRow, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT host, card_json, revision, etag, hash, unknown_fields, fetched_at, last_ok_at, last_attempt_at,
+		`SELECT host, card_json, revision, hash, unknown_fields, fetched_at, last_ok_at, last_attempt_at,
 		        last_result, last_reason FROM host_cards`)
 	if err != nil {
 		return nil, fmt.Errorf("gateway: list cards: %w", err)
@@ -242,7 +241,7 @@ func (s *Store) CardRows(ctx context.Context) (map[string]CardRow, error) {
 	for rows.Next() {
 		var row CardRow
 		var fetched, lastOK, lastAttempt sql.NullInt64
-		if err := rows.Scan(&row.Host, &row.CardJSON, &row.Revision, &row.ETag, &row.Hash, &row.UnknownFields,
+		if err := rows.Scan(&row.Host, &row.CardJSON, &row.Revision, &row.Hash, &row.UnknownFields,
 			&fetched, &lastOK, &lastAttempt, &row.LastResult, &row.LastReason); err != nil {
 			return nil, fmt.Errorf("gateway: list cards: %w", err)
 		}
@@ -267,15 +266,29 @@ func (s *Store) CardRows(ctx context.Context) (map[string]CardRow, error) {
 //
 //   - 200 (card fields set): the previous card, if its hash differs, becomes an older revision (the
 //     newest 20 are kept) and the new one replaces it;
-//   - 304: last_ok_at moves, the card stays;
+//   - 200 with the same hash: no revision; last_ok_at and fetched_at move;
 //   - anything else: only the attempt is recorded and the last good card stays, so a failed poll can
 //     never erase what the gateway last saw.
 //
 // UNTESTED.
 func (s *Store) RecordPoll(ctx context.Context, record PollRecord) (applied bool, err error) {
+	applied, _, err = s.RecordPollChange(ctx, record)
+	return applied, err
+}
+
+// RecordPollChange is RecordPoll that also says whether anything a reader sees changed: the stored card,
+// the result class or the reason. A repeated identical success moves last_ok_at only, and is not a change
+// (contract section 16.5), so it must not wake the graph's long polls.
+//
+// Attempt history at a 5 s rate: a row is written for every failure and for the first success after a
+// failure, after a card change or with no history; consecutive identical successes update host_cards
+// only.
+//
+// UNTESTED.
+func (s *Store) RecordPollChange(ctx context.Context, record PollRecord) (applied, changed bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("gateway: begin poll record: %w", err)
+		return false, false, fmt.Errorf("gateway: begin poll record: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback()
@@ -284,71 +297,75 @@ func (s *Store) RecordPoll(ctx context.Context, record PollRecord) (applied bool
 	var updated int64
 	err = tx.QueryRowContext(ctx, `SELECT updated_at FROM host_card_targets WHERE host=?`, record.Host).Scan(&updated)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && updated != record.TargetUpdatedAt.UnixMilli()) {
-		return false, nil
+		return false, false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("gateway: read card target: %w", err)
-	}
-
-	var status any
-	if record.Status != 0 {
-		status = record.Status
-	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO poll_attempts(host, at, outcome, http_status, duration_ms, reason) VALUES(?,?,?,?,?,?)`,
-		record.Host, record.At.UnixMilli(), record.Outcome, status, record.Duration.Milliseconds(), record.Reason); err != nil {
-		return false, fmt.Errorf("gateway: record poll attempt: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM poll_attempts WHERE host=? AND (at < ? OR id NOT IN
-		   (SELECT id FROM poll_attempts WHERE host=? ORDER BY id DESC LIMIT ?))`,
-		record.Host, record.At.Add(-pollAttemptsKeptFor).UnixMilli(), record.Host, maxPollAttemptsKept); err != nil {
-		return false, fmt.Errorf("gateway: prune poll attempts: %w", err)
+		return false, false, fmt.Errorf("gateway: read card target: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO host_cards(host) VALUES(?)`, record.Host); err != nil {
-		return false, fmt.Errorf("gateway: create card row: %w", err)
+		return false, false, fmt.Errorf("gateway: create card row: %w", err)
+	}
+	var prevResult, prevReason, prevHash string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(last_result,''), COALESCE(last_reason,''), COALESCE(hash,'') FROM host_cards WHERE host=?`, record.Host).
+		Scan(&prevResult, &prevReason, &prevHash); err != nil {
+		return false, false, fmt.Errorf("gateway: read card row: %w", err)
+	}
+	cardChanged := record.CardJSON != "" && record.Hash != prevHash
+	changed = cardChanged || record.Outcome != prevResult || record.Reason != prevReason
+
+	if record.Outcome != protocol.PollOK || prevResult != protocol.PollOK || cardChanged {
+		var status any
+		if record.Status != 0 {
+			status = record.Status
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO poll_attempts(host, at, outcome, http_status, duration_ms, reason) VALUES(?,?,?,?,?,?)`,
+			record.Host, record.At.UnixMilli(), record.Outcome, status, record.Duration.Milliseconds(), record.Reason); err != nil {
+			return false, false, fmt.Errorf("gateway: record poll attempt: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM poll_attempts WHERE host=? AND (at < ? OR id NOT IN
+			   (SELECT id FROM poll_attempts WHERE host=? ORDER BY id DESC LIMIT ?))`,
+			record.Host, record.At.Add(-pollAttemptsKeptFor).UnixMilli(), record.Host, maxPollAttemptsKept); err != nil {
+			return false, false, fmt.Errorf("gateway: prune poll attempts: %w", err)
+		}
 	}
 
 	switch {
 	case record.CardJSON != "":
 		if err := replaceCardTx(ctx, tx, record); err != nil {
-			return false, err
-		}
-	case record.Outcome == "304":
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE host_cards SET last_ok_at=?, last_attempt_at=?, last_result=?, last_reason=? WHERE host=?`,
-			record.At.UnixMilli(), record.At.UnixMilli(), record.Outcome, record.Reason, record.Host); err != nil {
-			return false, fmt.Errorf("gateway: record 304: %w", err)
+			return false, false, err
 		}
 	default:
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE host_cards SET last_attempt_at=?, last_result=?, last_reason=? WHERE host=?`,
 			record.At.UnixMilli(), record.Outcome, record.Reason, record.Host); err != nil {
-			return false, fmt.Errorf("gateway: record failed poll: %w", err)
+			return false, false, fmt.Errorf("gateway: record failed poll: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("gateway: commit poll record: %w", err)
+		return false, false, fmt.Errorf("gateway: commit poll record: %w", err)
 	}
-	return true, nil
+	return true, changed, nil
 }
 
 // replaceCardTx stores a good card, moving a different previous one into the revision history.
 func replaceCardTx(ctx context.Context, tx *sql.Tx, record PollRecord) error {
-	var oldJSON, oldRevision, oldETag, oldHash string
+	var oldJSON, oldRevision, oldHash string
 	var oldFetched sql.NullInt64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT card_json, revision, etag, hash, fetched_at FROM host_cards WHERE host=?`, record.Host).
-		Scan(&oldJSON, &oldRevision, &oldETag, &oldHash, &oldFetched); err != nil {
+		`SELECT card_json, revision, hash, fetched_at FROM host_cards WHERE host=?`, record.Host).
+		Scan(&oldJSON, &oldRevision, &oldHash, &oldFetched); err != nil {
 		return fmt.Errorf("gateway: read stored card: %w", err)
 	}
 
 	if oldJSON != "" && oldHash != record.Hash {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO card_revisions(host, revision, etag, hash, card_json, fetched_at) VALUES(?,?,?,?,?,?)`,
-			record.Host, oldRevision, oldETag, oldHash, oldJSON, timeFrom(oldFetched).UnixMilli()); err != nil {
+			`INSERT INTO card_revisions(host, revision, etag, hash, card_json, fetched_at) VALUES(?,?,'',?,?,?)`,
+			record.Host, oldRevision, oldHash, oldJSON, timeFrom(oldFetched).UnixMilli()); err != nil {
 			return fmt.Errorf("gateway: keep older card: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -360,9 +377,9 @@ func replaceCardTx(ctx context.Context, tx *sql.Tx, record PollRecord) error {
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE host_cards SET card_json=?, revision=?, etag=?, hash=?, unknown_fields=?, fetched_at=?, last_ok_at=?,
+		`UPDATE host_cards SET card_json=?, revision=?, hash=?, unknown_fields=?, fetched_at=?, last_ok_at=?,
 		   last_attempt_at=?, last_result=?, last_reason=? WHERE host=?`,
-		record.CardJSON, record.Revision, record.ETag, record.Hash, record.UnknownFields,
+		record.CardJSON, record.Revision, record.Hash, record.UnknownFields,
 		record.At.UnixMilli(), record.At.UnixMilli(), record.At.UnixMilli(), record.Outcome, record.Reason, record.Host); err != nil {
 		return fmt.Errorf("gateway: store card: %w", err)
 	}

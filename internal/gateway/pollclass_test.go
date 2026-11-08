@@ -159,19 +159,26 @@ func TestClassifyPollTable(t *testing.T) {
 			wantReason:  reasonRedirect,
 		},
 		{
-			name:        "304 confirmed",
-			in:          PollInput{Status: 304, SentIfNoneMatch: true, HaveStoredCard: true},
-			wantOutcome: protocol.PollNotModified,
+			name:        "300",
+			in:          PollInput{Status: 300},
+			wantOutcome: protocol.PollRedirect,
+			wantReason:  reasonRedirect,
 		},
 		{
-			name:        "304 without a conditional",
-			in:          PollInput{Status: 304, HaveStoredCard: true},
-			wantOutcome: protocol.PollHTTPStatus,
-			wantReason:  reason304,
+			name:        "303",
+			in:          PollInput{Status: 303},
+			wantOutcome: protocol.PollRedirect,
+			wantReason:  reasonRedirect,
 		},
 		{
-			name:        "304 without a stored card",
-			in:          PollInput{Status: 304, SentIfNoneMatch: true},
+			name:        "305",
+			in:          PollInput{Status: 305},
+			wantOutcome: protocol.PollRedirect,
+			wantReason:  reasonRedirect,
+		},
+		{
+			name:        "304 is a status with the compatibility reason, never success or a redirect",
+			in:          PollInput{Status: 304},
 			wantOutcome: protocol.PollHTTPStatus,
 			wantReason:  reason304,
 		},
@@ -252,6 +259,12 @@ func TestClassifyPollTable(t *testing.T) {
 			in:          PollInput{Status: 401},
 			wantOutcome: protocol.PollHTTPStatus,
 			wantReason:  reasonHTTPStatus + "401",
+		},
+		{
+			name:        "503 with a JSON body is no card, and is not parsed",
+			in:          PollInput{Status: 503, ContentType: "application/json"},
+			wantOutcome: protocol.PollHTTPStatus,
+			wantReason:  reasonNoCard,
 		},
 		{
 			name:        "404",
@@ -335,7 +348,6 @@ func TestClassifyPollReasonsLeakNothing(t *testing.T) {
 func TestSucceededAndRejection(t *testing.T) {
 	outcomes := []string{
 		protocol.PollOK,
-		protocol.PollNotModified,
 		protocol.PollTimeout,
 		protocol.PollRefused,
 		protocol.PollRedirect,
@@ -347,7 +359,7 @@ func TestSucceededAndRejection(t *testing.T) {
 		"something-else",
 	}
 
-	wantSucceeded := map[string]bool{protocol.PollOK: true, protocol.PollNotModified: true}
+	wantSucceeded := map[string]bool{protocol.PollOK: true}
 	wantRejection := map[string]bool{
 		protocol.PollInvalid: true, protocol.PollOversize: true, protocol.PollCertificate: true,
 	}
@@ -368,6 +380,8 @@ func TestOfflineAfter(t *testing.T) {
 		interval time.Duration
 		want     time.Duration
 	}{
+		{interval: 2 * time.Second, want: 15 * time.Minute},
+		{interval: 5 * time.Second, want: 15 * time.Minute},
 		{interval: 10 * time.Second, want: 15 * time.Minute},
 		{interval: time.Minute, want: 15 * time.Minute},
 		{interval: 7*time.Minute + 30*time.Second, want: 30 * time.Minute},
@@ -445,7 +459,7 @@ func TestFreshness(t *testing.T) {
 			interval: time.Minute, want: protocol.CardFresh,
 		},
 		{
-			name: "zero interval falls back to a minute", lastOK: now.Add(-90 * time.Second), haveCard: true,
+			name: "zero interval falls back to the default", lastOK: now.Add(-90 * time.Second), haveCard: true,
 			interval: 0, want: protocol.CardStale,
 		},
 		{
@@ -461,5 +475,56 @@ func TestFreshness(t *testing.T) {
 				t.Fatalf("Freshness = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestClassifyEveryRedirectCodeButNotModified: for every code from 300 to 399 only 304 is not a redirect,
+// and a 304 is an http-status with the compatibility reason: never success, never a redirect, never parsed.
+func TestClassifyEveryRedirectCodeButNotModified(t *testing.T) {
+	for status := 300; status <= 399; status++ {
+		got := ClassifyPoll(PollInput{Status: status})
+		want, reason := protocol.PollRedirect, reasonRedirect
+		if status == 304 {
+			want, reason = protocol.PollHTTPStatus, reason304
+		}
+		if got.Outcome != want || got.Reason != reason || got.ParseBody || Succeeded(got.Outcome) {
+			t.Fatalf("status %d = %+v, want outcome %q reason %q", status, got, want, reason)
+		}
+	}
+}
+
+// TestFreshWindow: two intervals, never under fifteen seconds, so one lost poll at the 5 s default does
+// not flip a host to stale.
+func TestFreshWindow(t *testing.T) {
+	for _, tc := range []struct{ interval, want time.Duration }{
+		{0, 15 * time.Second},
+		{2 * time.Second, 15 * time.Second},
+		{5 * time.Second, 15 * time.Second},
+		{7500 * time.Millisecond, 15 * time.Second},
+		{10 * time.Second, 20 * time.Second},
+		{time.Minute, 2 * time.Minute},
+	} {
+		if got := FreshWindow(tc.interval); got != tc.want {
+			t.Fatalf("FreshWindow(%v) = %v, want %v", tc.interval, got, tc.want)
+		}
+	}
+}
+
+// TestFreshnessAtTheDefaultInterval: fresh at 15 s, stale just after, offline at fifteen minutes as before.
+func TestFreshnessAtTheDefaultInterval(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		age  time.Duration
+		want string
+	}{
+		{0, protocol.CardFresh},
+		{15 * time.Second, protocol.CardFresh},
+		{15*time.Second + time.Millisecond, protocol.CardStale},
+		{15*time.Minute - time.Second, protocol.CardStale},
+		{15 * time.Minute, protocol.CardOffline},
+	} {
+		if got := Freshness(now, now.Add(-tc.age), true, protocol.PollOK, DefaultCardPollInterval); got != tc.want {
+			t.Fatalf("age %v = %q, want %q", tc.age, got, tc.want)
+		}
 	}
 }

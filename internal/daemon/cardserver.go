@@ -23,6 +23,7 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -41,7 +42,7 @@ const (
 	cardServerTimeout   = 5 * time.Second // UNTESTED guess; contract default
 	cardServerMaxHeader = 8 << 10         // UNTESTED guess; contract default
 	cardServerShutdown  = 2 * time.Second // UNTESTED guess
-	cardCacheControl    = "max-age=30"    // UNTESTED guess; contract default
+	cardCacheControl    = "no-store"      // every poll gets the full, current card (contract section 16.1)
 
 	// cardListenOff is the --card-listen value that turns the listener off.
 	cardListenOff = "off"
@@ -117,10 +118,16 @@ func bindReason(err error) string {
 // interface address, Tailscale (100.64.0.0/10) first, then a private LAN address, then any other
 // non-loopback one, and falls back to loopback. The URL is information for readers; nothing dials it.
 func advertiseAddress(bound netip.AddrPort) netip.AddrPort {
+	return advertiseFrom(bound, net.InterfaceAddrs)
+}
+
+// advertiseFrom is advertiseAddress with the interface list passed in, so a test can give it Tailscale,
+// LAN, none or an error.
+func advertiseFrom(bound netip.AddrPort, interfaces func() ([]net.Addr, error)) netip.AddrPort {
 	if !bound.Addr().IsUnspecified() {
 		return bound
 	}
-	addresses, err := net.InterfaceAddrs()
+	addresses, err := interfaces()
 	if err != nil {
 		return netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), bound.Port())
 	}
@@ -215,25 +222,17 @@ func (c *cardServer) handler() http.Handler {
 	return router
 }
 
-// serveCard answers a card request: the published bytes with a validator, a 304 for a matching
-// If-None-Match, or a bodyless 503 when nothing is published.
+// serveCard answers a card request: always the full published bytes with a 200 (If-None-Match is
+// ignored: no ETag, no 304, contract section 16.1), or a 503 with a small fixed JSON body when there is no card (contract section 15).
 func (c *cardServer) serveCard(w http.ResponseWriter, r *http.Request) {
-	body, etag, ok := c.service.servedBytes()
-	if !ok {
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusServiceUnavailable)
+	body, reason := c.service.serve()
+	if body == nil {
+		unavailable(w, r, reason)
 		return
 	}
 
-	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", cardCacheControl)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-
-	if etagMatches(r.Header.Get("If-None-Match"), etag) {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
@@ -241,18 +240,23 @@ func (c *cardServer) serveCard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// etagMatches reports whether an If-None-Match header names the current validator. The comparison is
-// the weak one RFC 9110 prescribes for If-None-Match (a W/ prefix is ignored), and "*" matches
-// anything that exists.
-func etagMatches(header, etag string) bool {
-	for _, candidate := range strings.Split(header, ",") {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "*" {
-			return true
-		}
-		if strings.TrimPrefix(candidate, "W/") == strings.TrimPrefix(etag, "W/") {
-			return true
-		}
+// unavailableAction is the one sentence a 503 carries. It names nothing of this host.
+const unavailableAction = "The host owner must fix card.yaml; run rtk daemon status on the host."
+
+// unavailable answers 503 with a fixed JSON body: the reason code and a fixed sentence, never a path, a
+// line number, a value from the file or an error's text. HEAD gets the headers only.
+func unavailable(w http.ResponseWriter, r *http.Request, reason string) {
+	payload, _ := json.Marshal(struct {
+		Error  string `json:"error"`
+		Reason string `json:"reason"`
+		Action string `json:"action"`
+	}{"card_unavailable", reason, unavailableAction})
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(payload)
 	}
-	return false
 }

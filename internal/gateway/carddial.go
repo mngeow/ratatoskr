@@ -26,19 +26,36 @@ import (
 )
 
 const (
-	cardConnectTimeout = 3 * time.Second // UNTESTED guess; contract default
-	cardTotalTimeout   = 5 * time.Second // UNTESTED guess; contract default
-	cardHeaderBytes    = 16 << 10        // UNTESTED guess
-	cardUserAgent      = "ratatoskr-gateway"
+	// cardMinTotalTimeout and cardMaxTotalTimeout bound one poll's total time (contract section 16.3).
+	cardMinTotalTimeout = time.Second
+	cardMaxTotalTimeout = 5 * time.Second
+	cardHeaderBytes     = 16 << 10 // UNTESTED guess
+	cardUserAgent       = "ratatoskr-gateway"
 )
+
+// cardTimeouts are the total and connect timeouts for one poll at this interval. The total is four fifths
+// of the interval within one to five seconds, so a hung host cannot make a poll outlast its tick (4 s at
+// the 5 s default); the connect timeout is three fifths of the total. A timeout is not proof the host is
+// dead.
+func cardTimeouts(interval time.Duration) (connect, total time.Duration) {
+	total = interval * 4 / 5
+	if total < cardMinTotalTimeout {
+		total = cardMinTotalTimeout
+	}
+	if total > cardMaxTotalTimeout {
+		total = cardMaxTotalTimeout
+	}
+	return total * 3 / 5, total
+}
 
 // newCardClient builds the client for one target. It is built per poll round and holds nothing
 // between polls: there is no shared TLS configuration for two targets to race on.
 //
 // UNTESTED.
-func newCardClient(target CardTarget) (*http.Client, error) {
+func newCardClient(target CardTarget, interval time.Duration) (*http.Client, error) {
+	connectTimeout, totalTimeout := cardTimeouts(interval)
 	dialer := &net.Dialer{
-		Timeout: cardConnectTimeout,
+		Timeout: connectTimeout,
 		Control: cardDialControl(target),
 	}
 
@@ -49,8 +66,8 @@ func newCardClient(target CardTarget) (*http.Client, error) {
 		DisableKeepAlives:      true,
 		DisableCompression:     true,
 		ForceAttemptHTTP2:      false,
-		TLSHandshakeTimeout:    cardConnectTimeout,
-		ResponseHeaderTimeout:  cardTotalTimeout,
+		TLSHandshakeTimeout:    connectTimeout,
+		ResponseHeaderTimeout:  totalTimeout,
 		MaxResponseHeaderBytes: cardHeaderBytes,
 		// A non-nil empty map keeps HTTP/2 off.
 		TLSNextProto: map[string]func(string, *tls.Conn) http.RoundTripper{},
@@ -66,7 +83,7 @@ func newCardClient(target CardTarget) (*http.Client, error) {
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   cardTotalTimeout,
+		Timeout:   totalTimeout,
 		// A 3xx is a failed poll and is never followed: the response itself is returned.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}, nil

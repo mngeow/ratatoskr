@@ -47,8 +47,11 @@ const (
 	reasonTimeout     = "no answer in time"
 	reasonNotMade     = "the connection was not made or was cut"
 	reasonRedirect    = "the host answered with a redirect; redirects are never followed"
-	reason304         = "the host answered 304 but there is no stored card to confirm"
+	reason304         = "the host answered 304 although no conditional request was sent; check its version"
 	reasonOversize    = "the card is larger than the poll limit"
+	// reasonNoCard is a 503: the host's card endpoint answered that it has no valid card right now. The
+	// body is never read as a card and never quoted.
+	reasonNoCard      = "the host has no card to serve right now (HTTP 503)"
 	reasonContentType = "the content type is not JSON"
 	// reasonHTTPStatus is a prefix: the integer status is appended, which is safe because a number is not
 	// an address.
@@ -65,10 +68,6 @@ type PollInput struct {
 	ContentType string
 	// BodyOverflow says the body was larger than the poll cap and the caller stopped reading.
 	BodyOverflow bool
-	// SentIfNoneMatch says the request carried If-None-Match.
-	SentIfNoneMatch bool
-	// HaveStoredCard says a valid stored card exists for this target and pin.
-	HaveStoredCard bool
 }
 
 // PollClass is one poll's classification.
@@ -100,15 +99,14 @@ func ClassifyPoll(in PollInput) PollClass {
 	}
 
 	switch {
+	// 304 is tested before the 3xx range: it is not a redirect, and the range would swallow it. The
+	// poll sends no conditional request (contract section 16), so a 304 comes only from an unusual or
+	// old daemon and is never success.
+	case in.Status == 304:
+		return PollClass{Outcome: protocol.PollHTTPStatus, Reason: reason304}
+
 	case in.Status >= 300 && in.Status <= 399:
 		return PollClass{Outcome: protocol.PollRedirect, Reason: reasonRedirect}
-
-	case in.Status == 304:
-		if in.SentIfNoneMatch && in.HaveStoredCard {
-			// Success, and nothing to parse: the stored card is the card.
-			return PollClass{Outcome: protocol.PollNotModified}
-		}
-		return PollClass{Outcome: protocol.PollHTTPStatus, Reason: reason304}
 
 	case in.Status == 200:
 		if in.BodyOverflow {
@@ -120,6 +118,9 @@ func ClassifyPoll(in PollInput) PollClass {
 		return PollClass{Outcome: protocol.PollOK, ParseBody: true}
 	}
 
+	if in.Status == 503 {
+		return PollClass{Outcome: protocol.PollHTTPStatus, Reason: reasonNoCard}
+	}
 	return PollClass{Outcome: protocol.PollHTTPStatus, Reason: reasonHTTPStatus + strconv.Itoa(in.Status)}
 }
 
@@ -205,12 +206,12 @@ func jsonContentType(header string) bool {
 
 // Succeeded reports whether an outcome means the endpoint answered usefully.
 //
-// Only a good card and a confirmed not-modified are success; a redirect, an HTTP status, a timeout, a
+// Only a good card is success; a 304, a redirect, an HTTP status, a timeout, a
 // refusal, an invalid body, an oversize body and a certificate problem are not.
 //
 // UNTESTED.
 func Succeeded(outcome string) bool {
-	return outcome == protocol.PollOK || outcome == protocol.PollNotModified
+	return outcome == protocol.PollOK
 }
 
 // Rejection reports whether an outcome means the endpoint answered with something unusable.
@@ -249,6 +250,18 @@ func OfflineAfter(interval time.Duration) time.Duration {
 	return floor
 }
 
+// FreshWindow is how old a good poll may be and still count as fresh: two intervals, or fifteen seconds
+// when that is longer, so one lost poll at the 5 s default does not flip a host to stale.
+func FreshWindow(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		interval = DefaultCardPollInterval
+	}
+	if window := 2 * interval; window > 15*time.Second {
+		return window
+	}
+	return 15 * time.Second
+}
+
 // Freshness is the card state the recorded history implies.
 //
 // A rejected latest answer outranks a recent good poll - that is what "the newest answer was refused"
@@ -258,7 +271,7 @@ func OfflineAfter(interval time.Duration) time.Duration {
 // UNTESTED.
 func Freshness(now, lastOK time.Time, haveCard bool, lastOutcome string, interval time.Duration) string {
 	if interval <= 0 {
-		interval = time.Minute
+		interval = DefaultCardPollInterval
 	}
 
 	if Rejection(lastOutcome) {
@@ -274,7 +287,7 @@ func Freshness(now, lastOK time.Time, haveCard bool, lastOutcome string, interva
 		age = 0
 	}
 
-	if age <= 2*interval {
+	if age <= FreshWindow(interval) {
 		return protocol.CardFresh
 	}
 	if age >= OfflineAfter(interval) {

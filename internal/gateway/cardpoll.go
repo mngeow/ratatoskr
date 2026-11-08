@@ -33,21 +33,21 @@ import (
 const (
 	// DefaultCardPollInterval is the poll period when the flag is not given. It is a default, not a
 	// choice the user made.
-	DefaultCardPollInterval = 60 * time.Second // UNTESTED guess; contract default
-	// MinCardPollInterval and MaxCardPollInterval bound the flag.
-	MinCardPollInterval = 10 * time.Second
+	DefaultCardPollInterval = 5 * time.Second // user decision, contract section 16
+	// MinCardPollInterval and MaxCardPollInterval bound the flag. Below two seconds the timeout rule
+	// leaves no room.
+	MinCardPollInterval = 2 * time.Second
 	MaxCardPollInterval = time.Hour
 
-	// cardScanEvery is how often the coordinator re-reads the targets from the database.
-	cardScanEvery = time.Second
+	// cardScanEvery is how often the coordinator re-reads the targets from the database. It is short
+	// enough that a 5 s schedule does not drift to 6 s.
+	cardScanEvery = 250 * time.Millisecond
 	// cardPollConcurrency bounds polls in flight across hosts.
 	cardPollConcurrency = 8
 	// cardScanTimeout bounds one read of the targets.
 	cardScanTimeout = 5 * time.Second
 	// maxReasonRunes bounds a stored reason.
 	maxReasonRunes = 200
-	// maxETagBytes bounds a stored validator.
-	maxETagBytes = 200
 )
 
 // ClampCardPollInterval puts a flag value inside the allowed range; 0 means the default.
@@ -61,6 +61,16 @@ func ClampCardPollInterval(interval time.Duration) time.Duration {
 		return MaxCardPollInterval
 	}
 	return interval
+}
+
+// nextDue is when the poll after the one due at `due` is due. It is fixed-rate: one interval after the
+// previous due time, not after `now`, so a late scan does not accumulate. A host more than one interval
+// behind starts over from now.
+func nextDue(due, now time.Time, interval time.Duration) time.Time {
+	if now.Sub(due) > interval {
+		return now.Add(interval)
+	}
+	return due.Add(interval)
 }
 
 // hostSchedule is one host's in-memory poll state.
@@ -89,6 +99,9 @@ type cardPoller struct {
 	polled map[string]bool
 	// reported holds problems already logged, so a persistent one is logged once.
 	reported map[string]bool
+	// skipped counts polls that came due while the host's previous poll was still running. They are
+	// dropped, not queued.
+	skipped map[string]int
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -109,6 +122,7 @@ func newCardPoller(store *Store, interval time.Duration, now func() time.Time, l
 		hosts:    make(map[string]*hostSchedule, 4),
 		polled:   make(map[string]bool, 4),
 		reported: make(map[string]bool, 4),
+		skipped:  make(map[string]int, 4),
 		slots:    make(chan struct{}, cardPollConcurrency),
 	}
 }
@@ -219,35 +233,37 @@ func (p *cardPoller) scan(ctx context.Context) {
 		// moves updated_at past the last attempt.
 		paused := row.LastResult == protocol.PollCertificate && !row.LastAttemptAt.Before(target.UpdatedAt)
 
-		if paused || schedule.inFlight || now.Before(schedule.next) {
+		if paused || now.Before(schedule.next) {
+			continue
+		}
+		// Fixed rate: the next poll is one interval after the one that was due, so a late scan does
+		// not accumulate. A host more than one interval behind starts over from now.
+		schedule.next = nextDue(schedule.next, now, p.interval)
+		if schedule.inFlight {
+			p.skipped[target.Host]++
 			continue
 		}
 		schedule.inFlight = true
-		schedule.next = now.Add(p.interval)
-
-		storedETag := ""
-		if row.CardJSON != "" {
-			storedETag = row.ETag
-		}
 
 		p.wg.Add(1)
-		go func(target CardTarget, storedETag string) {
+		go func(target CardTarget) {
 			defer p.wg.Done()
-			p.pollOne(ctx, target, storedETag)
-		}(target, storedETag)
+			p.pollOne(ctx, target)
+		}(target)
 	}
 	for host := range p.hosts {
 		if !present[host] {
 			// The target was cleared or the host was unpaired.
 			delete(p.hosts, host)
 			delete(p.polled, host)
+			delete(p.skipped, host)
 		}
 	}
 	p.mu.Unlock()
 }
 
 // pollOne makes one poll and stores its result.
-func (p *cardPoller) pollOne(ctx context.Context, target CardTarget, storedETag string) {
+func (p *cardPoller) pollOne(ctx context.Context, target CardTarget) {
 	slot := p.slots
 	select {
 	case slot <- struct{}{}:
@@ -258,7 +274,7 @@ func (p *cardPoller) pollOne(ctx context.Context, target CardTarget, storedETag 
 	}
 
 	started := p.now()
-	record := p.exchange(ctx, target, storedETag)
+	record := p.exchange(ctx, target)
 	record.Host = target.Host
 	record.TargetUpdatedAt = target.UpdatedAt
 	record.At = started
@@ -271,7 +287,7 @@ func (p *cardPoller) pollOne(ctx context.Context, target CardTarget, storedETag 
 	}
 
 	storeCtx, cancel := context.WithTimeout(ctx, cardScanTimeout)
-	applied, err := p.store.RecordPoll(storeCtx, record)
+	applied, changed, err := p.store.RecordPollChange(storeCtx, record)
 	cancel()
 
 	if err != nil {
@@ -284,7 +300,7 @@ func (p *cardPoller) pollOne(ctx context.Context, target CardTarget, storedETag 
 	p.mu.Unlock()
 	p.finish(target.Host)
 
-	if applied && p.onChange != nil {
+	if applied && changed && p.onChange != nil {
 		p.onChange()
 	}
 }
@@ -300,10 +316,10 @@ func (p *cardPoller) finish(host string) {
 
 // exchange does the HTTP request and turns what happened into a PollRecord (without host and times).
 //
-// The request carries no credential: no Authorization, no cookie, no host token. The only conditional
-// header is If-None-Match, and only when a valid card is stored for this target and pin.
-func (p *cardPoller) exchange(ctx context.Context, target CardTarget, storedETag string) PollRecord {
-	client, err := newCardClient(target)
+// The request carries no credential: no Authorization, no cookie, no host token, and no conditional
+// header: every poll asks for the full card (contract section 16).
+func (p *cardPoller) exchange(ctx context.Context, target CardTarget) PollRecord {
+	client, err := newCardClient(target, p.interval)
 	if err != nil {
 		// An unusable pin is a certificate-class failure; polling for the host pauses.
 		return PollRecord{Outcome: protocol.PollCertificate, Reason: "the registered fingerprint is not usable"}
@@ -315,9 +331,6 @@ func (p *cardPoller) exchange(ctx context.Context, target CardTarget, storedETag
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", cardUserAgent)
-	if storedETag != "" {
-		request.Header.Set("If-None-Match", storedETag)
-	}
 
 	response, err := client.Do(request)
 	if err != nil {
@@ -329,10 +342,8 @@ func (p *cardPoller) exchange(ctx context.Context, target CardTarget, storedETag
 	}()
 
 	input := PollInput{
-		Status:          response.StatusCode,
-		ContentType:     response.Header.Get("Content-Type"),
-		SentIfNoneMatch: storedETag != "",
-		HaveStoredCard:  storedETag != "",
+		Status:      response.StatusCode,
+		ContentType: response.Header.Get("Content-Type"),
 	}
 
 	var body []byte
@@ -366,7 +377,6 @@ func (p *cardPoller) exchange(ctx context.Context, target CardTarget, storedETag
 
 	record.CardJSON = string(canonical)
 	record.Revision = parsed.Card.Version
-	record.ETag = cleanETag(response.Header.Get("ETag"))
 	record.Hash = card.Hash(canonical)
 	record.UnknownFields = parsed.UnknownFields
 	return record
@@ -379,21 +389,6 @@ func problemReason(problem protocol.CardProblem) string {
 		return problem.Message
 	}
 	return fmt.Sprintf("%s: %s", problem.Field, problem.Message)
-}
-
-// cleanETag keeps a validator only when it is short, printable ASCII; anything else is dropped, and
-// with no validator the next poll is unconditional.
-func cleanETag(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > maxETagBytes {
-		return ""
-	}
-	for index := 0; index < len(value); index++ {
-		if value[index] < 0x20 || value[index] > 0x7e {
-			return ""
-		}
-	}
-	return value
 }
 
 // cleanLog makes a host name safe for one log line.
