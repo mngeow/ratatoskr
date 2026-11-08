@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0007 OpenRig Operator Integration</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #efede6;
+  --ink: #1f2328;
+  --muted: #5d636b;
+  --line: #d4d1c7;
+  --wire: #6f747b;
+  --accent: #8a5a00;
+  --accent-soft: #f6e8c9;
+  --claude: #b4532a;
+  --claude-soft: #f8e4da;
+  --codex: #17697a;
+  --codex-soft: #d9eef2;
+  --bridge: #4b4f9e;
+  --bridge-soft: #e3e4f6;
+  --ok: #24713f;
+  --ok-soft: #dcf0e2;
+  --warn: #93590a;
+  --warn-soft: #f8ead0;
+  --bad: #a3322b;
+  --bad-soft: #f8dfdc;
+  --focus: #1a5fd0;
+  --term: #15181c;
+  --term-ink: #d9dde2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171a;
+    --surface: #1e2125;
+    --surface-2: #2a2e33;
+    --ink: #e8e9eb;
+    --muted: #a3a9b1;
+    --line: #3b4047;
+    --wire: #8f959d;
+    --accent: #e0b35c;
+    --accent-soft: #3a2f18;
+    --claude: #e8926a;
+    --claude-soft: #3c2519;
+    --codex: #6cc4d6;
+    --codex-soft: #15323a;
+    --bridge: #a4a8ec;
+    --bridge-soft: #272a4e;
+    --ok: #74c98f;
+    --ok-soft: #17301f;
+    --warn: #e0ac5c;
+    --warn-soft: #382a12;
+    --bad: #ee8f87;
+    --bad-soft: #3b1e1b;
+    --focus: #8ab4ff;
+    --term: #0d0f12;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171a;
+  --surface: #1e2125;
+  --surface-2: #2a2e33;
+  --ink: #e8e9eb;
+  --muted: #a3a9b1;
+  --line: #3b4047;
+  --wire: #8f959d;
+  --accent: #e0b35c;
+  --accent-soft: #3a2f18;
+  --claude: #e8926a;
+  --claude-soft: #3c2519;
+  --codex: #6cc4d6;
+  --codex-soft: #15323a;
+  --bridge: #a4a8ec;
+  --bridge-soft: #272a4e;
+  --ok: #74c98f;
+  --ok-soft: #17301f;
+  --warn: #e0ac5c;
+  --warn-soft: #382a12;
+  --bad: #ee8f87;
+  --bad-soft: #3b1e1b;
+  --focus: #8ab4ff;
+  --term: #0d0f12;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+header.top { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+.kicker { color: var(--accent); font-weight: 700; font-size: .85rem; letter-spacing: .04em; margin: 0 0 6px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.35rem; margin: 44px 0 10px; line-height: 1.3; }
+h3 { font-size: 1.05rem; margin: 22px 0 6px; }
+p, ul, ol { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+li { margin-bottom: 4px; }
+a { color: var(--bridge); }
+code { font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+small, .small { font-size: .84rem; }
+.muted { color: var(--muted); }
+
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 16px 0 0; }
+.meta div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.meta dt { font-size: .78rem; color: var(--muted); }
+.meta dd { margin: 2px 0 0; font-size: .92rem; }
+
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; letter-spacing: .03em; padding: 1px 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; vertical-align: 1px; }
+.t-user { color: var(--claude); }
+.t-run { color: var(--ok); }
+.t-code { color: var(--bridge); }
+.t-arch { color: var(--accent); }
+.t-unv { color: var(--bad); }
+.t-doc { color: var(--codex); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.card h3:first-child { margin-top: 0; }
+.card.does { border-top: 4px solid var(--ok); }
+.card.doesnt { border-top: 4px dashed var(--bad); }
+
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; max-width: 90ch; }
+.note p:last-child { margin-bottom: 0; }
+
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: .92rem; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+pre { background: var(--term); color: var(--term-ink); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 12px; }
+.node {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-weight: 600; line-height: 1.25;
+}
+.node small { display: block; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.node.claude { background: var(--claude-soft); border-color: var(--claude); }
+.node.codex { background: var(--codex-soft); border-color: var(--codex); }
+.node.harness { height: 100%; }
+.node:hover { border-color: var(--ink); }
+.node[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.node.lit { outline: 3px solid var(--accent); outline-offset: 1px; }
+.node.lit::after { content: "\25C6 active here"; display: block; color: var(--accent); font-size: .74rem; margin-top: 3px; font-weight: 700; }
+.wire {
+  position: relative; display: block; width: 100%; background: none; border: 0; text-align: left;
+  padding: 2px 8px 13px; font-size: .74rem; line-height: 1.2; color: var(--ink);
+}
+.wire::before { content: ""; position: absolute; left: 0; right: 7px; bottom: 5px; border-top: 2px solid var(--wire); }
+.wire::after { content: ""; position: absolute; right: 0; bottom: 1px; border-left: 8px solid var(--wire); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.wire.rev::before { left: 7px; right: 0; }
+.wire.rev::after { right: auto; left: 0; border-left: 0; border-right: 8px solid var(--wire); }
+.wire.dashed::before { border-top-style: dashed; }
+button.wire { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.wire.lit { color: var(--accent); font-weight: 700; }
+.wire.lit::before { border-top-width: 4px; border-top-color: var(--accent); bottom: 4px; }
+.wire.lit::after { border-left-color: var(--accent); }
+.wire.rev.lit::after { border-right-color: var(--accent); border-left-color: transparent; }
+/* Tabs */
+[role="tablist"] { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+[role="tab"] {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px 7px 0 0;
+  padding: 7px 12px; cursor: pointer; font-size: .92rem;
+}
+[role="tab"][aria-selected="true"] { background: var(--surface); border-bottom: 3px solid var(--accent); font-weight: 700; }
+html:not(.js) [role="tablist"] { display: none; }
+[role="tabpanel"] { background: var(--surface); border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; margin-bottom: 8px; }
+html:not(.js) [role="tabpanel"] { border-radius: 8px; margin-top: 12px; }
+
+.ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.btn { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover:not([disabled]) { border-color: var(--ink); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.pos { font-size: .88rem; color: var(--muted); flex: 1 1 240px; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { counter-increment: s; border-left: 3px solid var(--line); padding: 0 0 0 12px; margin: 0 0 3px; }
+.steps > li.cur { border-left-color: var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; padding-bottom: 6px; }
+.step-h { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 5px 4px; cursor: pointer; font-weight: 600; font-size: .95rem; }
+.step-h::before { content: counter(s) ". "; color: var(--muted); }
+.step-d { padding: 0 4px; font-size: .94rem; max-width: 86ch; }
+.step-d p { margin-bottom: 7px; }
+.st { font-size: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 4px 9px; display: inline-block; margin-bottom: 8px; }
+.st b { font-weight: 700; }
+.src { font-size: .8rem; white-space: normal; display: inline-block; margin-right: 8px; }
+.gate-form { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+.gate-form label { display: inline-flex; gap: 6px; align-items: center; font-size: .92rem; }
+.gate-form select { padding: 3px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
+.gate-out { display: block; border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.gate-out b { font-size: 1.02rem; }
+.gate-out[data-res="deliver"] { border-color: var(--ok); }
+.gate-out[data-res="hold"] { border-color: var(--warn); border-style: dashed; }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 0; margin: 10px 0; }
+.f { background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font-size: .86rem; max-width: 220px; }
+.f.bad { border-color: var(--bad); border-style: dashed; background: var(--bad-soft); }
+.f.good { border-color: var(--ok); background: var(--ok-soft); }
+.f-a { align-self: center; display: inline-block; width: 22px; border-top: 2px solid var(--wire); position: relative; margin: 0 7px 0 3px; }
+.f-a::after { content: ""; position: absolute; right: -2px; top: -5px; border-left: 7px solid var(--wire); border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+@media (max-width: 900px) {
+  .wrap { padding: 20px 16px 60px; }
+  h1 { font-size: 1.55rem; }
+  .map { padding: 12px; }
+  .wire, .vwire { margin-left: 0; padding: 5px 0 5px 12px; border-left: 3px solid var(--wire); min-height: 0; margin-top: 6px; margin-bottom: 6px; }
+  .wire::before, .wire::after, .vwire::before, .vwire::after { display: none; }
+  .wire.lit, .vwire.lit { border-left: 5px solid var(--accent); }
+  .wire.dashed { border-left-style: dashed; }
+  [role="tab"] { border-radius: 7px; }
+  [role="tabpanel"] { border-radius: 8px; padding: 12px; margin-top: 6px; }
+}
+.topo { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,190px) minmax(0,1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.topo.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.topo.five { grid-template-columns: minmax(0,1fr) minmax(90px,120px) minmax(0,1fr) minmax(90px,120px) minmax(0,1fr); }
+.host { border: 2px dashed var(--bridge); border-radius: 10px; padding: 10px; background: var(--bridge-soft); display: grid; gap: 8px; }
+.host.hub { border-color: var(--accent); background: var(--accent-soft); }
+.host-l { font-size: .78rem; font-weight: 700; color: var(--bridge); margin: 0; }
+.host.hub .host-l { color: var(--accent); }
+.topo .node { cursor: default; }
+.mid { display: grid; gap: 4px; }
+.mid-l { font-size: .74rem; color: var(--muted); margin: 0; text-align: center; }
+.wire.bad { color: var(--bad); font-weight: 700; }
+.wire.bad::before { border-top-color: var(--bad); }
+.wire.bad::after { border-left-color: var(--bad); }
+[hidden] { display: none !important; }
+html:not(.js) .ctl, html:not(.js) .js-only { display: none; }
+@media (max-width: 720px) {
+  .topo, .topo.three, .topo.five { grid-template-columns: 1fr; }
+  .gate-form { display: grid; }
+}
+@media print { [role="tablist"], .ctl, .js-only { display: none; } }
+.sshline { grid-column: 1 / -1; border: 2px dashed var(--wire); border-radius: 8px; padding: 6px 10px; text-align: center; font-size: .85rem; color: var(--muted); background: var(--surface); transition: box-shadow .15s; }
+.sshline.lit { box-shadow: 0 0 0 3px var(--focus); color: var(--ink); }
+.dashrow { grid-column: 1 / -1; }
+.mockset > [role="tablist"] > [role="tab"] { font-size: .88rem; }
+.inner2 { margin-top: 8px; }
+.mock { background: var(--term); color: var(--term-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 10px 0 14px; font: .84rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.mock p, .mock dl, .mock pre { margin: 0; }
+.mock-title { background: #2b2f35; color: #c9ced4; padding: 6px 12px; font-size: .78rem; display: flex; gap: 10px; align-items: center; }
+.mock-title .dots { width: 44px; height: 10px; background: radial-gradient(circle at 5px 5px, #e0605a 4px, transparent 5px), radial-gradient(circle at 21px 5px, #e4b23f 4px, transparent 5px), radial-gradient(circle at 37px 5px, #58b968 4px, transparent 5px); }
+.mock .screen { padding: 10px 14px 12px; display: grid; gap: 4px; min-height: 120px; }
+.mock .screen.term { min-height: 90px; }
+.mock .screen.bad { border-left: 4px solid #ee8f87; }
+.mock .dim { color: #8d949c; }
+.mock .hd { color: #e0b35c; font-weight: 700; }
+.mock .status { color: #8d949c; border-top: 1px solid #343a41; padding-top: 5px; margin-top: 6px; }
+.mock .status b { color: #d9dde2; }
+.mock i { font-style: normal; color: #8d949c; font-size: .9em; }
+.mock .note-s { background: var(--surface); color: var(--ink); font: .86rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 8px 14px; border-top: 1px solid var(--line); }
+.mock .badge { background: #34506e; color: #dbe8f7; border-radius: 9px; padding: 0 7px; font-size: .74rem; font-weight: 600; }
+.mock .inner { display: block; }
+.mock .tabstrip { margin: 0; padding: 4px 8px 0; background: #20242a; gap: 2px; border-bottom: 1px solid #343a41; }
+.mock .tabstrip [role="tab"] { background: transparent; color: #aab1b9; border: 0; border-radius: 6px 6px 0 0; padding: 4px 12px; font: inherit; }
+.mock .tabstrip [role="tab"][aria-selected="true"] { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock [role="tabpanel"] { background: transparent; border: 0; padding: 0; margin: 0; border-radius: 0; }
+.mock .inner > .status { padding: 6px 14px 10px; margin: 0 14px; }
+.mock .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mock .pane { border: 1px solid #343a41; border-radius: 6px; padding: 6px 10px; min-height: 110px; }
+.mock .ph { color: #9aa1a9; font-weight: 700; border-bottom: 1px solid #343a41; margin-bottom: 4px; padding-bottom: 2px; }
+.mock .ph.hold { color: #74c98f; }
+.mock .strip { display: flex; gap: 2px; padding: 4px 8px 0; background: #20242a; border-bottom: 1px solid #343a41; }
+.mock .strip span { padding: 4px 12px; color: #aab1b9; }
+.mock .strip span.on { background: var(--term); color: #fff; border-bottom: 2px solid #e0b35c; }
+.mock .grid { display: grid; grid-template-columns: 1.5fr 1.1fr 1.2fr .7fr .8fr; gap: 8px; align-items: baseline; }
+.mock .grid.head { color: #8d949c; font-size: .74rem; letter-spacing: .04em; padding: 2px 8px; }
+.mock .list { display: grid; gap: 1px; }
+.mock .row { background: transparent; color: var(--term-ink); border: 0; font: inherit; text-align: left; padding: 3px 8px; border-radius: 4px; cursor: pointer; width: 100%; }
+.mock .row:hover { background: #262b31; }
+.mock .row[aria-selected="true"] { background: #2d3a4b; box-shadow: inset 3px 0 0 #8ab4ff; }
+.mock .row:focus-visible { outline: 2px solid #8ab4ff; outline-offset: -2px; }
+.mock .row.stale span { color: #e0ac5c; }
+.mock .row.stale span:first-child { color: var(--term-ink); }
+.mock .detail { background: #1a1e23; border: 1px solid #343a41; border-radius: 6px; padding: 8px 12px; margin-top: 8px; min-height: 58px; }
+.mock .detail p + p { margin-top: 3px; color: #c3c8ce; }
+.mock code { color: #b8d4f0; }
+.mock .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; }
+.mock .kv dt { color: #8d949c; }
+.mock .kv dd { margin: 0; }
+.mock .cmdbox { background: #0a0c0e; border: 1px solid #343a41; padding: 8px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; color: #d9dde2; margin: 6px 0 2px; font: inherit; }
+.mock .cursor { display: inline-block; width: .6em; height: 1em; background: #d9dde2; vertical-align: -2px; margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mock .cursor { animation: none; } }
+@media (max-width: 720px) {
+  .mock .panes { grid-template-columns: 1fr; }
+  .mock .grid { grid-template-columns: 1fr 1fr; }
+  .mock .grid.head { display: none; }
+  .mock .row { padding: 6px 8px; }
+}
+.src.ext { font-size: .8rem; color: var(--muted); }
+
+/* Round 2 (2026-11-07): Herdr-style contiguous tabs and a Monokai palette. Terminal cells cannot
+   reproduce this CSS exactly: no rounded corners, no hover. */
+.mock { --term: #272822; --term-ink: #f8f8f2; }
+.mock .tabstrip, .mock .strip { background: #1e1f1c; border-bottom: 0; padding: 0; gap: 0; }
+.mock .tabstrip [role="tab"], .mock .strip span { background: transparent; color: #a6a28c; border: 0; border-radius: 0; padding: 4px 12px; text-align: center; }
+.mock .tabstrip [role="tab"][aria-selected="true"], .mock .strip span.on { background: #a6e22e; color: #272822; font-weight: 700; border-bottom: 0; }
+.mock .tabstrip [role="tab"]:focus-visible { outline: 2px solid #66d9ef; outline-offset: -2px; }
+.mock .row:hover { background: #3e3d32; }
+.mock .row[aria-selected="true"] { background: #49483e; box-shadow: inset 3px 0 0 #66d9ef; }
+.mock .row.stale span { color: #fd971f; }
+.mock .hd { color: #e6db74; }
+.mock .status { border-top-color: #3e3d32; }
+.mock .dim, .mock .status, .mock i { color: #a6a28c; }
+.mock .detail { background: #1e1f1c; border-color: #3e3d32; }
+.mock .badge { background: #3e3d32; color: #ae81ff; }
+.mock .ph.hold { color: #a6e22e; }
+.mock .pane, .mock .ph { border-color: #3e3d32; }
+.mock .screen.bad { border-left-color: #f92672; }
+
+/* ADR-0006 animated diagrams */
+.anim { margin: 14px 0 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.anim figcaption.t { padding: 10px 14px 0; font-weight: 700; }
+.anim .scenes { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+.anim .scenes button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 6px; padding: 3px 10px; font: inherit; cursor: pointer; }
+.anim .scenes button[aria-pressed="true"] { background: var(--bridge-soft); border-color: var(--bridge); font-weight: 700; }
+.anim svg { display: block; width: 100%; height: auto; }
+.anim .ctl2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 14px; border-top: 1px solid var(--line); }
+.anim .ctl2 button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
+.anim .ctl2 button:disabled { opacity: .45; cursor: default; }
+.anim button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.anim .pos2 { color: var(--muted); font-size: .85rem; margin-left: auto; }
+.anim .cap { padding: 4px 14px 12px; min-height: 8.5em; }
+.anim .cap h4 { margin: 0 0 4px; font-size: 1rem; }
+.anim .cap p { margin: 0 0 6px; }
+.anim .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.anim .chips ul { margin: 0; padding: 0; list-style: none; font-size: .88rem; }
+.anim .chips li { padding: 2px 0 2px 1.5em; position: relative; }
+.anim .chips .ok li::before { content: "\2713"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.anim .chips .no li::before { content: "\2717"; position: absolute; left: 0; color: var(--bad); font-weight: 700; }
+.anim .chips h5 { margin: 0 0 2px; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.anim .tr { margin: 0; padding: 8px 14px 12px 34px; border-top: 1px solid var(--line); font-size: .88rem; color: var(--muted); }
+.anim .tr li.cur { color: var(--ink); font-weight: 700; }
+.dn rect { fill: var(--surface); stroke: var(--wire); stroke-width: 1.5; transition: fill .2s, stroke .2s; }
+.dn text { text-anchor: middle; fill: var(--ink); font-family: system-ui, sans-serif; }
+.dn .l1 { font-size: 13px; font-weight: 700; }
+.dn .l2 { font-size: 10.5px; fill: var(--muted); }
+.dn.claude rect { fill: var(--claude-soft); stroke: var(--claude); }
+.dn.codex rect { fill: var(--codex-soft); stroke: var(--codex); }
+.dn.gw rect { fill: var(--accent-soft); stroke: var(--accent); }
+.dn.dm rect { fill: var(--bridge-soft); stroke: var(--bridge); }
+.dn.ext rect { fill: var(--surface); stroke-dasharray: 5 3; }
+.dn.dead rect { stroke-dasharray: 3 3; opacity: .6; }
+.dn.lit rect { stroke-width: 3.5; stroke: var(--focus); }
+.de line, .de polyline { stroke: var(--wire); stroke-width: 2; fill: none; transition: stroke .2s; }
+.de.lit line, .de.lit polyline { stroke: var(--focus); stroke-width: 3.5; }
+.de.dash line, .de.dash polyline { stroke-dasharray: 6 4; }
+.de.bad.lit line, .de.bad.lit polyline { stroke: var(--bad); }
+.de text { font-size: 10px; fill: var(--muted); text-anchor: middle; font-family: system-ui, sans-serif; }
+.de.lit text { fill: var(--ink); font-weight: 700; }
+.pk { fill: var(--focus); }
+.pk-l { font-size: 10px; fill: var(--ink); font-family: ui-monospace, Menlo, monospace; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; text-anchor: middle; }
+html:not(.js) .anim svg, html:not(.js) .anim .ctl2, html:not(.js) .anim .scenes { display: none; }
+@media (max-width: 720px) { .anim .chips { grid-template-columns: 1fr; } }
+.cmp td:first-child { white-space: nowrap; }
+pre.wire { background: var(--term); color: var(--term-ink); padding: 10px 14px; border-radius: 8px; overflow: auto; font: .8rem/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+pre.wire .c { color: #a6a28c; }
+</style>
+</head>
+<body>
+<nav data-docs-home aria-label="Documentation home" style="font:14px/1.4 system-ui,sans-serif;padding:6px 14px;background:#272822;color:#f8f8f2;border-bottom:1px solid #49483e"><a href="../../index.html" style="color:#66d9ef">&larr; Docs home</a></nav>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ARCHITECTURE DECISION RECORD 0007</p>
+  <h1>OpenRig operator integration: one network identity, nothing else moves</h1>
+  <p class="prose">A proposal for letting Ratatoskr sessions on other machines talk to <b>one</b> OpenRig seat, the main operator, through the gateway, using the A2A contract of <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a>. OpenRig keeps its teams, its seat lifecycle, its terminals and its durable queues. <b>This is a proposal only. No code was written, nothing was run, no OpenRig command was tried, and the page has not been opened in a browser.</b></p>
+  <dl class="meta">
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-08.</b> The direction (OpenRig integration after A2A, with only the main operator on the network, as an externally managed participant) is the user's, as relayed by the operator <span class="tag t-user">USER</span>. Everything about how is <span class="tag t-arch">PROPOSAL</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code.</dd></div>
+    <div><dt>Depends on</dt><dd><a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> phase 1 (exact-session endpoints, caller identity, tasks). Related: <a href="../0008-agent-discovery-tool/index.html">ADR-0008</a> may list the operator later.</dd></div>
+    <div><dt>Sources</dt><dd>Ratatoskr source at the working tree, read. OpenRig only through its command line as described to this seat (<code>rig send</code>, <code>rig capture</code>, <code>rig queue</code>, <code>rig whoami</code>). <b>OpenRig's own source and API were not read.</b></dd></div>
+    <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>). The scenario below is illustrative.</dd></div>
+  </dl>
+</header>
+
+<nav class="prose small" aria-label="Sections"><b>Sections:</b>
+  <a href="#summary">1. Short answer</a> · <a href="#boundary">2. The boundary</a> · <a href="#bridge">3. The bridge</a> · <a href="#diagram">4. Round trip</a> · <a href="#limits">5. Limits</a> · <a href="#decisions">6. Choices and gaps</a>
+</nav>
+
+<p class="prose small"><b>Labels.</b>
+  <span class="tag t-user">USER</span> the user's direction.
+  <span class="tag t-code">CODE</span> read in Ratatoskr source.
+  <span class="tag t-arch">PROPOSAL</span> the architect's suggestion.
+  <span class="tag t-unv">OPEN</span> undecided. <span class="tag t-unv">UNVERIFIED</span> an assumption nobody has checked.
+  The diagram has Play, Pause, Back, Next and Replay; nothing moves until you press Play, and reduced motion removes the packet animation.
+</p>
+
+<h2 id="summary">1. Short answer</h2>
+<div class="note">
+  <p><b>Only the operator is exposed.</b> One OpenRig seat, the main operator, gets a network identity that Ratatoskr sessions on any paired host can reach. No other seat, pod or rig is registered. OpenRig still launches, restarts, supervises and tears down its seats, and still owns its terminals, teams and queues. <span class="tag t-user">USER</span></p>
+  <p><b>A small bridge, not an import.</b> A bridge on the operator's machine speaks the chosen A2A interface to the gateway. Inbound, it hands a message to the <i>exact current</i> operator through a supported OpenRig delivery. Outbound, it lets the operator send and report through a tool or command. It never starts a harness, never copies OpenRig topology, and never treats the sender field of a message as proof of identity. <span class="tag t-arch">PROPOSAL</span></p>
+  <p><b>A message is not a queue item.</b> An A2A message and task live in the gateway. An OpenRig queue row lives in OpenRig. The operator may create a queue row because of a message; the bridge does not, and the two are never the same record. <span class="tag t-arch">PROPOSAL</span></p>
+</div>
+
+<h2 id="boundary">2. The boundary</h2>
+<div class="table-wrap"><table>
+  <tr><th>Stays in OpenRig</th><th>Becomes visible on the Ratatoskr network</th><th>Not done</th></tr>
+  <tr><td>Seat and pod definitions, launching, restarting, stopping, replacing the occupant<br>Terminals and what is typed into them<br>Durable queues, handoffs and their states<br>Teams, topology, permissions, the human-facing rules</td><td>One endpoint for the operator's current session<br>Messages to it and tasks about them (ADR-0006)<br>The operator's replies and results<br>Its liveness as the gateway sees it</td><td>No import of seats or topology<br>No registering every seat<br>No OpenRig lifecycle control from Ratatoskr<br>No merging OpenRig queues with A2A tasks<br>No second copy of the operator's harness</td></tr>
+</table></div>
+<p class="prose"><b>Today.</b> The operator is an ordinary OpenRig seat, reached by <code>rig send</code> and queue rows from other OpenRig seats. Ratatoskr's gateway knows nothing about it: the custom send tool and ADR-0006's endpoints address Ratatoskr sessions on paired hosts only (<a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a>). A Ratatoskr session on another machine therefore cannot reach the operator, and the operator cannot reach it, except by a human relaying.</p>
+
+<h2 id="bridge">3. The bridge</h2>
+<h3>Where it lives and who it is</h3>
+<p class="prose"><b>Recommendation.</b> The bridge is an <b>externally managed participant</b> in the sense of <a href="../0006-a2a-routing-and-identity/index.html#participants">ADR-0006 section 5a</a>: a separate process or package maintained near OpenRig (an optional <code>integrations/openrig</code> folder is acceptable), with a stable participant id, its <b>own</b> scoped, independently revocable credential, and no Ratatoskr daemon, terminal, hooks or MCP on the OpenRig side. It is not a session of a Ratatoskr host: host delegation is a trust boundary for managed hosts only, and the host pairing key is not reused for it. The gateway never depends on OpenRig's internals; the bridge is the only piece that knows them. <span class="tag t-arch">PROPOSAL</span> An earlier draft of this page made the operator a session of its host through the daemon; that is withdrawn. The owner enrols exactly one participant for the operator; the bridge refuses to register any other seat. <span class="tag t-unv">OPEN</span> how the enrolment is done (<a href="../0006-a2a-routing-and-identity/index.html#participants">ADR-0006 section 5a</a>).</p>
+
+<h3>Inbound: Ratatoskr to the operator</h3>
+<ul class="prose">
+  <li>The gateway routes a task to the operator's endpoint and sends it to the bridge by the external transport ADR-0006 chooses: standard A2A to a URL the owner registered (baseline), or, if the operator's machine cannot be reached, an optional outbound connector. Which one is <span class="tag t-unv">OPEN</span>; neither is authorised to be built.</li>
+  <li>The bridge delivers it with a supported OpenRig verb, to the <b>exact current operator session</b>, never to a name that could mean a replacement: a short message through <code>rig send</code>, shown with a header the <b>gateway</b> wrote ("from <code>codex@ubuntu</code>, verified by the gateway, task T1"). The body's own <code>from</code> is ignored. <span class="tag t-unv">UNVERIFIED</span> that <code>rig send</code> reaches the intended occupant reliably, handles long or multi-line bodies, or reports success truthfully.</li>
+  <li>Task state follows ADR-0006: <code>SUBMITTED</code> when the gateway dispatched, <code>WORKING</code> only when the bridge has confirmed the delivery, and a result only from an explicit report. If the delivery command's outcome is unknown, the task says so and is not retried.</li>
+</ul>
+
+<h3>Outbound: the operator to Ratatoskr</h3>
+<ul class="prose">
+  <li>A tool or command the operator can call (the same A2A calls ADR-0006 gives a session: send, answer a question, report a result). Name and form are <span class="tag t-unv">OPEN</span>.</li>
+  <li>The operator's own credential never leaves the bridge's side of the machine, and the gateway, not the operator's text, sets the origin of everything it forwards.</li>
+</ul>
+
+<h3>No double ownership</h3>
+<p class="prose">The operator's harness is owned by OpenRig. No Ratatoskr daemon launches, pairs, supervises or pastes into it as a managed session, and the bridge must not start a second copy. If both an OpenRig occupant and a daemon-managed session claimed the name, the gateway would see two participants for one seat; the one-participant rule above prevents that.</p>
+
+<h2 id="diagram">4. Round trip and restart (illustrative)</h2>
+<p class="prose">A Codex session on Ubuntu asks the operator which project architect owns a design question. The operator asks that architect inside OpenRig and answers. Then the second scene: the bridge stops, and the operator is restarted.</p>
+<figure class="anim" data-diagram="d7" data-label="Operator bridge round trip and restart"><figcaption class="t">Diagram. The operator behind the gateway, and what happens when it restarts</figcaption><div class="scenes" role="group" aria-label="Scenes"></div><div class="ctl2"><button type="button" data-play aria-pressed="false">Play</button><button type="button" data-prev>Back</button><button type="button" data-next>Next</button><button type="button" data-replay>Replay</button><span class="pos2" aria-live="polite"></span></div><div class="cap" aria-live="polite"></div><ol class="tr" aria-label="Steps"></ol><noscript><p class="small muted" style="padding:0 14px 10px">This diagram needs JavaScript. The prose around it says the same.</p></noscript></figure>
+
+<h2 id="limits">5. Limits to state plainly</h2>
+<ul class="prose">
+  <li><b>Correlation lives in the bridge.</b> It keeps a table of task id to the delivery it made and to any queue row the operator says it created. Neither OpenRig nor the gateway knows the other's ids. Lose the table and a late reply cannot be matched; it is then reported as unmatched, not guessed.</li>
+  <li><b>Cancellation cannot stop OpenRig work.</b> A cancel request can only tell the operator; the task stays <code>WORKING</code> until the operator reports, and ADR-0006's phase 1 answer (<code>TaskNotCancelableError</code>) fits.</li>
+  <li><b>A task result is not a queue result.</b> A queue row closing in OpenRig does not complete the A2A task. Only the operator's explicit report does.</li>
+  <li><b>Restart and replacement.</b> The operator participant keeps its stable id across an OpenRig restart. Open tasks follow the declared policy (default: they end, with a reason), and nothing is moved to the new occupant silently.</li>
+  <li><b>Stale.</b> If the gateway cannot reach the bridge, it marks the operator unreachable; new messages fail immediately and are not queued for later.</li>
+  <li><b>Trust.</b> The gateway proves which host and session sent a message; it cannot prove the operator will act wisely on it. OpenRig's own gates and permission prompts are unchanged and not bypassed. Text from another machine is treated as untrusted input by the operator, like any message.</li>
+</ul>
+
+<h2 id="decisions">6. Choices and gaps</h2>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>Recommendation</th><th>Status</th></tr>
+  <tr><td>1</td><td>Only the main operator is exposed</td><td>Yes</td><td><span class="tag t-user">USER</span> direction</td></tr>
+  <tr><td>2</td><td>Bridge identity</td><td>An external participant with its own scoped credential; one participant for the operator</td><td><span class="tag t-arch">PROPOSAL</span> <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>3</td><td>Inbound delivery verb</td><td>A supported OpenRig verb to the exact current session</td><td><span class="tag t-unv">OPEN</span> which verb; reliability unverified</td></tr>
+  <tr><td>4</td><td>Outbound form</td><td>A tool or command; shape not chosen</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>5</td><td>Where the bridge runs, how the gateway reaches it, and what restarts it</td><td>Near OpenRig; transport per ADR-0006 (registered URL baseline); supervision not designed</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>6</td><td>Who may message the operator</td><td>Your own paired hosts only; outsiders denied</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>7</td><td>Build any of it</td><td>Not before ADR-0006 phase 1 is proved</td><td><span class="tag t-user">USER</span> no build authorised</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Not examined:</b> OpenRig's source, its queue and send internals, and whether a long-running adapter fits its model. Everything here is built from command names and the user's description.</li>
+  <li><b>Not designed:</b> operator-to-operator across OpenRig instances, importing other seats, or any OpenRig change.</li>
+</ul>
+
+<h2 id="sources">Sources</h2>
+<ul class="prose small">
+  <li><a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> for the A2A contract, identity and task rules; <a href="../0008-agent-discovery-tool/index.html">ADR-0008</a> for discovery; <a href="../0003-per-host-daemon/index.html">ADR-0003</a> for the daemon.</li>
+  <li><b>The request:</b> the user's words as relayed by the operator on 2026-11-08 (split into three records).</li>
+</ul>
+</div>
+
+<script>
+
+
+
+
+
+
+
+
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+
+  function setupTabs(root) {
+    var tabs = Array.prototype.slice.call(root.querySelectorAll(':scope > [role="tablist"] > [role="tab"]'));
+    function show(i, focus) {
+      tabs.forEach(function (t, n) {
+        var on = n === i;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { show(i, false); });
+      t.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowRight') n = (i + 1) % tabs.length;
+        if (e.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = tabs.length - 1;
+        if (n !== null) { e.preventDefault(); show(n, true); }
+      });
+    });
+    show(0, false);
+  }
+
+  function setupStepper(root) {
+    var items = Array.prototype.slice.call(root.querySelectorAll('.steps > li'));
+    var prev = root.querySelector('[data-prev]');
+    var next = root.querySelector('[data-next]');
+    var pos = root.querySelector('[data-pos]');
+    var mapId = root.getAttribute('data-map');
+    var map = mapId ? document.getElementById(mapId) : null;
+    var parts = map ? Array.prototype.slice.call(map.querySelectorAll('[data-k]')) : [];
+    function go(i) {
+      items.forEach(function (li, n) {
+        var on = n === i;
+        li.classList.toggle('cur', on);
+        li.querySelector('.step-d').hidden = !on;
+        li.querySelector('.step-h').setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      prev.disabled = i === 0;
+      next.disabled = i === items.length - 1;
+      pos.textContent = 'Step ' + (i + 1) + ' of ' + items.length + ': ' + items[i].querySelector('.step-h').textContent;
+      var lit = (items[i].getAttribute('data-lit') || '').split(',');
+      parts.forEach(function (p) { p.classList.toggle('lit', lit.indexOf(p.getAttribute('data-k')) !== -1); });
+      cur = i;
+    }
+    var cur = 0;
+    items.forEach(function (li, i) {
+      li.querySelector('.step-h').addEventListener('click', function () { go(i); });
+    });
+    prev.addEventListener('click', function () { if (cur > 0) go(cur - 1); });
+    next.addEventListener('click', function () { if (cur < items.length - 1) go(cur + 1); });
+    go(0);
+  }
+
+  function setupListbox(box) {
+    var rows = Array.prototype.slice.call(box.querySelectorAll('[role="option"]'));
+    function pick(i, focus) {
+      rows.forEach(function (r, n) {
+        var on = n === i;
+        r.setAttribute('aria-selected', on ? 'true' : 'false');
+        r.tabIndex = on ? 0 : -1;
+        var d = document.getElementById(r.getAttribute('data-detail'));
+        if (d) d.hidden = !on;
+      });
+      if (focus) rows[i].focus();
+    }
+    rows.forEach(function (r, i) {
+      r.addEventListener('click', function () { pick(i, false); });
+      r.addEventListener('keydown', function (e) {
+        var n = null;
+        if (e.key === 'ArrowDown') n = Math.min(i + 1, rows.length - 1);
+        if (e.key === 'ArrowUp') n = Math.max(i - 1, 0);
+        if (e.key === 'Home') n = 0;
+        if (e.key === 'End') n = rows.length - 1;
+        if (n !== null) { e.preventDefault(); pick(n, true); }
+      });
+    });
+    pick(0, false);
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tabs]'), setupTabs);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-listbox]'), setupListbox);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-stepper]'), setupStepper);
+}());
+
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var reduced = false;
+  try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduced = false; }
+
+  function el(name, attrs, parent) {
+    var n = document.createElementNS(NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  // N(id, x, y, w, h, kind, l1, l2)
+  function N(id, x, y, w, h, kind, l1, l2) { return { id: id, x: x, y: y, w: w, h: h, kind: kind, l1: l1, l2: l2 }; }
+  // E(id, from, to, label, cls, via)
+  function E(id, a, b, label, cls, via) { return { id: id, a: a, b: b, label: label, cls: cls || '', via: via || [] }; }
+  // S(title, text, lit, edges, packet, ok, no, dead)
+  function S(title, text, lit, edges, packet, ok, no, dead) { return { title: title, text: text, lit: lit || [], edges: edges || [], packet: packet || null, ok: ok || [], no: no || [], dead: dead || [] }; }
+
+
+  var D = {};
+  D.d7 = { w: 760, h: 250, nodes: [
+    N('codex', 14, 95, 140, 46, 'codex', 'Codex', 'session ...9d31, Ubuntu'),
+    N('gw', 200, 86, 140, 62, 'gw', 'Gateway', 'terminates A2A'),
+    N('br', 386, 95, 140, 46, 'dm', 'Bridge', 'operator machine'),
+    N('op', 590, 28, 156, 46, 'claude', 'Operator seat', 'OpenRig, exact session'),
+    N('arch', 590, 160, 156, 46, 'codex', 'Project architect', 'another OpenRig seat')
+  ], edges: [
+    E('e1', 'codex', 'gw', 'A2A SendMessage'),
+    E('e2', 'gw', 'br', 'ADR-0006 external transport'),
+    E('e3', 'br', 'op', 'supported OpenRig delivery'),
+    E('e4', 'op', 'arch', 'OpenRig queue (not A2A)', 'dash')
+  ], scenes: [
+    { name: 'Round trip', steps: [
+      S('Codex asks the operator', 'Codex sends an A2A message to the operator\'s exact endpoint: which architect owns this design question? The gateway authenticates the caller from its credential, not from the message body.', ['codex', 'gw'], ['e1'], ['e1', 'SendMessage'], ['Caller proven by credential.', 'Destination is the exact session.'], ['Nothing in the body is trusted as identity.']),
+      S('The gateway routes it to the bridge', 'The task is SUBMITTED. The gateway sends it to the bridge by the external transport ADR-0006 chooses (a registered URL by default), with an origin it wrote: from codex@ubuntu, task T1.', ['gw', 'br'], ['e2'], ['e2', 'task T1 + origin'], ['Origin written by the gateway.'], ['Not yet delivered to the operator.']),
+      S('The bridge hands it to the operator', 'The bridge delivers it to the exact current operator session with a supported OpenRig verb, headed "from codex@ubuntu, verified by the gateway". Only a confirmed delivery moves the task to WORKING. An unknown outcome is reported as uncertain and never retried.', ['br', 'op'], ['e3'], ['e3', 'delivered'], ['A message, not a queue item.'], ['Delivery success is not task success.']),
+      S('The operator asks the architect, inside OpenRig', 'The operator creates its own OpenRig queue item for the project architect. That is OpenRig work: Ratatoskr never sees it and the bridge does not create it. The architect answers the operator through OpenRig.', ['op', 'arch'], ['e4'], ['e4', 'OpenRig queue item'], ['OpenRig keeps its queues and lifecycle.'], ['The queue item is not the A2A task.']),
+      S('The operator reports, explicitly', 'The operator calls the outbound tool to answer. The bridge sends it through the gateway as the result of T1. Only this explicit report completes the task; a queue row closing does not.', ['op', 'br', 'gw'], ['e3', 'e2'], ['e2', 'result for T1', 'rev'], ['COMPLETED only from the report.'], ['Stop or a closed queue row never means completed.']),
+      S('Codex reads the result', 'Codex polls GetTask and sees COMPLETED with the artifact. If it asked a clarifying question first, the same task would have shown INPUT_REQUIRED.', ['codex', 'gw'], ['e1'], ['e1', 'GetTask: COMPLETED', 'rev'], ['Polled retrieval works while the operator is busy.'], [])
+    ] },
+    { name: 'Stale and restart', steps: [
+      S('The bridge registers the operator', 'The bridge presents its own credential and registers the operator participant and its card. The gateway creates an endpoint for it only. Only the one enrolled operator may register; no daemon or Ratatoskr terminal is involved.', ['br', 'gw'], ['e2'], ['e2', 'register ...op1'], ['One registrant, owner-configured.'], ['No other seat can register.']),
+      S('The bridge stops heartbeating', 'The gateway notices within its normal window and marks the operator unreachable. A new message fails immediately with a clear error. It is not queued for later.', ['gw'], [], null, ['Fail immediately, no replay.'], ['A stored endpoint is not proof it is up.'], ['br']),
+      S('The operator is restarted by OpenRig', 'OpenRig starts a new occupant. The participant id is stable, but what happened to open tasks is the owner\'s declared policy; by default they end as FAILED "occupant replaced" and nothing is moved to the new occupant.', ['gw', 'op'], [], null, ['Replacement is rejected, not followed.'], ['No task crosses to the new session.']),
+      S('Messages resume only after it registers again', 'When the bridge re-registers the new occupant, new messages reach it under the same participant id. A reply addressed to an ended task is refused, as in ADR-0006.', ['br', 'gw', 'op'], ['e2', 'e3'], ['e2', 'register ...op2'], ['Exact session binding holds.'], [])
+    ] }
+  ] };
+  function setup(fig) {
+    var cfg = D[fig.getAttribute('data-diagram')];
+    if (!cfg) return;
+    var svg = el('svg', { viewBox: '0 0 ' + cfg.w + ' ' + cfg.h, role: 'img', 'aria-label': fig.getAttribute('data-label') || 'Diagram' });
+    var byId = {};
+    cfg.nodes.forEach(function (n) { byId[n.id] = n; });
+    var edgeEls = {};
+    cfg.edges.forEach(function (e) {
+      var a = byId[e.a], b = byId[e.b];
+      var pts = [[a.x + a.w / 2, a.y + a.h / 2]].concat(e.via).concat([[b.x + b.w / 2, b.y + b.h / 2]]);
+      var g = el('g', { 'class': 'de ' + e.cls }, svg);
+      el('polyline', { points: pts.map(function (p) { return p.join(','); }).join(' ') }, g);
+      var mid = pts[Math.floor(pts.length / 2) - (pts.length % 2 === 0 ? 1 : 0)];
+      var m2 = pts[Math.floor(pts.length / 2)];
+      var tx = (mid[0] + m2[0]) / 2, ty = (mid[1] + m2[1]) / 2 - 6;
+      var t = el('text', { x: tx, y: ty }, g); t.textContent = e.label;
+      edgeEls[e.id] = { g: g, pts: pts };
+    });
+    var nodeEls = {};
+    cfg.nodes.forEach(function (n) {
+      var g = el('g', { 'class': 'dn ' + n.kind }, svg);
+      el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 7 }, g);
+      var t1 = el('text', { x: n.x + n.w / 2, y: n.y + 19, 'class': 'l1' }, g); t1.textContent = n.l1;
+      var t2 = el('text', { x: n.x + n.w / 2, y: n.y + 35, 'class': 'l2' }, g); t2.textContent = n.l2;
+      nodeEls[n.id] = g;
+    });
+    var dot = el('circle', { r: 7, 'class': 'pk', cx: -20, cy: -20 }, svg);
+    var dotl = el('text', { x: -20, y: -20, 'class': 'pk-l' }, svg);
+
+    var scenesBar = fig.querySelector('.scenes');
+    var prev = fig.querySelector('[data-prev]'), next = fig.querySelector('[data-next]'), play = fig.querySelector('[data-play]'), replay = fig.querySelector('[data-replay]');
+    var pos = fig.querySelector('.pos2'), cap = fig.querySelector('.cap'), tr = fig.querySelector('.tr');
+    fig.insertBefore(svg, fig.querySelector('.ctl2'));
+    var scene = 0, step = 0, timer = null, raf = null;
+
+    cfg.scenes.forEach(function (s, i) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = s.name;
+      b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+      b.addEventListener('click', function () { stop(); scene = i; step = 0; draw(); });
+      scenesBar.appendChild(b);
+    });
+    if (cfg.scenes.length < 2) scenesBar.style.display = 'none';
+
+    function stop() { if (timer) { clearInterval(timer); timer = null; } play.textContent = 'Play'; play.setAttribute('aria-pressed', 'false'); }
+    function movePacket(s) {
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      if (!s.packet) { dot.setAttribute('cx', -20); dot.setAttribute('cy', -20); dotl.setAttribute('x', -20); dotl.setAttribute('y', -20); dotl.textContent = ''; return; }
+      var path = edgeEls[s.packet[0]].pts;
+      var rev = s.packet[0] && s.packet[2] === 'rev';
+      var pts = rev ? path.slice().reverse() : path;
+      var end = pts[pts.length - 1];
+      function put(x, y) { dot.setAttribute('cx', x); dot.setAttribute('cy', y); dotl.setAttribute('x', x); dotl.setAttribute('y', y - 11); }
+      dotl.textContent = s.packet[1];
+      if (reduced) { put((pts[0][0] + end[0]) / 2, (pts[0][1] + end[1]) / 2); return; }
+      var t0 = null, dur = 900;
+      function frame(ts) {
+        if (t0 === null) t0 = ts;
+        var p = Math.min(1, (ts - t0) / dur), seg = (pts.length - 1) * p, i = Math.min(pts.length - 2, Math.floor(seg)), f = seg - i;
+        put(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+        if (p < 1) raf = requestAnimationFrame(frame); else raf = null;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    function list(items) { return items.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); }
+    function draw() {
+      var sc = cfg.scenes[scene], s = sc.steps[step];
+      Array.prototype.forEach.call(scenesBar.children, function (b, i) { b.setAttribute('aria-pressed', i === scene ? 'true' : 'false'); });
+      Object.keys(nodeEls).forEach(function (id) {
+        nodeEls[id].classList.toggle('lit', s.lit.indexOf(id) !== -1);
+        nodeEls[id].classList.toggle('dead', s.dead.indexOf(id) !== -1);
+      });
+      Object.keys(edgeEls).forEach(function (id) { edgeEls[id].g.classList.toggle('lit', s.edges.indexOf(id) !== -1); });
+      movePacket(s);
+      cap.innerHTML = '<h4>' + esc(s.title) + '</h4><p>' + esc(s.text) + '</p><div class="chips"><div class="ok"><h5>Verified here</h5><ul>' + (s.ok.length ? list(s.ok) : '<li>Nothing new.</li>') + '</ul></div><div class="no"><h5>Not verified / not proven</h5><ul>' + (s.no.length ? list(s.no) : '<li>Nothing new.</li>') + '</ul></div></div>';
+      pos.textContent = sc.name + ': step ' + (step + 1) + ' of ' + sc.steps.length;
+      prev.disabled = step === 0;
+      next.disabled = step === sc.steps.length - 1;
+      tr.innerHTML = sc.steps.map(function (x, i) { return '<li' + (i === step ? ' class="cur"' : '') + '>' + esc(x.title) + '</li>'; }).join('');
+    }
+    prev.addEventListener('click', function () { stop(); if (step > 0) { step--; draw(); } });
+    next.addEventListener('click', function () { stop(); var n = cfg.scenes[scene].steps.length; if (step < n - 1) { step++; draw(); } });
+    replay.addEventListener('click', function () { stop(); step = 0; draw(); });
+    play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      var n = cfg.scenes[scene].steps.length;
+      if (step >= n - 1) { step = 0; draw(); }
+      play.textContent = 'Pause'; play.setAttribute('aria-pressed', 'true');
+      timer = setInterval(function () {
+        if (step < n - 1) { step++; draw(); } else { stop(); }
+      }, reduced ? 6000 : 3800);
+    });
+    draw();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('figure.anim'), setup);
+}());
+</script>
+</body>
+</html>
