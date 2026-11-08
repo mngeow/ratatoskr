@@ -25,6 +25,7 @@ import (
 	"github.com/mngeow/ratatoskr/internal/agent"
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
 	"github.com/mngeow/ratatoskr/internal/link"
+	"github.com/mngeow/ratatoskr/internal/protocol"
 	"github.com/mngeow/ratatoskr/internal/router"
 	"github.com/mngeow/ratatoskr/internal/server"
 	"github.com/mngeow/ratatoskr/internal/store"
@@ -67,13 +68,10 @@ type Config struct {
 	Foreground bool
 
 	// CardListen is the address the host card is served on, from `rtk daemon --card-listen ADDR`.
-	// Empty means the listener is off, which is the default: nothing is published to the network
-	// unless the owner asks. It is a start flag only, so turning it on later means stopping the
-	// daemon, which ends every session. CardAllowLAN and CardInsecureHTTP are the gateway's two
-	// LAN opt-ins, with the same meaning.
-	CardListen       string
-	CardAllowLAN     bool
-	CardInsecureHTTP bool
+	// Empty means the default (protocol.DefaultCardListen, 0.0.0.0:7778) and "off" turns the
+	// listener off. It is a start flag only, so changing it means stopping the daemon, which ends
+	// every session. A bind failure does not stop the daemon: it is the "not bound" state.
+	CardListen string
 }
 
 // Run is the daemon process.
@@ -89,9 +87,9 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		return errors.New("daemon: no state directory")
 	}
 
-	// The card listener's flags are checked before anything is created or locked, like the gateway's,
+	// The card listener's flag is checked before anything is created or locked, like the gateway's,
 	// so a mistyped address leaves no state behind.
-	cardPlan, cardOn, err := planCardListen(cfg)
+	cardAddr, cardOn, err := planCardListen(cfg.CardListen)
 	if err != nil {
 		return err
 	}
@@ -223,13 +221,12 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		return startupFailed(err)
 	}
 
-	// The card listener binds before the socket, so a failed bind fails the start and leaves no socket
-	// a client could find. It does not serve yet: the card service does not exist until below.
+	// The card listener binds before the socket. A failed bind does NOT fail the start: the daemon
+	// keeps running with the listener "not bound" and says why in its log, in `rtk daemon status` and
+	// in the Graph tab. It does not serve yet: the card service does not exist until below.
+	cardState := protocol.CardListener{State: protocol.CardListenerOff}
 	if cardOn {
-		cardBound, err = bindCardListener(cardPlan, dir)
-		if err != nil {
-			return startupFailed(err)
-		}
+		cardBound, cardState = bindCardListener(cardAddr)
 	}
 
 	bound, socketFile, err := listenSocket(cfg.StateDir)
@@ -268,19 +265,24 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	})
 	windowHub.graph = graph
 
-	// The host card: the owner's working copy, published card and history, kept in the daemon
-	// directory. It is edited only through the Unix socket; the card listener can only read what it
-	// publishes.
+	// The host card: the owner's card.yaml in the daemon directory and the card served from it. Drafting
+	// is the only operation, and only a window on the Unix socket can start one; the card listener can
+	// only read what the service serves.
 	hostCard := newCardService(daemonDir(cfg.StateDir), func() string { return pairing.Host }, log)
 	windowHub.card = hostCard
+	hostCard.setListener(cardState)
+	switch cardState.State {
+	case protocol.CardListenerListening:
+		log.logf("card listener: listening on %s; the card is served at %s (readable by anyone who can reach this port)", cardState.Addr, cardState.URL)
+	case protocol.CardListenerNotBound:
+		log.logf("card listener: NOT BOUND (%s); the daemon keeps running and the card is not served; use --card-listen ADDR or --card-listen off", cardState.Reason)
+	default:
+		log.logf("card listener: off")
+	}
 
 	var cardServing *cardServer
 	if cardBound != nil {
-		hostCard.setListener(cardBound.view)
 		cardServing = newCardServer(hostCard, log)
-		for _, line := range cardBound.startupLines() {
-			log.logf("%s", line)
-		}
 	}
 
 	// The manager tells the window side when a session starts, exits and is gone.
@@ -327,7 +329,9 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// its own reports.
 	network.start(bgCtx)
 	graph.start(bgCtx)
+	hostCard.drafts.setBackground(bgCtx)
 	hostCard.scanInBackground(bgCtx)
+	go hostCard.watch(bgCtx, hostCard.drafts.sweep)
 	if cardServing != nil {
 		go cardServing.serve(cardBound.listener)
 	}

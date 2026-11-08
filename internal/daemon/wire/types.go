@@ -39,7 +39,7 @@ const (
 	CodeShuttingDown    Code = "shutting_down"
 	CodeBusy            Code = "busy"          // a session operation is already running
 	CodeNotRunning      Code = "not_running"   // an attach expected a session that is not running (ended, replaced or never there)
-	CodeCardConflict    Code = "card_conflict" // a card operation carried a stale token; the answer holds the current card view
+	CodeCardConflict    Code = "card_conflict" // accept carried a stale token; the answer holds the current file view
 	CodeInternal        Code = "internal"
 )
 
@@ -316,9 +316,11 @@ type Result struct {
 	NetworkVersion uint64                `json:"network_version,omitempty"`
 	// Plan answers an enter query.
 	Plan *EnterPlan `json:"plan,omitempty"`
-	// Card answers a card query or operation. For a card_conflict refusal, Error and Card are both
-	// set: Card is the current view the caller should refresh from.
-	Card *protocol.CardView `json:"card,omitempty"`
+	// Card answers a card query, get, reload or accept. For a card_conflict refusal, Error and Card are
+	// both set: Card is the current view the caller should refresh from.
+	Card *protocol.CardFileView `json:"card,omitempty"`
+	// Draft answers every draft operation (prepare, run, status, cancel).
+	Draft *protocol.CardDraft `json:"draft,omitempty"`
 	// Graph answers a graph query. GraphVersion is the daemon's own change counter for it, and is
 	// what a caller sends back as GraphRequest.Since.
 	Graph        *protocol.GraphView `json:"graph,omitempty"`
@@ -363,49 +365,33 @@ type GraphRequest struct {
 	FirstWaitMS int    `json:"first_wait_ms,omitempty"`
 }
 
-// Card operations.
+// Card operations. The card is the owner's card.yaml file; there is no publish, history or rollback.
 const (
-	CardOpGet      = "get"      // answer the current view; changes nothing
-	CardOpEdit     = "edit"     // apply Edit to the working copy
-	CardOpValidate = "validate" // re-validate the working copy; changes nothing but Problems
-	CardOpPublish  = "publish"  // validate, then publish the working copy as a new revision
-	CardOpHistory  = "history"  // answer the view; with Revision set, also View.Preview = that revision in full (a rollback preview)
-	CardOpRollback = "rollback" // copy revision Revision into the working copy and publish it as a new revision
-	CardOpRescan   = "rescan"   // scan this host's skill locations again
+	CardOpGet          = "get"           // answer the file view; changes nothing
+	CardOpReload       = "reload"        // read card.yaml again now, then answer the file view
+	CardOpDraftPrepare = "draft_prepare" // build the confirmation (command, payload, size); executes nothing
+	CardOpDraftRun     = "draft_run"     // start the prepared draft; answers at once with state running
+	CardOpDraftStatus  = "draft_status"  // answer the draft's current state; changes nothing
+	CardOpDraftCancel  = "draft_cancel"  // stop a running draft or discard a prepared or ready one
+	CardOpDraftAccept  = "draft_accept"  // write the ready draft to card.yaml (copying the old file to card.yaml.bak first)
 )
 
-// CardOp is one operation on this host's own card. Only the owner's own daemon serves it, on its
-// Unix socket; there is no remote write path.
+// CardOp is one operation on this host's own card. Only the owner's own daemon serves it, on a window
+// connection of its Unix socket; there is no remote path and no CLI path.
 //
-// BaseToken is the CardView.Token the caller last saw. Edit, publish and rollback are refused with
-// card_conflict when it is stale. Get, validate, history and rescan ignore it.
+// DraftID names the draft for run, status, cancel and accept; prepare ignores it, and the answer to
+// each draft op carries the matching ID. BaseToken is the CardFileView.Token the caller last saw, and
+// only accept reads it: a stale one is refused with card_conflict, the answer holds the current view,
+// and the draft stays ready for review or discard only.
 //
-// Edit.Skills replaces the declared skills. An entry with FoundLabel takes fresh evidence from the scan;
-// an entry without one keeps the evidence the working copy already holds for the same ID, so an edit that
-// leaves a skill alone cannot lose it. To drop a skill's evidence, remove the skill or give it a new ID.
+// Drafts belong to the window that prepared them: one per window (a new prepare replaces the old one),
+// at most two running at once in the daemon (a further run is refused busy). Closing the window cancels
+// a running draft and discards the rest. A prepared or ready draft expires 15 minutes after its last
+// operation (state cancelled, Error "expired").
 type CardOp struct {
-	Op        string    `json:"op"`
-	BaseToken string    `json:"base_token,omitempty"`
-	Edit      *CardEdit `json:"edit,omitempty"`
-	Revision  int       `json:"revision,omitempty"` // for rollback
-}
-
-// CardEdit changes the working copy. A nil field is left alone. Skills, when set, REPLACES the
-// declared skills: each entry may name the found skill it is declared from (FoundLabel), which is
-// how evidence is attached.
-type CardEdit struct {
-	Name        *string          `json:"name,omitempty"`
-	Description *string          `json:"description,omitempty"`
-	Skills      *[]CardSkillEdit `json:"skills,omitempty"`
-}
-
-// CardSkillEdit is one declared skill as the owner wrote it.
-type CardSkillEdit struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags,omitempty"`
-	FoundLabel  string   `json:"found_label,omitempty"`
+	Op        string `json:"op"`
+	BaseToken string `json:"base_token,omitempty"`
+	DraftID   string `json:"draft_id,omitempty"`
 }
 
 // StopSession names the session `rtk daemon stop --session` ends.

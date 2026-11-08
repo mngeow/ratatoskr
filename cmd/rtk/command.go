@@ -32,7 +32,6 @@ const (
 	kindDaemonStatus
 	kindDaemonStop
 	kindDaemonNetwork
-	kindDaemonCard
 )
 
 // command is one parsed invocation. Only the fields its kind uses are set.
@@ -63,12 +62,9 @@ type command struct {
 	networkJSON  bool   // kindDaemonNetwork, --json
 	networkWatch bool   // kindDaemonNetwork, --watch
 
-	// cardListen is `rtk daemon --card-listen ADDR` (kindDaemonRun): the address the host card is
-	// served on, empty for off. allowLAN and insecureHTTP above carry the two LAN opt-ins, as they do
-	// for the gateway. cardArgs is `rtk daemon card ...` (kindDaemonCard), passed through so the
-	// daemon package's own parsing and usage errors stay the single source of truth.
+	// cardListen is `rtk daemon --card-listen ADDR|off` (kindDaemonRun): where the host card is
+	// served. Empty means the default, 0.0.0.0:7778.
 	cardListen string
-	cardArgs   []string
 
 	// cardPollInterval is `rtk gateway --card-poll-interval`; 0 means the default. The range is
 	// checked by gateway.Run, before any state is touched.
@@ -176,8 +172,6 @@ func parseDaemon(args []string) (command, error) {
 			return parseDaemonStop(args[1:])
 		case "network":
 			return parseDaemonNetwork(args[1:])
-		case "card":
-			return command{kind: kindDaemonCard, cardArgs: args[1:]}, nil
 		}
 	}
 
@@ -185,20 +179,13 @@ func parseDaemon(args []string) (command, error) {
 	fs.SetOutput(io.Discard)
 	foreground := fs.Bool("foreground", false, "")
 	cardListen := fs.String("card-listen", "", "")
-	allowLAN := fs.Bool("allow-lan", false, "")
-	insecureHTTP := fs.Bool("insecure-http", false, "")
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("rtk: daemon: %v", err)
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		return command{}, fmt.Errorf("rtk: daemon: unexpected argument %q", rest[0])
 	}
-	// The two LAN opt-ins mean something only with a card listener; the daemon package refuses them
-	// otherwise, before any state is touched.
-	return command{
-		kind: kindDaemonRun, foreground: *foreground,
-		cardListen: *cardListen, allowLAN: *allowLAN, insecureHTTP: *insecureHTTP,
-	}, nil
+	return command{kind: kindDaemonRun, foreground: *foreground, cardListen: *cardListen}, nil
 }
 
 // parseDaemonNetwork handles `rtk daemon network [--json] [--watch]`. No flag has a meaning the

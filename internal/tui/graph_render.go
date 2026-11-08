@@ -33,8 +33,8 @@ func (m *Model) graphLines(width, rows int) []string {
 	if m.graph.urlPanel {
 		return m.graphURLLines(width, rows)
 	}
-	if m.graph.editor.open {
-		return m.cardEditorLines(width, rows)
+	if m.graph.card.open {
+		return m.cardGenerationLines(width, rows)
 	}
 	if m.graph.edgeView {
 		return m.graphTextViewport(m.graphEdgeLines(), width, rows)
@@ -54,7 +54,7 @@ func (m *Model) graphLines(width, rows int) []string {
 	if m.graph.selected == graphLocalKey {
 		localBG = colSelBG
 	}
-	left[0] = m.uiLine("Local card / edit (e)   poll source: gateway-poll", geo.left, colAccent, localBG, true)
+	left[0] = m.uiLine("Local (g): "+m.localCardSummary(), geo.left, colAccent, localBG, true)
 	for gridRow := 0; gridRow < 4; gridRow++ {
 		for line := 0; line < 3; line++ {
 			y := 1 + gridRow*3 + line
@@ -142,6 +142,9 @@ func (m *Model) graphList(width, rows int) []string {
 		if index < len(names) {
 			name := names[index]
 			text = graphKeyName(name)
+			if name == graphLocalKey {
+				text += "  " + m.localCardSummary()
+			}
 			if name != graphLocalKey {
 				h, _ := m.graphHost(name)
 				text += "  " + graphCardMark(h.Card, m.theme.glyphs()) + "  " + m.graphAge(h.Card.AgeMS)
@@ -156,9 +159,9 @@ func (m *Model) graphList(width, rows int) []string {
 		}
 		out = append(out, m.uiLine(text, width, fg, bg, index == selected))
 	}
-	entryHint := "Enter: formatted card; edit from Local card row"
+	entryHint := "Enter: formatted card; local status from Local card row"
 	if m.localGraphSelected() {
-		entryHint = "Enter: formatted card; e: local editor"
+		entryHint = "Enter: local status; g: Generate card draft"
 	}
 	for _, line := range []string{m.graphControls(), entryHint, "card=poll only; connection separate; edges=gateway-decided sends"} {
 		if len(out) < rows {
@@ -172,6 +175,9 @@ func (m *Model) graphList(width, rows int) []string {
 }
 func (m *Model) graphDetail(width, rows int) []string {
 	card, poll, local := m.selectedCard()
+	if m.graph.selected == graphLocalKey {
+		return m.graphTextViewport(cardFileStatusLines(local), width, rows)
+	}
 	lines := []string{graphKeyName(m.graph.selected), "Card | Skills | Security | Capabilities | Raw JSON"}
 	if h, ok := m.graphHost(m.graph.selected); ok {
 		live := "not connected"
@@ -185,9 +191,9 @@ func (m *Model) graphDetail(width, rows int) []string {
 		}
 	}
 	if m.localGraphSelected() {
-		lines = append(lines, "e: edit local card (local daemon)")
+		lines = append(lines, "g: Generate card draft; r: reload card.yaml now")
 		if local != nil {
-			lines = append(lines, cardListenerLines(*local)...)
+			lines = append(lines, cardFileStatusLines(local)...)
 		}
 	} else {
 		lines = append(lines, "read-only here; edit on that host")
@@ -272,7 +278,7 @@ func (m *Model) graphMouse(msg tea.MouseMsg) tea.Cmd {
 	if _, ok := msg.(tea.MouseClickMsg); !ok || point.Button != tea.MouseLeft {
 		return nil
 	}
-	if m.graph.editor.open {
+	if m.graph.card.open {
 		return nil
 	}
 	geo := m.graphGeometry()

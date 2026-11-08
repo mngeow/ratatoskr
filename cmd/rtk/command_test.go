@@ -587,19 +587,14 @@ func TestParseCardForms(t *testing.T) {
 			want: command{kind: kindDaemonRun, cardListen: "100.64.0.5:7778"},
 		},
 		{
-			name: "daemon with a LAN card listener",
-			args: []string{"daemon", "--card-listen=192.168.1.4:7778", "--allow-lan", "--insecure-http"},
-			want: command{kind: kindDaemonRun, cardListen: "192.168.1.4:7778", allowLAN: true, insecureHTTP: true},
+			name: "daemon with the card listener off",
+			args: []string{"daemon", "--card-listen=off"},
+			want: command{kind: kindDaemonRun, cardListen: "off"},
 		},
 		{
-			name: "daemon card commands pass through",
-			args: []string{"daemon", "card", "publish", "--name", "vmb"},
-			want: command{kind: kindDaemonCard, cardArgs: []string{"publish", "--name", "vmb"}},
-		},
-		{
-			name: "daemon card with no command is the daemon's own usage error",
-			args: []string{"daemon", "card"},
-			want: command{kind: kindDaemonCard, cardArgs: []string{}},
+			name: "daemon with no card flag uses the default address",
+			args: []string{"daemon"},
+			want: command{kind: kindDaemonRun},
 		},
 		{
 			name: "gateway card poll interval",
@@ -620,9 +615,7 @@ func TestParseCardForms(t *testing.T) {
 				t.Fatalf("parseCommand(%q): %v", tc.args, err)
 			}
 			if got.kind != tc.want.kind || got.cardListen != tc.want.cardListen ||
-				got.allowLAN != tc.want.allowLAN || got.insecureHTTP != tc.want.insecureHTTP ||
 				got.cardPollInterval != tc.want.cardPollInterval ||
-				strings.Join(got.cardArgs, "\x00") != strings.Join(tc.want.cardArgs, "\x00") ||
 				strings.Join(got.admin, "\x00") != strings.Join(tc.want.admin, "\x00") {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
@@ -631,5 +624,16 @@ func TestParseCardForms(t *testing.T) {
 
 	if _, err := parseCommand([]string{"gateway", "--listen", "127.0.0.1:7777", "--card-poll-interval", "soon"}); err == nil {
 		t.Fatal("a non-duration poll interval was accepted")
+	}
+	// The card LAN flags and the card command group are gone: the listener has no opt-ins, and the card
+	// is a file.
+	for _, args := range [][]string{
+		{"daemon", "--card-listen", "0.0.0.0:7778", "--allow-lan"},
+		{"daemon", "--insecure-http"},
+		{"daemon", "card", "publish"},
+	} {
+		if _, err := parseCommand(args); err == nil {
+			t.Fatalf("parseCommand(%q) was accepted", args)
+		}
 	}
 }

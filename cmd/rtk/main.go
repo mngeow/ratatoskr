@@ -43,10 +43,9 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk runtime [--agents claude,codex]    an alias for rtk attach
        rtk daemon                             start this machine's daemon in the background
        rtk daemon --foreground                the same, staying in this terminal
-       rtk daemon --card-listen ADDR [--allow-lan [--insecure-http]]
-                                              also serve this host's card, read-only, on ADDR (off by default; set at start only)
-       rtk daemon card show|validate|publish|history|rollback
-                                              the host card: view, check and publish it, and its revisions
+       rtk daemon --card-listen ADDR|off      where the host card is served: 0.0.0.0:7778 by default, plain HTTP, readable by
+                                              anyone who can reach the port; set at start only (the card is the file card.yaml in
+                                              the daemon directory; edit it in your editor)
        rtk daemon status                      running or not, its sessions, windows and log path
        rtk daemon stop [--yes]                stop the daemon and every session
        rtk daemon stop --session NAME         end one session
@@ -117,16 +116,6 @@ func main() {
 		err := daemonNetwork(ctx, cmd)
 		stop()
 		if err != nil {
-			exitWith(err)
-		}
-		return
-	case kindDaemonCard:
-		daemon.SetBuild(version)
-		cfg, err := daemonConfig(false)
-		if err != nil {
-			exitWith(err)
-		}
-		if err := daemon.RunCard(context.Background(), cfg.StateDir, cmd.cardArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			exitWith(err)
 		}
 		return
@@ -205,8 +194,6 @@ func runDaemon(cmd command) error {
 		return err
 	}
 	cfg.CardListen = cmd.cardListen
-	cfg.CardAllowLAN = cmd.allowLAN
-	cfg.CardInsecureHTTP = cmd.insecureHTTP
 	if !foreground {
 		return daemon.Start(cfg, os.Stdout)
 	}

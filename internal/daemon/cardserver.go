@@ -1,18 +1,21 @@
 package daemon
 
-// The card listener: the one new network surface this feature adds. It serves the host's PUBLISHED
-// card, read-only, on exactly one address, and nothing else.
+// The card listener: the one network surface this feature adds. It serves the host's card, read-only,
+// on exactly one address, and nothing else.
 //
-// It is off unless the owner starts the daemon with --card-listen. The address rules are the gateway's
-// (loopback and Tailscale plain HTTP; a LAN address needs --allow-lan and serves HTTPS with a
-// self-signed certificate whose fingerprint the owner registers on the gateway; plain HTTP on a LAN
-// needs --insecure-http; no public address), with the messages naming the card listener. Plain HTTP
-// on Tailscale is the existing pattern, not a claim of HTTPS.
+// It is ON BY DEFAULT, at 0.0.0.0:7778 (the gateway is 7777), by the owner's decision: the card is
+// public, plain HTTP, unauthenticated and readable by anyone who can reach the port, so nothing in it
+// may be sensitive (the existing redaction rules stay mandatory). --card-listen ADDR changes the
+// address and --card-listen off turns it off. A bind failure does NOT stop the daemon: it is the
+// "not bound" state with a reason, shown in the log, in `rtk daemon status` and in the Graph tab. A
+// running daemon needs a restart (rtk daemon stop ends sessions) to change any of this.
 //
 // It never shares the Unix socket's handlers and has no route to any operation: GET and HEAD on the
 // two well-known paths, and everything else is a 404 or a 405. No cookies, no CORS headers, no
 // directory listing, no redirects. The card's own URL in the served bytes comes from the BOUND
-// address, never from a request header.
+// address, never from a request header; when the bound address is a wildcard, an address of this
+// machine is advertised (advertiseAddress), and the gateway still polls the address its owner
+// registered, not this text.
 //
 // UNTESTED. Under GR-3 (docs/design/ground-rules.md) nothing here has been run:
 // only gofmt, go vet and go build have been applied. No socket has been bound.
@@ -25,124 +28,129 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mngeow/ratatoskr/internal/gateway"
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
 const (
-	// subjectCardListener names this listener in the shared address messages.
-	subjectCardListener = "card listener"
+	cardServerTimeout   = 5 * time.Second // UNTESTED guess; contract default
+	cardServerMaxHeader = 8 << 10         // UNTESTED guess; contract default
+	cardServerShutdown  = 2 * time.Second // UNTESTED guess
+	cardCacheControl    = "max-age=30"    // UNTESTED guess; contract default
 
-	cardServerTimeout    = 5 * time.Second // UNTESTED guess; contract default
-	cardServerMaxHeader  = 8 << 10         // UNTESTED guess; contract default
-	cardServerShutdown   = 2 * time.Second // UNTESTED guess
-	cardCacheControl     = "max-age=30"    // UNTESTED guess; contract default
-	cardTLSDirName       = "card-tls"
-	cardFirewallHintLead = "if another machine cannot reach this card, check inbound TCP"
+	// cardListenOff is the --card-listen value that turns the listener off.
+	cardListenOff = "off"
 )
 
-// planCardListen validates the listener flags without touching a file or a socket. A zero CardListen
-// means the listener is off; the other two flags then mean nothing and are refused, so a flag that does
-// nothing cannot hide a mistake.
+// planCardListen turns the flag into an address, or says the listener is off. The empty flag is the
+// default address. The address must be an IP literal with a port (no name is resolved).
 //
 // UNTESTED.
-func planCardListen(cfg Config) (plan gateway.ListenPlan, on bool, err error) {
-	if cfg.CardListen == "" {
-		if cfg.CardAllowLAN || cfg.CardInsecureHTTP {
-			return gateway.ListenPlan{}, false, errors.New("daemon: --allow-lan and --insecure-http apply only with --card-listen ADDR")
+func planCardListen(flag string) (addr netip.AddrPort, on bool, err error) {
+	switch value := strings.TrimSpace(flag); {
+	case strings.EqualFold(value, cardListenOff):
+		return netip.AddrPort{}, false, nil
+	case value == "":
+		return netip.MustParseAddrPort(protocol.DefaultCardListen), true, nil
+	default:
+		parsed, err := netip.ParseAddrPort(value)
+		if err != nil {
+			return netip.AddrPort{}, false, fmt.Errorf("daemon: --card-listen takes an IP address and a port such as 0.0.0.0:7778 or [::]:7778, or %q", cardListenOff)
 		}
-		return gateway.ListenPlan{}, false, nil
+		return parsed, true, nil
 	}
-	plan, err = gateway.PlanListenFor(subjectCardListener, cfg.CardListen, cfg.CardAllowLAN, cfg.CardInsecureHTTP)
-	if err != nil {
-		return gateway.ListenPlan{}, false, err
-	}
-	return plan, true, nil
 }
 
 // boundCard is a card listener that has been bound but is not serving yet.
 type boundCard struct {
-	plan        gateway.ListenPlan
-	listener    net.Listener
-	fingerprint string
-	view        protocol.CardListener
+	listener net.Listener
+	view     protocol.CardListener
 }
 
-// bindCardListener binds the listener, after the plan has been validated. The certificate for HTTPS is
-// loaded or created before the socket exists, so a refused identity leaves no bound address behind.
-// One bind, no fallback, no retry: a failed bind is a failed start that names what to fix.
+// bindCardListener binds the address. It returns the state to show either way: listening with the
+// listener, or not bound with a reason and no listener. One bind, no fallback, no retry.
 //
 // UNTESTED.
-func bindCardListener(plan gateway.ListenPlan, daemonDirectory string) (*boundCard, error) {
-	var cert tls.Certificate
-	fingerprint := ""
-	if plan.Transport == gateway.TransportHTTPS {
-		var err error
-		cert, fingerprint, err = gateway.LoadOrCreateIdentity(filepath.Join(daemonDirectory, cardTLSDirName))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	listener, err := gateway.ListenFor(subjectCardListener, plan.Addr)
+func bindCardListener(addr netip.AddrPort) (*boundCard, protocol.CardListener) {
+	listener, err := net.Listen("tcp", addr.String())
 	if err != nil {
-		return nil, fmt.Errorf("%w; bring up the address (or Tailscale) and start the daemon again", err)
+		return nil, protocol.CardListener{State: protocol.CardListenerNotBound, Reason: bindReason(err)}
 	}
-
-	scheme := "http"
-	if plan.Transport == gateway.TransportHTTPS {
-		scheme = "https"
-		listener = tls.NewListener(listener, gateway.ServerTLSConfig(cert))
-	}
-
 	actual, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		_ = listener.Close()
-		return nil, errors.New("daemon: the card listener did not report a TCP address")
+		return nil, protocol.CardListener{State: protocol.CardListenerNotBound, Reason: "the listener did not report a TCP address"}
 	}
 	bound := actual.AddrPort()
 	if bound.Addr().Is4In6() {
 		bound = netip.AddrPortFrom(bound.Addr().Unmap(), bound.Port())
 	}
-
-	return &boundCard{
-		plan:        plan,
-		listener:    listener,
-		fingerprint: fingerprint,
-		view: protocol.CardListener{
-			State:     protocol.CardListenerOn,
-			URL:       scheme + "://" + bound.String() + protocol.CardPath,
-			Transport: scheme,
-		},
-	}, nil
+	advertised := advertiseAddress(bound)
+	view := protocol.CardListener{
+		State: protocol.CardListenerListening,
+		Addr:  bound.String(),
+		URL:   "http://" + advertised.String() + protocol.CardPath,
+	}
+	return &boundCard{listener: listener, view: view}, view
 }
 
-// startupLines are what the daemon logs once the listener is bound: where, how, and what the owner must
-// do next. Nothing secret: the fingerprint is public.
-func (b *boundCard) startupLines() []string {
-	lines := []string{"the host card is served at " + b.view.URL}
-	switch b.plan.Transport {
-	case gateway.TransportHTTPS:
-		lines = append(lines, "card transport: HTTPS, self-signed certificate, fingerprint "+b.fingerprint+" (register it with: rtk gateway card-target set HOST URL --fingerprint ...)")
-	case gateway.TransportLANHTTP:
-		lines = append(lines, gateway.PlainHTTPWarning)
-	default:
-		if b.plan.Class == gateway.ClassTailscale {
-			lines = append(lines, "card transport: plain HTTP; encrypted only if this address really is Tailscale (A2A asks for HTTPS in production; this is the gateway's existing pattern)")
-		} else {
-			lines = append(lines, "card transport: plain HTTP; loopback only")
+// bindReason is our sentence for a bind error. The operating system's text is not repeated.
+func bindReason(err error) string {
+	switch {
+	case errors.Is(err, syscall.EADDRINUSE):
+		return "the port is already in use"
+	case errors.Is(err, syscall.EACCES):
+		return "permission to use that port was denied"
+	case errors.Is(err, syscall.EADDRNOTAVAIL):
+		return "that address is not on this machine"
+	}
+	return "the address could not be bound"
+}
+
+// advertiseAddress is the address written into the card's own URL. A specific bound address is used
+// as is. For a wildcard the owner's machine has no single answer, so it takes the first usable
+// interface address, Tailscale (100.64.0.0/10) first, then a private LAN address, then any other
+// non-loopback one, and falls back to loopback. The URL is information for readers; nothing dials it.
+func advertiseAddress(bound netip.AddrPort) netip.AddrPort {
+	if !bound.Addr().IsUnspecified() {
+		return bound
+	}
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		return netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), bound.Port())
+	}
+	tailscale := netip.MustParsePrefix("100.64.0.0/10")
+	var private, other netip.Addr
+	for _, item := range addresses {
+		prefix, err := netip.ParsePrefix(item.String())
+		if err != nil {
+			continue
+		}
+		address := prefix.Addr().Unmap()
+		if !address.Is4() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsMulticast() || address.IsUnspecified() {
+			continue
+		}
+		switch {
+		case tailscale.Contains(address):
+			return netip.AddrPortFrom(address, bound.Port())
+		case address.IsPrivate() && !private.IsValid():
+			private = address
+		case !other.IsValid():
+			other = address
 		}
 	}
-	if b.plan.Class == gateway.ClassLAN {
-		lines = append(lines, fmt.Sprintf("%s %d on this machine's firewall; restrict any allow rule to the intended source hosts or interface", cardFirewallHintLead, b.plan.Addr.Port()))
+	switch {
+	case private.IsValid():
+		return netip.AddrPortFrom(private, bound.Port())
+	case other.IsValid():
+		return netip.AddrPortFrom(other, bound.Port())
 	}
-	return lines
+	return netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), bound.Port())
 }
 
 // cardServer serves the published card.
@@ -173,6 +181,9 @@ func newCardServer(service *cardService, log *logger) *cardServer {
 func (c *cardServer) serve(listener net.Listener) {
 	if err := c.http.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		c.log.logf("the card listener stopped: %v", err)
+		// The state must not keep saying "listening" once nothing is: the view, the log and
+		// `rtk daemon status` all read it.
+		c.service.setListener(protocol.CardListener{State: protocol.CardListenerNotBound, Reason: "the listener stopped"})
 	}
 }
 

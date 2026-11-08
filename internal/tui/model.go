@@ -292,9 +292,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.daemon.disconnected {
 				return m, tea.Quit
 			}
-			networkCmd, graphCmd := m.networkTick(), m.graphTick()
-			if networkCmd != nil || graphCmd != nil {
-				return m, tea.Batch(m.tick(), networkCmd, graphCmd)
+			networkCmd, graphCmd, cardCmd := m.networkTick(), m.graphTick(), m.cardTick()
+			if networkCmd != nil || graphCmd != nil || cardCmd != nil {
+				return m, tea.Batch(m.tick(), networkCmd, graphCmd, cardCmd)
 			}
 		}
 		// The outbound source refreshes on its own coalesced clock, and only while
@@ -615,7 +615,7 @@ func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
 // paste is user input, not a message.
 func (m *Model) paste(content string) tea.Cmd {
 	if m.graphMode {
-		m.cardInsert(content)
+		// Graph paste is consumed; card.yaml is edited externally.
 		return nil
 	}
 	if m.emptyDaemon() {
@@ -1446,12 +1446,12 @@ func (m *Model) hintsLine() string {
 			if m.graph.urlPanel {
 				return "Esc return   Enter request clipboard   F10 detach"
 			}
-			if m.graph.editor.open {
-				return "Tab fields/actions   Enter activate   Esc back   F5 Network   F10 detach"
+			if m.graph.card.open {
+				return "Y run   A Accept   D discard   X cancel   Esc back   F10 detach"
 			}
 			edit := ""
 			if m.localGraphSelected() {
-				edit = "   e local edit"
+				edit = "   g Generate card draft"
 			}
 			return "Tab hosts/detail/controls   arrows select/scroll   Enter detail   r refresh" + edit + "   c URL   Esc terminals   F7 Graph   F10 detach"
 		case m.networkMode:

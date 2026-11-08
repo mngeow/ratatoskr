@@ -63,10 +63,9 @@ const (
 	TypeStop        Type = "stop"         // no body; answer TypeAck, then the daemon stops
 	TypeStopSession Type = "stop_session" // body StopSession; answer TypeAck
 	TypeNetwork     Type = "network"      // body NetworkRequest; answer TypeResult with Network
-	// TypeCardOp is a host-card operation (read, edit, validate, publish, history, rollback,
-	// rescan). Body: CardOp. Answer: TypeResult with Card, or card_conflict with the current Card.
-	// Served on the Unix socket only, to a window connection and to a control connection by one
-	// handler; the caller kind is taken from the connection's role, never from the body.
+	// TypeCardOp is a host-card operation (get, reload, draft_prepare, draft_run, draft_status,
+	// draft_cancel, draft_accept). Body: CardOp. Answer: TypeResult with Card or Draft, or
+	// card_conflict with the current Card. Window connections on the Unix socket only.
 	TypeCardOp Type = "card_op"
 )
 

@@ -1,7 +1,7 @@
 package protocol
 
 // The host card's wire shape: the public JSON a daemon serves, the limits that bound it, and the
-// views the owner's own daemon answers to its window and CLI about editing it.
+// views the owner's own daemon answers to its window about the card.yaml file it serves from.
 //
 // Authority: docs/implementation/host-cards-contract.md (ADR-0005). The card is an "A2A-style
 // card": field names follow A2A v1.0.0 section 4.4 as read on 2026-11-07, and only fields verified
@@ -47,8 +47,8 @@ const (
 	MaxCardSkillTags        = 8
 	MaxCardSkillTag         = 32
 
-	// MaxCardRevisions is how many published revisions the daemon keeps.
-	MaxCardRevisions = 20
+	// MaxCardFileBytes bounds the owner's card.yaml.
+	MaxCardFileBytes = 64 << 10
 )
 
 // HostCard is the public card. The same type is what the daemon publishes, what the gateway stores
@@ -144,53 +144,6 @@ const (
 	CardRejected = "rejected"
 )
 
-// Who wrote a card field, and through which door.
-const (
-	CardSourceOwner      = "owner"
-	CardSourceDetection  = "detection"
-	CardSourceModelDraft = "model-draft"
-
-	CardCallerWindow = "window"
-	CardCallerCLI    = "cli"
-)
-
-// Drafting is fixed at not configured until a provider is chosen by the user.
-const (
-	DraftNotConfigured = "not_configured"
-)
-
-// Listener states in a CardView. A failed bind is fatal at daemon start, so there is no failed
-// state.
-const (
-	CardListenerOff = "off"
-	CardListenerOn  = "on"
-)
-
-// CardViewSchema is the schema of CardView.
-const CardViewSchema = 1
-
-// CardView is what the owner's own daemon answers about its card. It needs no gateway, no graph and
-// no network: the local editor works with all of them absent.
-//
-// Token changes whenever the working copy or the published card changes. An edit, publish or
-// rollback carries the Token it was made against; a stale one is refused with card_conflict and the
-// answer holds the current view.
-type CardView struct {
-	Schema    int                   `json:"schema"`
-	Host      CardHost              `json:"host"`
-	Token     string                `json:"token"`
-	Published *CardRevision         `json:"published"`
-	Working   CardWorking           `json:"working"`
-	Revisions []CardRevisionSummary `json:"revisions"`
-	Skills    SkillInventory        `json:"skills"`
-	Listener  CardListener          `json:"listener"`
-	Drafting  CardDrafting          `json:"drafting"`
-	// Preview is one older revision in full, set only in the answer to a history operation that
-	// named a revision. It is how a rollback confirmation shows what it would restore; every other
-	// answer leaves it out, so the usual view stays small.
-	Preview *CardRevision `json:"preview,omitempty"`
-}
-
 // CardHost is the local host's identity. Name is the paired host name; Paired is false only when
 // the daemon has no pairing to read (a daemon normally refuses to run unpaired).
 type CardHost struct {
@@ -198,33 +151,7 @@ type CardHost struct {
 	Paired bool   `json:"paired"`
 }
 
-// CardRevision is one published revision: the card as published and where each field came from.
-type CardRevision struct {
-	N       int               `json:"n"`
-	At      string            `json:"at"`
-	Caller  string            `json:"caller"`
-	Card    HostCard          `json:"card"`
-	Sources map[string]string `json:"sources,omitempty"`
-}
-
-// CardRevisionSummary is one history row.
-type CardRevisionSummary struct {
-	N      int    `json:"n"`
-	At     string `json:"at"`
-	Caller string `json:"caller"`
-}
-
-// CardWorking is the owner's working copy. There is no drafting in this build; if it is ever added, a
-// draft must not overwrite a hand edit unless the owner chooses it.
-type CardWorking struct {
-	Card     HostCard          `json:"card"`
-	Dirty    bool              `json:"dirty"`
-	BasedOn  int               `json:"based_on,omitempty"` // the published revision this copy started from; 0 for none
-	Sources  map[string]string `json:"sources,omitempty"`
-	Problems []CardProblem     `json:"problems"`
-}
-
-// CardProblem is one reason the working copy cannot be published. Field names the field; Message
+// CardProblem is one reason a card (or a card.yaml) is not acceptable. Field names the field; Message
 // is our own sentence and never repeats a rejected value.
 type CardProblem struct {
 	Field   string `json:"field"`
@@ -243,7 +170,7 @@ type SkillInventory struct {
 }
 
 // FoundSkill is one skill file found. Label is a relative label with no absolute path and no
-// username. Declared says the working copy declares it. LocationVerified is false for a location the
+// username. Declared says card.yaml declares a skill with this directory name. LocationVerified is false for a location the
 // official documentation does not mention (an undocumented location); it says nothing about the skill (nothing here checks
 // ability, and "verified" is a word this feature never applies to a skill).
 type FoundSkill struct {
@@ -265,16 +192,134 @@ type SkillNote struct {
 	Reason string `json:"reason"`
 }
 
-// CardListener is whether this daemon serves its card, and where.
+// CardFileViewSchema is the schema of CardFileView.
+const CardFileViewSchema = 1
+
+// CardReadableNotice is the one sentence the window states beside the card: the endpoint has no
+// authentication, so nothing in a card may be sensitive.
+const CardReadableNotice = "This card is readable by anyone who can reach this port."
+
+// Listener states. They are first-class: a card is never called ready or published to the Graph
+// unless the state is CardListenerListening. A bind failure does not stop the daemon; it is the
+// not_bound state with a reason.
+const (
+	CardListenerListening = "listening"
+	CardListenerOff       = "off"
+	CardListenerNotBound  = "not_bound"
+)
+
+// DefaultCardListen is where a daemon serves its card when --card-listen is not given. The gateway
+// is 7777.
+const DefaultCardListen = "0.0.0.0:7778"
+
+// States of the owner's card.yaml.
+const (
+	CardFileOK               = "ok"                // valid; this is the served card
+	CardFileNeedsDescription = "needs_description" // the template, or a file whose only fault is a missing description
+	CardFileInvalid          = "invalid"           // does not parse or validate; the last good card (if any) stays served
+	CardFileMissing          = "missing"           // no file; the daemon writes the template at start
+)
+
+// CardListener is whether this daemon serves its card, and where. Addr and URL are set only when
+// listening; Reason only when not bound.
 type CardListener struct {
-	State     string `json:"state"`
-	URL       string `json:"url,omitempty"`       // the card's own URL when on
-	Transport string `json:"transport,omitempty"` // "http" or "https" when on
+	State  string `json:"state"`
+	Addr   string `json:"addr,omitempty"`   // the bound address when listening
+	URL    string `json:"url,omitempty"`    // the card's own URL when listening
+	Reason string `json:"reason,omitempty"` // our sentence, when not bound
 }
 
-// CardDrafting is the model-draft feature's availability: fixed at not configured, with the words
-// that explain it.
-type CardDrafting struct {
+// CardFileView is what the owner's own daemon answers about its card.yaml. It needs no gateway,
+// no graph and no network.
+//
+// Token changes whenever the file's bytes change. Accepting a draft
+// carries the Token it was made against; a stale one is refused with card_conflict and the answer
+// holds the current view.
+type CardFileView struct {
+	Schema   int              `json:"schema"`
+	Host     CardHost         `json:"host"`
+	Path     string           `json:"path"` // absolute path of card.yaml, for the owner
+	Token    string           `json:"token"`
+	File     CardFileStatus   `json:"file"`
+	Served   *CardServed      `json:"served,omitempty"` // the last good card; nil when none is served
+	Listener CardListener     `json:"listener"`
+	Skills   SkillInventory   `json:"skills"` // evidence only; detected skills are NOT added to the card
+	Drafting CardDraftingInfo `json:"drafting"`
+	Readable string           `json:"readable"` // CardReadableNotice
+}
+
+// CardFileStatus is the state of card.yaml. Line is 1-based, 0 for none. Message is our sentence and
+// never repeats a rejected value.
+type CardFileStatus struct {
 	State   string `json:"state"`
-	Message string `json:"message"`
+	Line    int    `json:"line,omitempty"`
+	Message string `json:"message,omitempty"`
+	ModTime string `json:"mod_time,omitempty"`
+}
+
+// CardServed is the last good card. Current is false when card.yaml has moved on and is not valid
+// (the older card keeps being served). Since is when it became the served card.
+type CardServed struct {
+	Card    HostCard `json:"card"`
+	Since   string   `json:"since"`
+	Current bool     `json:"current"`
+}
+
+// CardDraftingInfo says whether a draft can be prepared and which preset would run. Preset is empty
+// when card.yaml names none.
+type CardDraftingInfo struct {
+	Preset    string `json:"preset,omitempty"`
+	Available bool   `json:"available"`
+	Message   string `json:"message"`
+}
+
+// Draft states. A draft is private to the window that prepared it.
+const (
+	CardDraftPrepared  = "prepared"  // confirmation built; nothing has run
+	CardDraftRunning   = "running"   // the command is running
+	CardDraftReady     = "ready"     // a valid candidate exists; nothing is written until accept
+	CardDraftFailed    = "failed"    // see Error
+	CardDraftCancelled = "cancelled" // discarded by the owner, by disconnect, or expired (Error "expired")
+)
+
+// Limits of a draft run.
+const (
+	CardDraftTimeoutSec     = 120
+	CardDraftOutputCapBytes = 64 << 10
+)
+
+// CardDraft is one model-draft attempt. Prepared drafts carry the confirmation the owner must see:
+// the exact command, the exact payload on stdin and its size.
+type CardDraft struct {
+	ID    string `json:"id"`
+	State string `json:"state"`
+	Error string `json:"error,omitempty"` // our sentence; never a rejected value or command output
+
+	// Confirmation, present from prepared on.
+	Preset         string   `json:"preset"`
+	Binary         string   `json:"binary"`           // the resolved executable, absolute
+	Argv           []string `json:"argv"`             // exact, argv[0] included, no shell
+	Payload        string   `json:"payload"`          // the exact stdin text
+	PayloadBytes   int      `json:"payload_bytes"`    // len(Payload)
+	EnvNames       []string `json:"env_names"`        // names of the variables passed, never values
+	TimeoutSec     int      `json:"timeout_sec"`      // CardDraftTimeoutSec
+	OutputCapBytes int      `json:"output_cap_bytes"` // CardDraftOutputCapBytes
+	Caveats        []string `json:"caveats"`          // e.g. what the preset does not stop the harness loading
+
+	// Result, present when ready.
+	Diff           []CardDiffEntry `json:"diff,omitempty"`
+	CandidateBytes int             `json:"candidate_bytes,omitempty"`
+	BackupNotice   string          `json:"backup_notice,omitempty"`
+	RewriteNotice  string          `json:"rewrite_notice,omitempty"`
+	BaseToken      string          `json:"base_token,omitempty"` // the file token the draft was made against
+	Stale          bool            `json:"stale,omitempty"`      // card.yaml changed after the draft was made
+}
+
+// CardDiffEntry is one changed field. Path is like "description" or "skills[2].tags". Old and New are
+// short text renderings. Generated marks a field the model produced.
+type CardDiffEntry struct {
+	Path      string `json:"path"`
+	Old       string `json:"old,omitempty"`
+	New       string `json:"new,omitempty"`
+	Generated bool   `json:"generated"`
 }

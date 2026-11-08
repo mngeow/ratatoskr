@@ -300,6 +300,11 @@ func (w *window) closeWith(reason string) {
 			graphRelease()
 		}
 
+		// A window's card draft ends with it: a running command is stopped, the rest discarded.
+		if w.hub != nil && w.hub.card != nil {
+			w.hub.card.drafts.release(w)
+		}
+
 		_ = w.conn.Close()
 		if w.hub != nil {
 			w.hub.unregister(w)

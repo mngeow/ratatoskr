@@ -29,7 +29,7 @@ type graphState struct {
 	polls, messages                          bool
 	fullDetail, edgeView, urlPanel           bool
 	url                                      string
-	editor                                   cardEditor
+	card                                     cardState
 }
 type graphMsg struct {
 	generation uint64
@@ -206,7 +206,7 @@ func (m *Model) selectGraph(delta int) {
 	m.graph.scroll = 0
 }
 func (m *Model) localGraphSelected() bool {
-	return m.graph.selected == graphLocalKey || m.graph.editor.have && m.graph.editor.view.Host.Name != "" && m.graph.selected == m.graph.editor.view.Host.Name
+	return m.graph.selected == graphLocalKey || m.graph.card.have && m.graph.card.view.Host.Name != "" && m.graph.selected == m.graph.card.view.Host.Name
 }
 func (m *Model) graphKey(k tea.KeyPressMsg) tea.Cmd {
 	g := &m.graph
@@ -221,8 +221,8 @@ func (m *Model) graphKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if g.editor.open {
-		return m.cardEditorKey(k)
+	if g.card.open {
+		return m.cardGenerationKey(k)
 	}
 	if isKey(k, tea.KeyEsc) {
 		if g.fullDetail || g.edgeView {
@@ -291,14 +291,20 @@ func (m *Model) graphKey(k tea.KeyPressMsg) tea.Cmd {
 		switch strings.ToLower(string(k.Code)) {
 		case "r":
 			g.refresh = true
-			return tea.Batch(m.graphQuery(), m.loadCard())
-		case "e":
+			return tea.Batch(m.graphQuery(), m.cardOperation(wire.CardOpReload))
+		case "g":
 			if !m.localGraphSelected() {
-				m.feedback = "read-only here; edit on that host"
+				m.feedback = "read-only here; edit card.yaml on that host"
 				return nil
 			}
-			g.editor.open = true
-			return m.loadCard()
+			g.card.open = true
+			if g.card.draft != nil {
+				return nil
+			}
+			return m.cardOperation(wire.CardOpDraftPrepare)
+		case "e":
+			m.feedback = "edit card.yaml in your own editor; local status shows its path"
+			return nil
 		case "c":
 			m.openCardURL()
 			return nil
@@ -385,33 +391,39 @@ func (m *Model) graphStatus() string {
 	}
 	return status
 }
-func (m *Model) selectedCard() (*protocol.HostCard, *protocol.GraphCard, *protocol.CardView) {
+func (m *Model) selectedCard() (*protocol.HostCard, *protocol.GraphCard, *protocol.CardFileView) {
 	if m.graph.selected == graphLocalKey {
-		e := &m.graph.editor
+		e := &m.graph.card
 		if !e.have {
 			return nil, nil, nil
 		}
-		return &e.view.Working.Card, nil, &e.view
+		if e.view.Served == nil {
+			return nil, nil, &e.view
+		}
+		return &e.view.Served.Card, nil, &e.view
 	}
 	h, ok := m.graphHost(m.graph.selected)
 	if !ok {
 		return nil, nil, nil
 	}
-	var local *protocol.CardView
-	if m.localGraphSelected() && m.graph.editor.have {
-		local = &m.graph.editor.view
+	var local *protocol.CardFileView
+	if m.localGraphSelected() && m.graph.card.have {
+		local = &m.graph.card.view
 	}
 	return h.Card.Card, &h.Card, local
 }
 func (m *Model) openCardURL() {
-	if m.graph.selected == graphLocalKey {
-		e := &m.graph.editor
+	if m.localGraphSelected() {
+		e := &m.graph.card
 		if !e.have {
 			m.feedback = "local card listener state unavailable"
 			return
 		}
-		if e.view.Listener.State != protocol.CardListenerOn {
-			m.feedback = "listener off"
+		if e.view.Listener.State != protocol.CardListenerListening {
+			m.feedback = "listener " + cleanUISpan(e.view.Listener.State)
+			if e.view.Listener.State == protocol.CardListenerNotBound {
+				m.feedback = "not bound: " + cleanUISpan(e.view.Listener.Reason)
+			}
 			return
 		}
 		if e.view.Listener.URL == "" {
@@ -431,16 +443,9 @@ func (m *Model) openCardURL() {
 	m.graph.urlPanel = true
 }
 
-func cardListenerLines(view protocol.CardView) []string {
-	if view.Listener.State == protocol.CardListenerOn {
-		return []string{"Card listener: on", graphField("Listener URL", view.Listener.URL)}
-	}
-	return []string{"Card listener: off", "Listener configuration is set when the daemon starts; it cannot be toggled here.", "Stopping the daemon ends every session."}
-}
-
 func graphKeyName(name string) string {
 	if name == graphLocalKey {
-		return "Local card / edit"
+		return "Local card / status"
 	}
 	return cleanUISpan(name)
 }

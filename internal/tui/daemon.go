@@ -48,8 +48,8 @@ type daemonWindow struct {
 	// Network view to open.
 	network func(ctx context.Context, request wire.NetworkRequest) (protocol.NetworkView, uint64, error)
 	graph   func(context.Context, wire.GraphRequest) (protocol.GraphView, uint64, error)
-	card    func(context.Context) (protocol.CardView, error)
-	cardOp  func(context.Context, wire.CardOp) (protocol.CardView, error)
+	card    func(context.Context) (protocol.CardFileView, error)
+	cardOp  func(context.Context, wire.CardOp) (wire.Result, error)
 	// enter asks the daemon what pressing Enter on one Network row should do. Nil in a test-built
 	// window, which is what makes the Network view's Enter answer politely instead of panicking.
 	enter func(ctx context.Context, request wire.EnterRequest) (wire.EnterPlan, error)

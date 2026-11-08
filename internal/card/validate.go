@@ -56,8 +56,8 @@ func Validate(card protocol.HostCard, served bool) []protocol.CardProblem {
 	}
 
 	text("name", card.Name, protocol.MaxCardName, true)
-	// The description is required (A2A's proto marks it so). A working copy may be saved without one,
-	// with this problem listed; publishing is what refuses it.
+	// The description is required (A2A's proto marks it so). card.yaml may be saved without one,
+	// with this problem listed; the card is simply not served until it has one.
 	if card.Description == "" {
 		add("description", "a description is required: say in a sentence what this host is for")
 	} else {
@@ -330,8 +330,30 @@ func CheckPublic(card protocol.HostCard) []protocol.CardProblem {
 	return problems
 }
 
+// PublicProblem says what is wrong with one string that would be shown in a public card (a credential
+// or a path), or "". It never echoes the value.
+func PublicProblem(value string) string { return publicProblem(value) }
+
 // publicProblem says what is wrong with one string, or "".
 func publicProblem(value string) string {
+	if reason := CredentialProblem(value); reason != "" {
+		return reason
+	}
+	for _, word := range strings.Fields(value) {
+		word = strings.Trim(word, `.,;:()[]{}"'<>`)
+		if word != "" && looksLikePath(word) {
+			return "this looks like a file path and cannot be published"
+		}
+	}
+	return ""
+}
+
+// CredentialProblem says whether one string looks like a key, token or authorization header, and
+// returns our sentence for it, or "". It is the check card.yaml applies to every value, and it never
+// echoes the value.
+//
+// UNTESTED.
+func CredentialProblem(value string) string {
 	if strings.Contains(value, "-----BEGIN") {
 		return "this looks like a key or certificate and cannot be published"
 	}
@@ -350,9 +372,6 @@ func publicProblem(value string) string {
 		}
 		if tokenShape.MatchString(word) && hasLetterAndDigit(word) {
 			return "this looks like a credential and cannot be published"
-		}
-		if looksLikePath(word) {
-			return "this looks like a file path and cannot be published"
 		}
 	}
 	return ""

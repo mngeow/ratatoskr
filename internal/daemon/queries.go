@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
-	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
 const (
@@ -52,12 +51,12 @@ func (w *window) startCardOp(envelope wire.Envelope) {
 }
 
 // cardResult runs one card operation as this window's caller.
-func (w *window) cardResult(ctx context.Context, op wire.CardOp) wire.Result {
+func (w *window) cardResult(_ context.Context, op wire.CardOp) wire.Result {
 	if w.hub == nil || w.hub.card == nil {
 		return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the host card is not available"}}
 	}
-	view, refusal := w.hub.card.Do(ctx, op, protocol.CardCallerWindow)
-	return wire.Result{Card: &view, Error: refusal}
+	// The window itself is the draft owner key: its drafts end with it (window.closeWith).
+	return w.hub.card.Do(op, w)
 }
 
 // runBounded runs one request on its own goroutine with the window's concurrency bound and the query

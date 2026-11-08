@@ -424,6 +424,9 @@ func PrintStatus(w io.Writer, status wire.Status, cliBuild string, now time.Time
 	if status.LinkErr != "" {
 		fmt.Fprintf(w, "link error: %s\n", status.LinkErr)
 	}
+	if status.Card != nil {
+		fmt.Fprintf(w, "card listener: %s\n", cardListenerText(*status.Card))
+	}
 	fmt.Fprintf(w, "windows: %d\n", status.Windows)
 
 	if len(status.Sessions) == 0 {
@@ -444,6 +447,18 @@ func PrintStatus(w io.Writer, status wire.Status, cliBuild string, now time.Time
 		}
 		fmt.Fprintln(w, line)
 	}
+}
+
+// cardListenerText is the listener state in words. The three states read differently on purpose: a card
+// is never called ready unless it is listening.
+func cardListenerText(listener protocol.CardListener) string {
+	switch listener.State {
+	case protocol.CardListenerListening:
+		return fmt.Sprintf("listening on %s, card at %s (readable by anyone who can reach this port)", listener.Addr, listener.URL)
+	case protocol.CardListenerNotBound:
+		return "NOT BOUND: " + listener.Reason + " (the daemon is running; the card is not served)"
+	}
+	return "off"
 }
 
 // shortDuration renders an uptime: seconds under a minute, then minutes, hours and days.

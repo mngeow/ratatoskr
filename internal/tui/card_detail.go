@@ -68,7 +68,7 @@ func appendWrapped(lines []string, label, value string, width int) []string {
 // absence rather than a blank. The caller owns scrolling, so every line is returned.
 //
 // UNTESTED.
-func cardSectionLines(card *protocol.HostCard, poll *protocol.GraphCard, local *protocol.CardView, section int, width int) []string {
+func cardSectionLines(card *protocol.HostCard, poll *protocol.GraphCard, local *protocol.CardFileView, section int, width int) []string {
 	if width <= 0 {
 		return nil
 	}
@@ -151,7 +151,7 @@ func cardSectionCardLines(card *protocol.HostCard, poll *protocol.GraphCard, wid
 }
 
 // cardSectionSkillsLines is the declared skills, the evidence for them, and this host's inventory.
-func cardSectionSkillsLines(card *protocol.HostCard, poll *protocol.GraphCard, local *protocol.CardView, width int) []string {
+func cardSectionSkillsLines(card *protocol.HostCard, poll *protocol.GraphCard, local *protocol.CardFileView, width int) []string {
 	lines := make([]string, 0, 24)
 
 	evidence := evidenceBySkill(poll)
@@ -188,7 +188,7 @@ func cardSectionSkillsLines(card *protocol.HostCard, poll *protocol.GraphCard, l
 			}
 			declared := "not declared"
 			if found.Declared {
-				declared = "declared in the working copy"
+				declared = "declared in card.yaml"
 			}
 			lines = appendWrapped(lines, "found:",
 				found.Harness+" "+found.Scope+" "+found.Label+" ("+declared+"; "+location+")", width)

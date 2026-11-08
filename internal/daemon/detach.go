@@ -52,9 +52,9 @@ func Start(cfg Config, out io.Writer) error {
 		return err
 	}
 
-	// The card listener's flags are validated here, before a child exists, so a mistake shows in this
+	// The card listener's flag is validated here, before a child exists, so a mistake shows in this
 	// terminal and not only in a log.
-	if _, _, err := planCardListen(cfg); err != nil {
+	if _, _, err := planCardListen(cfg.CardListen); err != nil {
 		return err
 	}
 
@@ -92,12 +92,6 @@ func Start(cfg Config, out io.Writer) error {
 	childArgs := []string{"daemon", "--foreground"}
 	if cfg.CardListen != "" {
 		childArgs = append(childArgs, "--card-listen", cfg.CardListen)
-		if cfg.CardAllowLAN {
-			childArgs = append(childArgs, "--allow-lan")
-		}
-		if cfg.CardInsecureHTTP {
-			childArgs = append(childArgs, "--insecure-http")
-		}
 	}
 	child := exec.Command(rtkPath, childArgs...)
 	child.Stdin = nil // the child gets /dev/null, not this terminal

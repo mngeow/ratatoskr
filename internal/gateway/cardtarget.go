@@ -73,10 +73,11 @@ func classFromKey(key string) (AddrClass, bool) {
 //   - the host part is an IP literal with an explicit port (no name resolution, so no rebinding);
 //   - the path is empty, "/" or exactly the well-known card path, and nothing else: no userinfo, query
 //     or fragment either. Only the scheme and the address are kept;
-//   - http on loopback and Tailscale; https only on a LAN address, and then --fingerprint is required;
-//     http on a LAN address needs --insecure-http, matching the listener;
-//   - a fingerprint with http, or --insecure-http with anything but LAN http, is refused: a flag that
-//     does nothing hides a mistake;
+//   - plain http on loopback, Tailscale and private LAN (RFC 1918) addresses, with no flag (the card
+//     is public by the owner's decision, and the daemon serves plain HTTP); https only on a LAN
+//     address, and then --fingerprint is required;
+//   - a fingerprint with http, or --insecure-http at all, is refused: a flag that does nothing hides a
+//     mistake;
 //   - the address must not be on the deny list.
 //
 // Host is left empty; the caller fills it from the paired host.
@@ -126,11 +127,8 @@ func ParseCardTarget(raw, fingerprint string, insecureHTTP bool) (CardTarget, er
 	case fingerprint != "":
 		return CardTarget{}, errors.New("gateway: --fingerprint applies only to an https card target")
 
-	case class == ClassLAN && !insecureHTTP:
-		return CardTarget{}, errors.New("gateway: plain http to a LAN address needs --insecure-http (or use https with --fingerprint)")
-
-	case class != ClassLAN && insecureHTTP:
-		return CardTarget{}, errors.New("gateway: --insecure-http applies only to a LAN card target")
+	case insecureHTTP:
+		return CardTarget{}, errors.New("gateway: --insecure-http is not needed: plain http is accepted for loopback, Tailscale and private LAN card targets")
 	}
 
 	return target, nil
