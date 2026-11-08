@@ -3,23 +3,16 @@ package gateway
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver; pure Go
 )
-
-//go:embed migrations/0001_init.sql
-var initSQL string
-
-// schemaVersion is the version this binary knows. A database with a higher
-// user_version is refused untouched.
-const schemaVersion = 1
 
 // ErrGatewayRunning reports that another gateway process holds the lock.
 var ErrGatewayRunning = errors.New("gateway: another gateway process is running")
@@ -35,6 +28,9 @@ type Store struct {
 	db   *sql.DB
 	lock *os.File
 
+	// migrated is what Open did to the schema, for the gateway to say out loud.
+	migrated Migrated
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -43,9 +39,10 @@ type Store struct {
 //
 // hold selects the gateway's process lock: the `--listen` process passes true and
 // keeps it until Close; the admin commands pass false, so they can read and write
-// the database while the gateway runs. Both are allowed to create and migrate a
-// database the other has not created yet, because the migration runs inside one
-// immediate transaction and re-reads the version inside it.
+// the database while the gateway runs. Both may create a database the other has not
+// created yet. Only the process that holds the lock migrates an EXISTING database:
+// an admin command facing an older non-empty one gets ErrNeedsGateway, because an
+// older gateway may be running against it (see migrate.go).
 //
 // UNTESTED.
 func Open(ctx context.Context, stateDir string, hold bool) (_ *Store, err error) {
@@ -83,13 +80,20 @@ func Open(ctx context.Context, stateDir string, hold bool) (_ *Store, err error)
 	}
 	s.db.SetMaxOpenConns(4)
 
-	if err := migrate(ctx, s.db); err != nil {
+	s.migrated, err = migrate(ctx, s.db, path, hold, time.Now())
+	if err != nil {
 		return nil, err
 	}
 	if err := tightenFiles(dir); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// Migration says what Open did to the schema: the zero value when the database was already
+// current. Run prints it, with the backup path, when an existing database was upgraded.
+func (s *Store) Migration() Migrated {
+	return s.migrated
 }
 
 // Close closes the database and then releases the lock. It is idempotent.
@@ -108,12 +112,15 @@ func (s *Store) Close() error {
 	return s.closeErr
 }
 
+// closeDatabase closes the handle. It deliberately leaves s.db set: a goroutine that still holds the
+// store (a kicked recompute, a parked ticker) then gets database/sql's clean "database is closed"
+// error instead of a nil-pointer panic, and the write of a nil field would race its reads. A double
+// close is already prevented by Close's sync.Once, and Open's failure path calls this at most once.
 func (s *Store) closeDatabase() error {
 	if s.db == nil {
 		return nil
 	}
 	err := s.db.Close()
-	s.db = nil
 	if err != nil {
 		return fmt.Errorf("gateway: close database: %w", err)
 	}
@@ -142,45 +149,4 @@ func dsn(path string) string {
 
 	u := url.URL{Scheme: "file", Path: path, RawQuery: q.Encode()}
 	return u.String()
-}
-
-// migrate brings the database to schemaVersion, or refuses a newer one.
-//
-// The version is read inside the transaction, so a second process that waited for
-// the write lock sees the applied version and does nothing. The statements are
-// not IF NOT EXISTS: a race that slipped through would surface as an error rather
-// than a half-applied schema. There is no backup and no downgrade.
-//
-// UNTESTED.
-func migrate(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("gateway: begin migration: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	var current int
-	if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
-		return fmt.Errorf("gateway: read schema version: %w", err)
-	}
-	switch {
-	case current > schemaVersion:
-		return fmt.Errorf("gateway: database schema version %d is newer than this binary (%d)", current, schemaVersion)
-	case current == schemaVersion:
-		return nil
-	}
-
-	if _, err := tx.ExecContext(ctx, initSQL); err != nil {
-		return fmt.Errorf("gateway: apply schema: %w", err)
-	}
-	// PRAGMA does not take a bound parameter; the value is a constant above.
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-		return fmt.Errorf("gateway: record schema version: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("gateway: commit migration: %w", err)
-	}
-	return nil
 }

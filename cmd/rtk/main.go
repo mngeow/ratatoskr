@@ -33,6 +33,9 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway unpair HOST                remove HOST
        rtk gateway hosts                      list paired hosts and their state
        rtk gateway log [--follow] [--limit N] read the gateway's ledger
+       rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
+       rtk gateway --listen ADDR [--card-poll-interval 60s]
+                                              how often the gateway polls registered card targets (10s to 1h)
        rtk gateway show ID                    show one message in full
        rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
                                               pair this machine with a gateway
@@ -40,6 +43,10 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk runtime [--agents claude,codex]    an alias for rtk attach
        rtk daemon                             start this machine's daemon in the background
        rtk daemon --foreground                the same, staying in this terminal
+       rtk daemon --card-listen ADDR [--allow-lan [--insecure-http]]
+                                              also serve this host's card, read-only, on ADDR (off by default; set at start only)
+       rtk daemon card show|validate|publish|history|rollback
+                                              the host card: view, check and publish it, and its revisions
        rtk daemon status                      running or not, its sessions, windows and log path
        rtk daemon stop [--yes]                stop the daemon and every session
        rtk daemon stop --session NAME         end one session
@@ -91,7 +98,7 @@ func main() {
 		return
 	case kindDaemonRun:
 		daemon.SetBuild(version)
-		if err := runDaemon(cmd.foreground); err != nil {
+		if err := runDaemon(cmd); err != nil {
 			fmt.Fprintln(os.Stderr, "rtk:", err)
 			os.Exit(1)
 		}
@@ -110,6 +117,16 @@ func main() {
 		err := daemonNetwork(ctx, cmd)
 		stop()
 		if err != nil {
+			exitWith(err)
+		}
+		return
+	case kindDaemonCard:
+		daemon.SetBuild(version)
+		cfg, err := daemonConfig(false)
+		if err != nil {
+			exitWith(err)
+		}
+		if err := daemon.RunCard(context.Background(), cfg.StateDir, cmd.cardArgs, os.Stdin, os.Stdout, os.Stderr); err != nil {
 			exitWith(err)
 		}
 		return
@@ -134,7 +151,7 @@ func main() {
 
 	switch cmd.kind {
 	case kindGatewayServe:
-		err = gateway.Run(ctx, stateDir, cmd.listen, cmd.allowLAN, cmd.insecureHTTP, os.Stderr)
+		err = gateway.Run(ctx, stateDir, cmd.listen, cmd.allowLAN, cmd.insecureHTTP, cmd.cardPollInterval, os.Stderr)
 	case kindGatewayAdmin:
 		err = gateway.RunAdmin(ctx, stateDir, cmd.admin, os.Stdout, os.Stderr, nil)
 	case kindRuntimePair:
@@ -181,11 +198,15 @@ func daemonConfig(foreground bool) (daemon.Config, error) {
 }
 
 // runDaemon starts the daemon: in the background, or in this terminal with --foreground.
-func runDaemon(foreground bool) error {
+func runDaemon(cmd command) error {
+	foreground := cmd.foreground
 	cfg, err := daemonConfig(foreground)
 	if err != nil {
 		return err
 	}
+	cfg.CardListen = cmd.cardListen
+	cfg.CardAllowLAN = cmd.allowLAN
+	cfg.CardInsecureHTTP = cmd.insecureHTTP
 	if !foreground {
 		return daemon.Start(cfg, os.Stdout)
 	}

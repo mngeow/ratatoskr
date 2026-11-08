@@ -211,6 +211,26 @@ func (s *daemonServer) serveControl(conn net.Conn) {
 				return
 			}
 
+		case wire.TypeCardOp:
+			var op wire.CardOp
+			if err := wire.Decode(envelope, &op); err != nil {
+				s.writeAck(conn, envelope.ID, wire.Ack{OK: false, Error: &wire.Error{Code: wire.CodeBadRequest, Message: "the request could not be read"}})
+				continue
+			}
+			if s.hub == nil || s.hub.card == nil {
+				s.writeAck(conn, envelope.ID, wire.Ack{OK: false, Error: &wire.Error{Code: wire.CodeInternal, Message: "the host card is not available"}})
+				continue
+			}
+
+			// The same handler a window uses, as the CLI caller kind.
+			cardCtx, cancelCard := context.WithTimeout(context.Background(), queryTimeout)
+			view, refusal := s.hub.card.Do(cardCtx, op, protocol.CardCallerCLI)
+			cancelCard()
+
+			if err := s.writeMessage(conn, wire.TypeResult, envelope.ID, wire.Result{Card: &view, Error: refusal}); err != nil {
+				return
+			}
+
 		case wire.TypeStopSession:
 			var request wire.StopSession
 			if err := wire.Decode(envelope, &request); err != nil {
@@ -296,6 +316,11 @@ func (s *daemonServer) status() wire.Status {
 		LogPath:   s.logPath,
 		Windows:   s.windowCount(),
 		Sessions:  s.sessionStatusWithHolder(),
+	}
+
+	if s.hub != nil && s.hub.card != nil {
+		listener := s.hub.card.listenerView()
+		status.Card = &listener
 	}
 
 	if s.router != nil {

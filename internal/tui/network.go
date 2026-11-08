@@ -76,6 +76,7 @@ func (m *Model) openNetwork() tea.Cmd {
 	if m.daemon == nil {
 		return nil
 	}
+	m.closeGraph()
 	if m.logMode {
 		m.leaveHistory()
 	}

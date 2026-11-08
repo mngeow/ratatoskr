@@ -5,6 +5,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseCommandForms(t *testing.T) {
@@ -570,5 +571,65 @@ func TestUsageListsTheEntryFlags(t *testing.T) {
 		if !strings.Contains(usage, form) {
 			t.Fatalf("usage does not mention %q:\n%s", form, usage)
 		}
+	}
+}
+
+// TestParseCardForms: the host card flags and commands. UNTESTED: written, not run.
+func TestParseCardForms(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want command
+	}{
+		{
+			name: "daemon with a card listener",
+			args: []string{"daemon", "--card-listen", "100.64.0.5:7778"},
+			want: command{kind: kindDaemonRun, cardListen: "100.64.0.5:7778"},
+		},
+		{
+			name: "daemon with a LAN card listener",
+			args: []string{"daemon", "--card-listen=192.168.1.4:7778", "--allow-lan", "--insecure-http"},
+			want: command{kind: kindDaemonRun, cardListen: "192.168.1.4:7778", allowLAN: true, insecureHTTP: true},
+		},
+		{
+			name: "daemon card commands pass through",
+			args: []string{"daemon", "card", "publish", "--name", "vmb"},
+			want: command{kind: kindDaemonCard, cardArgs: []string{"publish", "--name", "vmb"}},
+		},
+		{
+			name: "daemon card with no command is the daemon's own usage error",
+			args: []string{"daemon", "card"},
+			want: command{kind: kindDaemonCard, cardArgs: []string{}},
+		},
+		{
+			name: "gateway card poll interval",
+			args: []string{"gateway", "--listen", "127.0.0.1:7777", "--card-poll-interval", "30s"},
+			want: command{kind: kindGatewayServe, listen: "127.0.0.1:7777", cardPollInterval: 30 * time.Second},
+		},
+		{
+			name: "gateway card-target passes through",
+			args: []string{"gateway", "card-target", "set", "vmb", "http://100.64.0.5:7778"},
+			want: command{kind: kindGatewayAdmin, admin: []string{"card-target", "set", "vmb", "http://100.64.0.5:7778"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCommand(tc.args)
+			if err != nil {
+				t.Fatalf("parseCommand(%q): %v", tc.args, err)
+			}
+			if got.kind != tc.want.kind || got.cardListen != tc.want.cardListen ||
+				got.allowLAN != tc.want.allowLAN || got.insecureHTTP != tc.want.insecureHTTP ||
+				got.cardPollInterval != tc.want.cardPollInterval ||
+				strings.Join(got.cardArgs, "\x00") != strings.Join(tc.want.cardArgs, "\x00") ||
+				strings.Join(got.admin, "\x00") != strings.Join(tc.want.admin, "\x00") {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+
+	if _, err := parseCommand([]string{"gateway", "--listen", "127.0.0.1:7777", "--card-poll-interval", "soon"}); err == nil {
+		t.Fatal("a non-duration poll interval was accepted")
 	}
 }

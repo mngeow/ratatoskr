@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mngeow/ratatoskr/internal/daemon/wire"
+	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
 const (
@@ -30,21 +31,53 @@ const (
 //
 // UNTESTED.
 func (w *window) startQuery(envelope wire.Envelope) {
+	w.runBounded(envelope, func(ctx context.Context) wire.Result {
+		return w.answer(ctx, envelope)
+	})
+}
+
+// startCardOp performs one card operation on its own goroutine, under the same per-window bound and
+// deadline as a query. A card operation is host-level, not per-session, so it does not go through a
+// session's worker; the card service serializes writes itself.
+//
+// UNTESTED.
+func (w *window) startCardOp(envelope wire.Envelope) {
+	w.runBounded(envelope, func(ctx context.Context) wire.Result {
+		var op wire.CardOp
+		if err := wire.Decode(envelope, &op); err != nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeBadRequest, Message: "that card operation could not be read"}}
+		}
+		return w.cardResult(ctx, op)
+	})
+}
+
+// cardResult runs one card operation as this window's caller.
+func (w *window) cardResult(ctx context.Context, op wire.CardOp) wire.Result {
+	if w.hub == nil || w.hub.card == nil {
+		return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the host card is not available"}}
+	}
+	view, refusal := w.hub.card.Do(ctx, op, protocol.CardCallerWindow)
+	return wire.Result{Card: &view, Error: refusal}
+}
+
+// runBounded runs one request on its own goroutine with the window's concurrency bound and the query
+// deadline, and answers with the request's id.
+func (w *window) runBounded(envelope wire.Envelope, run func(context.Context) wire.Result) {
 	if envelope.ID == 0 {
-		w.closeWith("it sent a query without an id")
+		w.closeWith("it sent a request without an id")
 		return
 	}
 
 	w.queryMu.Lock()
 	if w.queries >= queryLimit {
 		w.queryMu.Unlock()
-		w.result(envelope.ID, wire.Result{Error: &wire.Error{Code: wire.CodeBusy, Message: "too many queries are already in flight for this window"}})
+		w.result(envelope.ID, wire.Result{Error: &wire.Error{Code: wire.CodeBusy, Message: "too many requests are already in flight for this window"}})
 		return
 	}
 	w.queries++
 	w.queryMu.Unlock()
 
-	// The window's own lifecycle bounds the query: when the connection goes, so does the
+	// The window's own lifecycle bounds the request: when the connection goes, so does the
 	// deadline, without anything having to wait for the read.
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 
@@ -56,7 +89,7 @@ func (w *window) startQuery(envelope wire.Envelope) {
 			w.queryMu.Unlock()
 		}()
 
-		result := w.answer(ctx, envelope)
+		result := run(ctx)
 		if w.isClosed() {
 			return
 		}
@@ -90,6 +123,21 @@ func (w *window) answer(ctx context.Context, envelope wire.Envelope) wire.Result
 		}
 		plan := w.hub.network.enterPlan(*query.Enter, w)
 		return wire.Result{Plan: &plan}
+
+	case wire.QueryCard:
+		// The card needs no gateway, no graph and no network: it is this host's own file.
+		return w.cardResult(ctx, wire.CardOp{Op: wire.CardOpGet})
+
+	case wire.QueryGraph:
+		if query.Graph == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeBadRequest, Message: "that query has no graph request"}}
+		}
+		if w.hub == nil || w.hub.graph == nil {
+			return wire.Result{Error: &wire.Error{Code: wire.CodeInternal, Message: "the graph answer is not available"}}
+		}
+		// Attaching already made this window a graph consumer; a query only reads the answer.
+		view, version := w.hub.graph.answer(ctx, *query.Graph)
+		return wire.Result{Graph: &view, GraphVersion: version}
 
 	case wire.QueryNetwork:
 		if query.Network == nil {

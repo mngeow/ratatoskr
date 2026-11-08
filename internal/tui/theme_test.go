@@ -156,10 +156,10 @@ func TestBlockTabsAndSpanBackgroundCoverage(t *testing.T) {
 					t.Fatal(hit)
 				}
 			}
-			if width >= 20 && !strings.Contains(plain, " Terminals ") {
+			if width >= 27 && !strings.Contains(plain, " Terminals ") {
 				t.Fatal(plain)
 			}
-			if width < 20 && !strings.Contains(plain, " T ") {
+			if width < 27 && !strings.Contains(plain, " T ") {
 				t.Fatal(plain)
 			}
 		}
@@ -209,31 +209,31 @@ func TestRoundTwoTabTextPaddingAndProfileStableHits(t *testing.T) {
 				m.theme.noColor = !coloured
 				m.Update(tea.ColorProfileMsg{Profile: 5})
 				styled, plain, hits := m.tabLayout(width)
-				want := " Terminals  Network "
-				if width < 20 {
-					want = " T  N "
+				want := " Terminals  Network  Graph "
+				if width < 27 {
+					want = " T  N  G "
 				}
 				if !coloured {
-					if width < 20 {
+					if width < 27 {
 						if network {
-							want = " T >N "
+							want = " T >N  G "
 						} else {
-							want = ">T  N "
+							want = ">T  N  G "
 						}
 					} else {
 						if network {
-							want = " Terminals >Network "
+							want = " Terminals >Network  Graph "
 						} else {
-							want = ">Terminals  Network "
+							want = ">Terminals  Network  Graph "
 						}
 					}
 				}
 				if plain != want || ansi.Strip(styled) != want {
 					t.Fatal(width, network, coloured, plain)
 				}
-				boundary, end := 11, 20
-				if width < 20 {
-					boundary, end = 3, 6
+				boundary, third, end := 11, 20, 27
+				if width < 27 {
+					boundary, third, end = 3, 6, 9
 				}
 				for x := 0; x <= width; x++ {
 					kind, hit := m.tabAt(x)
@@ -245,6 +245,9 @@ func TestRoundTwoTabTextPaddingAndProfileStableHits(t *testing.T) {
 						wantKind := tabTerminals
 						if x >= boundary {
 							wantKind = tabNetwork
+						}
+						if x >= third {
+							wantKind = tabGraph
 						}
 						if !hit || kind != wantKind {
 							t.Fatal("padding/gap changed target", x, hits)

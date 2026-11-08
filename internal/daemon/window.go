@@ -72,6 +72,9 @@ type window struct {
 	// closes. It is nil before the attach and after the close: the daemon fetches the gateway's
 	// snapshot for the life of every attached window, and not at all for a window that never attached.
 	networkRelease func()
+	// graphRelease is the same for the graph consumer: set once by a successful attach, cleared when
+	// the window closes.
+	graphRelease func()
 }
 
 // newWindow builds a window for one connection. Nothing is sent until start.
@@ -289,6 +292,14 @@ func (w *window) closeWith(reason string) {
 			release()
 		}
 
+		w.mu.Lock()
+		graphRelease := w.graphRelease
+		w.graphRelease = nil
+		w.mu.Unlock()
+		if graphRelease != nil {
+			graphRelease()
+		}
+
 		_ = w.conn.Close()
 		if w.hub != nil {
 			w.hub.unregister(w)
@@ -353,6 +364,26 @@ func (w *window) acquireNetwork() {
 	}
 	release := w.hub.network.acquire()
 	w.networkRelease = release
+	w.mu.Unlock()
+}
+
+// acquireGraph registers this window as a consumer of the graph fetch loop, once. It is acquireNetwork's
+// twin for the Graph tab, with the same closed-window guard and the same reason: a late call after
+// closeWith has released must not leave a consumer nothing will release.
+//
+// UNTESTED.
+func (w *window) acquireGraph() {
+	if w.hub == nil || w.hub.graph == nil {
+		return
+	}
+
+	w.mu.Lock()
+	if w.closed || w.graphRelease != nil {
+		w.mu.Unlock()
+		return
+	}
+	release := w.hub.graph.acquire()
+	w.graphRelease = release
 	w.mu.Unlock()
 }
 
@@ -422,6 +453,10 @@ func (w *window) dispatch(envelope wire.Envelope) {
 
 	case wire.TypeQuery:
 		w.startQuery(envelope)
+		return
+
+	case wire.TypeCardOp:
+		w.startCardOp(envelope)
 		return
 
 	case wire.TypeKey, wire.TypePaste, wire.TypeMouse, wire.TypeResize,

@@ -1,11 +1,10 @@
 -- Migration for the gateway database: hosts, pairing codes, sessions, the
 -- message ledger and its events.
 --
--- This schema has never been created anywhere: nothing has run under GR-3, so
--- there is no deployed version 1 to migrate. That is why the session columns on
--- messages are added here rather than in a second migration file; if a gateway
--- database ever exists before a later schema change, that change gets its own
--- numbered file and this comment stops being true.
+-- This is schema version 1. A gateway database at this version now exists on users' machines, so
+-- it is never edited again: every later change is its own numbered file (0002, 0003, ...), applied
+-- in order by the migrator in migrate.go after a backup. The session columns on messages were added
+-- here, before any database existed, which is why there is no separate file for them.
 --
 -- Times are Unix milliseconds. There is no retention or deletion code anywhere:
 -- the ledger is append-only apart from the state columns the routing slice

@@ -65,6 +65,15 @@ type Config struct {
 	// Foreground keeps the process in the terminal and logs to stderr. The detached
 	// child runs with it set, because its stderr is already the log file.
 	Foreground bool
+
+	// CardListen is the address the host card is served on, from `rtk daemon --card-listen ADDR`.
+	// Empty means the listener is off, which is the default: nothing is published to the network
+	// unless the owner asks. It is a start flag only, so turning it on later means stopping the
+	// daemon, which ends every session. CardAllowLAN and CardInsecureHTTP are the gateway's two
+	// LAN opt-ins, with the same meaning.
+	CardListen       string
+	CardAllowLAN     bool
+	CardInsecureHTTP bool
 }
 
 // Run is the daemon process.
@@ -78,6 +87,13 @@ type Config struct {
 func Run(ctx context.Context, cfg Config) (err error) {
 	if cfg.StateDir == "" {
 		return errors.New("daemon: no state directory")
+	}
+
+	// The card listener's flags are checked before anything is created or locked, like the gateway's,
+	// so a mistyped address leaves no state behind.
+	cardPlan, cardOn, err := planCardListen(cfg)
+	if err != nil {
+		return err
 	}
 
 	// The environment is captured once: it is what harnesses will get, because the daemon
@@ -171,9 +187,13 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// process is about to exit, but a daemon is the kind of process that must not leave a
 	// half-started state behind.
 	var listener net.Listener
+	var cardBound *boundCard
 	startupFailed := func(cause error) error {
 		if listener != nil {
 			_ = listener.Close()
+		}
+		if cardBound != nil {
+			_ = cardBound.listener.Close()
 		}
 		closeRouter(r)
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownBudget)
@@ -201,6 +221,15 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	rtkPath, err := executablePath()
 	if err != nil {
 		return startupFailed(err)
+	}
+
+	// The card listener binds before the socket, so a failed bind fails the start and leaves no socket
+	// a client could find. It does not serve yet: the card service does not exist until below.
+	if cardOn {
+		cardBound, err = bindCardListener(cardPlan, dir)
+		if err != nil {
+			return startupFailed(err)
+		}
 	}
 
 	bound, socketFile, err := listenSocket(cfg.StateDir)
@@ -231,6 +260,28 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	}, cfg.Version, now)
 	windowHub.network = network
 	network.setStateDir(cfg.StateDir)
+
+	// The graph service: it fetches the gateway's graph snapshot while any window is attached. It has
+	// its own consumer count, loop and gateway state, so Network does not depend on it.
+	graph := newGraphService(client, r, log, func() string {
+		return pairing.Host
+	})
+	windowHub.graph = graph
+
+	// The host card: the owner's working copy, published card and history, kept in the daemon
+	// directory. It is edited only through the Unix socket; the card listener can only read what it
+	// publishes.
+	hostCard := newCardService(daemonDir(cfg.StateDir), func() string { return pairing.Host }, log)
+	windowHub.card = hostCard
+
+	var cardServing *cardServer
+	if cardBound != nil {
+		hostCard.setListener(cardBound.view)
+		cardServing = newCardServer(hostCard, log)
+		for _, line := range cardBound.startupLines() {
+			log.logf("%s", line)
+		}
+	}
 
 	// The manager tells the window side when a session starts, exits and is gone.
 	observer := newPaneObserver(windowHub, log)
@@ -275,6 +326,11 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// for its own length - so a daemon with no windows and no watcher makes no fetch requests beyond
 	// its own reports.
 	network.start(bgCtx)
+	graph.start(bgCtx)
+	hostCard.scanInBackground(bgCtx)
+	if cardServing != nil {
+		go cardServing.serve(cardBound.listener)
+	}
 
 	retentionDone := make(chan struct{})
 	go retentionLoop(bgCtx, st, log, retentionDone)
@@ -311,6 +367,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	// stopping and closed, and their holds are released, so nothing waits on a client while
 	// the rest is torn down. Then the listener closes, which unlinks the socket.
 	windowHub.closeAll("the daemon is stopping")
+
+	if cardServing != nil {
+		cardServing.shutdown()
+	}
 
 	closeErr := noteOverrun("closing the socket", bounded(shutdownBudget, listener.Close))
 	if closeErr != nil {

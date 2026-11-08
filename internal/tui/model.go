@@ -112,6 +112,8 @@ type Model struct {
 	// networkMode is the daemon-only Network view (F5). It replaces the pane body and never
 	// changes the pane geometry, so it never resizes a PTY.
 	networkMode bool
+	graphMode   bool
+	graph       graphState
 	// theme is the window's palette state: whether colour is drawn, and how far it must be
 	// downsampled. It starts inert and is only enabled by the terminal's own profile message.
 	theme uiTheme
@@ -223,7 +225,7 @@ func (m *Model) Init() tea.Cmd {
 	if m.daemon != nil {
 		// Exactly one window-event wait, beside the one event wait, the tick, and one Network query so
 		// the tab has data before anyone opens it.
-		return tea.Batch(m.waitEvent(), m.tick(), m.waitWindowEvent(), m.seedNetwork())
+		return tea.Batch(m.waitEvent(), m.tick(), m.waitWindowEvent(), m.seedNetwork(), m.graphQuery(), m.loadCard())
 	}
 	return tea.Batch(m.waitEvent(), m.tick())
 }
@@ -264,6 +266,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case networkMsg:
 		return m, m.applyNetwork(msg)
+	case graphMsg:
+		m.applyGraph(msg)
+		return m, nil
+	case cardMsg:
+		m.applyCard(msg)
+		return m, nil
 
 	case entryMsg:
 		return m, m.applyEntry(msg)
@@ -284,8 +292,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.daemon.disconnected {
 				return m, tea.Quit
 			}
-			if cmd := m.networkTick(); cmd != nil {
-				return m, tea.Batch(m.tick(), cmd)
+			networkCmd, graphCmd := m.networkTick(), m.graphTick()
+			if networkCmd != nil || graphCmd != nil {
+				return m, tea.Batch(m.tick(), networkCmd, graphCmd)
 			}
 		}
 		// The outbound source refreshes on its own coalesced clock, and only while
@@ -339,6 +348,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, handled := m.tabMouse(msg); handled {
 			return m, cmd
 		}
+		if m.graphMode {
+			return m, m.graphMouse(msg)
+		}
 		if m.networkMode {
 			return m, nil
 		}
@@ -346,6 +358,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseReleaseMsg:
 		if cmd, handled := m.tabMouse(msg); handled {
 			return m, cmd
+		}
+		if m.graphMode {
+			return m, m.graphMouse(msg)
 		}
 		if m.networkMode {
 			return m, nil
@@ -355,6 +370,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, handled := m.tabMouse(msg); handled {
 			return m, cmd
 		}
+		if m.graphMode {
+			return m, m.graphMouse(msg)
+		}
 		if m.networkMode {
 			return m, nil
 		}
@@ -362,6 +380,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMotionMsg:
 		if cmd, handled := m.tabMouse(msg); handled {
 			return m, cmd
+		}
+		if m.graphMode {
+			return m, m.graphMouse(msg)
 		}
 		if m.networkMode {
 			return m, nil
@@ -413,6 +434,9 @@ func (m *Model) View() tea.View {
 	// Cell motion, so clicks and drags arrive; the child decides whether it wants
 	// them, and everything else about the terminal stays as it was.
 	view.MouseMode = tea.MouseModeCellMotion
+	if m.graphMode && m.graph.urlPanel {
+		view.MouseMode = tea.MouseModeNone
+	}
 	if cursor := m.cursor(); cursor != nil {
 		view.Cursor = cursor
 	}
@@ -462,11 +486,22 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		// becomes useful, and it is not input for a child.
 		return m.requestTakeInput()
 	}
+	// Optional daemon-only shortcut; click remains the primary Graph affordance.
+	if m.daemon != nil && isKey(k, tea.KeyF7) {
+		if m.graphMode {
+			m.closeGraph()
+			return nil
+		}
+		return m.openGraph()
+	}
 
 	// Ctrl+C is decided before the log, the size warning and key forwarding: a
 	// pane that cannot receive it must not be able to swallow the quit path.
 	if isCtrlC(k) {
 		return m.ctrlC(k)
+	}
+	if m.graphMode {
+		return m.graphKey(k)
 	}
 	if m.networkMode {
 		cmd, _ := m.networkKey(k)
@@ -541,6 +576,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 // only when the write succeeded: a failed write proves nothing about what the
 // child saw.
 func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
+	if m.graphMode {
+		return nil
+	}
 	if m.emptyDaemon() {
 		return nil
 	}
@@ -576,6 +614,10 @@ func (m *Model) forward(k tea.KeyPressMsg) tea.Cmd {
 // the child's bracketed-paste mode. The text itself is not sanitized here: a
 // paste is user input, not a message.
 func (m *Model) paste(content string) tea.Cmd {
+	if m.graphMode {
+		m.cardInsert(content)
+		return nil
+	}
 	if m.emptyDaemon() {
 		return nil
 	}
@@ -743,6 +785,9 @@ func (m *Model) inputCompleted(done inputDone) tea.Cmd {
 // that never started - nothing is reported, because the user is not typing into
 // a child.
 func (m *Model) markDraft() {
+	if m.graphMode {
+		return
+	}
 	if m.emptyDaemon() {
 		return
 	}
@@ -902,6 +947,8 @@ func (m *Model) render() []string {
 
 	rows := m.screenRows()
 	switch {
+	case m.graphMode:
+		lines = append(lines, m.graphLines(width, rows)...)
 	case m.networkMode:
 		lines = append(lines, m.networkLines(width, rows)...)
 	case m.logMode:
@@ -983,6 +1030,13 @@ func (m *Model) renderMinimalRows(width, height int) []string {
 		// visible, so they get a line of their own.
 		lines = append(lines, fitPlain("start errors: "+strings.Join(m.daemon.startErrors, "; "), width))
 	}
+	if m.graphMode {
+		remaining := height - len(lines)
+		if remaining > 0 {
+			lines = append(lines, m.graphLines(width, remaining)...)
+		}
+		return lines[:height]
+	}
 
 	if m.networkMode {
 		// A small Network view still says what it knows: the gateway line and the local or waiting
@@ -1049,6 +1103,9 @@ func (m *Model) titleLine() string {
 	if m.networkMode {
 		mode = "network"
 	}
+	if m.graphMode {
+		mode = "graph"
+	}
 	title := fmt.Sprintf("ratatoskr [%s]  messages %d  budget %d/%d", mode, len(m.messages), budget.Used, budget.Limit)
 	if m.daemon != nil {
 		// A session started after this window attached can never appear here, and the hint is
@@ -1070,6 +1127,9 @@ func (m *Model) titleLine() string {
 // In the Network view the panes are still laid out exactly as they were - the body is replaced,
 // not resized - so the header is the one network line instead.
 func (m *Model) headerLine() string {
+	if m.graphMode {
+		return m.uiLine(m.graphStatus(), m.width, colAccent, colTermBG, true)
+	}
 	if m.networkMode {
 		return m.uiLine(m.networkHeaderLine(), m.width, colAccent, colTermBG, true)
 	}
@@ -1382,6 +1442,18 @@ func holdReason(reason string) string {
 func (m *Model) hintsLine() string {
 	if m.daemon != nil {
 		switch {
+		case m.graphMode:
+			if m.graph.urlPanel {
+				return "Esc return   Enter request clipboard   F10 detach"
+			}
+			if m.graph.editor.open {
+				return "Tab fields/actions   Enter activate   Esc back   F5 Network   F10 detach"
+			}
+			edit := ""
+			if m.localGraphSelected() {
+				edit = "   e local edit"
+			}
+			return "Tab hosts/detail/controls   arrows select/scroll   Enter detail   r refresh" + edit + "   c URL   Esc terminals   F7 Graph   F10 detach"
 		case m.networkMode:
 			if m.emptyDaemon() {
 				return "F5/Esc terminals   ↑/↓ select   PgUp/PgDn page   R refresh   Enter open session   F10 detach"
@@ -1421,6 +1493,9 @@ func (m *Model) focusHints() string {
 // cursor places the terminal cursor on the focused child's cursor, offset by the
 // pane's position. It is nil when there is no live cursor to show.
 func (m *Model) cursor() *tea.Cursor {
+	if m.graphMode {
+		return nil
+	}
 	if m.networkMode {
 		return nil
 	}

@@ -92,34 +92,48 @@ func classOf(addr netip.Addr) (AddrClass, bool) {
 //
 // UNTESTED.
 func ParseAddress(value string) (netip.AddrPort, AddrClass, error) {
+	return parseAddressAs("gateway", value)
+}
+
+// ParseAddressFor is ParseAddress with the thing being addressed named in the messages, so another
+// listener (the daemon's card listener) can reuse the one rule without saying "gateway". With subject
+// "gateway" the messages are byte for byte ParseAddress's.
+//
+// UNTESTED.
+func ParseAddressFor(subject, value string) (netip.AddrPort, AddrClass, error) {
+	return parseAddressAs(subject, value)
+}
+
+// parseAddressAs is the one address rule; subject only changes the words.
+func parseAddressAs(subject, value string) (netip.AddrPort, AddrClass, error) {
 	addrPort, err := netip.ParseAddrPort(value)
 	if err != nil {
 		return netip.AddrPort{}, 0, fmt.Errorf(
-			"gateway: %q is not an IP address with an explicit port: give an IP literal such as 100.64.0.1:7777 or [fd7a:115c:a1e0::1]:7777 (hostnames are not accepted): %w",
-			value, err,
+			"%s: %q is not an IP address with an explicit port: give an IP literal such as 100.64.0.1:7777 or [fd7a:115c:a1e0::1]:7777 (hostnames are not accepted): %w",
+			subject, value, err,
 		)
 	}
 
 	if addrPort.Port() == 0 {
-		return netip.AddrPort{}, 0, fmt.Errorf("gateway: %q has port 0: the gateway endpoint must stay stable", value)
+		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q has port 0: the %s endpoint must stay stable", subject, value, subject)
 	}
 	if addrPort.Addr().Zone() != "" {
-		return netip.AddrPort{}, 0, fmt.Errorf("gateway: %q carries an IPv6 zone; give the address without it", value)
+		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q carries an IPv6 zone; give the address without it", subject, value)
 	}
 	// Checked before anything unmaps: an IPv4-mapped IPv6 address is a different
 	// literal and would bind differently from what was typed.
 	if addrPort.Addr().Is4In6() {
-		return netip.AddrPort{}, 0, fmt.Errorf("gateway: %q is an IPv4-mapped IPv6 address; give the IPv4 address itself", value)
+		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q is an IPv4-mapped IPv6 address; give the IPv4 address itself", subject, value)
 	}
 	if addrPort.Addr().IsUnspecified() {
-		return netip.AddrPort{}, 0, fmt.Errorf("gateway: %q is the unspecified address; name the interface address explicitly", value)
+		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q is the unspecified address; name the interface address explicitly", subject, value)
 	}
 
 	class, ok := classOf(addrPort.Addr())
 	if !ok {
 		return netip.AddrPort{}, 0, fmt.Errorf(
-			"gateway: %s is not a loopback, Tailscale or private LAN address: only 127.0.0.0/8 or ::1, 100.64.0.0/10 or fd7a:115c:a1e0::/48, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7 are allowed, and there is no public gateway mode",
-			value,
+			"%s: %s is not a loopback, Tailscale or private LAN address: only 127.0.0.0/8 or ::1, 100.64.0.0/10 or fd7a:115c:a1e0::/48, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7 are allowed, and there is no public %s mode",
+			subject, value, subject,
 		)
 	}
 	return addrPort, class, nil
@@ -145,7 +159,20 @@ const (
 //
 // UNTESTED.
 func PlanListen(value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
-	addrPort, class, err := ParseAddress(value)
+	return planListenAs("gateway", value, allowLAN, insecureHTTP)
+}
+
+// PlanListenFor is PlanListen for another listener: the flag table is the same, the messages name
+// subject instead of "gateway". With subject "gateway" the messages are byte for byte PlanListen's.
+//
+// UNTESTED.
+func PlanListenFor(subject, value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
+	return planListenAs(subject, value, allowLAN, insecureHTTP)
+}
+
+// planListenAs is the one flag table; subject only changes the words.
+func planListenAs(subject, value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
+	addrPort, class, err := parseAddressAs(subject, value)
 	if err != nil {
 		return ListenPlan{}, err
 	}
@@ -153,8 +180,8 @@ func PlanListen(value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
 	if class != ClassLAN {
 		if allowLAN || insecureHTTP {
 			return ListenPlan{}, fmt.Errorf(
-				"gateway: %s and %s apply only to a LAN address (10.x, 172.16-31.x, 192.168.x or fc00::/7), and %s is %s: drop the flag, or listen on a LAN address",
-				FlagAllowLAN, FlagInsecureHTTP, value, class,
+				"%s: %s and %s apply only to a LAN address (10.x, 172.16-31.x, 192.168.x or fc00::/7), and %s is %s: drop the flag, or listen on a LAN address",
+				subject, FlagAllowLAN, FlagInsecureHTTP, value, class,
 			)
 		}
 		return ListenPlan{Addr: addrPort, Class: class, Transport: TransportPlain}, nil
@@ -163,13 +190,13 @@ func PlanListen(value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
 	switch {
 	case !allowLAN && insecureHTTP:
 		return ListenPlan{}, fmt.Errorf(
-			"gateway: %s also needs %s: plain HTTP on a LAN is allowed only after the LAN listener itself is (use %s for HTTPS, or both for plain HTTP)",
-			FlagInsecureHTTP, FlagAllowLAN, FlagAllowLAN,
+			"%s: %s also needs %s: plain HTTP on a LAN is allowed only after the LAN listener itself is (use %s for HTTPS, or both for plain HTTP)",
+			subject, FlagInsecureHTTP, FlagAllowLAN, FlagAllowLAN,
 		)
 	case !allowLAN:
 		return ListenPlan{}, fmt.Errorf(
-			"gateway: %s is a LAN address: add %s to listen on it (HTTPS with a pinned certificate), or use a Tailscale or loopback address",
-			value, FlagAllowLAN,
+			"%s: %s is a LAN address: add %s to listen on it (HTTPS with a pinned certificate), or use a Tailscale or loopback address",
+			subject, value, FlagAllowLAN,
 		)
 	case insecureHTTP:
 		return ListenPlan{Addr: addrPort, Class: class, Transport: TransportLANHTTP}, nil
@@ -190,6 +217,19 @@ func PlanListen(value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
 //
 // UNTESTED.
 func Listen(addrPort netip.AddrPort) (net.Listener, error) {
+	return listenAs("gateway", addrPort)
+}
+
+// ListenFor is Listen for another listener: the bind rules are the same, the messages name subject.
+// With subject "gateway" the messages are byte for byte Listen's.
+//
+// UNTESTED.
+func ListenFor(subject string, addrPort netip.AddrPort) (net.Listener, error) {
+	return listenAs(subject, addrPort)
+}
+
+// listenAs is the one bind; subject only changes the words.
+func listenAs(subject string, addrPort netip.AddrPort) (net.Listener, error) {
 	network := "tcp6"
 	if addrPort.Addr().Is4() {
 		network = "tcp4"
@@ -200,23 +240,23 @@ func Listen(addrPort netip.AddrPort) (net.Listener, error) {
 		// The Tailscale advice belongs to a Tailscale address only.
 		if class, _ := classOf(addrPort.Addr()); class == ClassTailscale {
 			return nil, fmt.Errorf(
-				"gateway: cannot bind %s: this machine needs an OS-level Tailscale interface with that address; userspace-networking mode is not supported: %w",
-				addrPort, err,
+				"%s: cannot bind %s: this machine needs an OS-level Tailscale interface with that address; userspace-networking mode is not supported: %w",
+				subject, addrPort, err,
 			)
 		}
-		return nil, fmt.Errorf("gateway: cannot bind %s: this machine must own that address: %w", addrPort, err)
+		return nil, fmt.Errorf("%s: cannot bind %s: this machine must own that address: %w", subject, addrPort, err)
 	}
 
 	actual, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		_ = listener.Close()
-		return nil, fmt.Errorf("gateway: listener reported %q, which is not a TCP address", listener.Addr())
+		return nil, fmt.Errorf("%s: listener reported %q, which is not a TCP address", subject, listener.Addr())
 	}
 	// The comparison unmaps only the actual side: a tcp4 listener may report the
 	// address in its 4-in-6 form, while the requested value stays as typed.
 	if !sameAddrPort(actual.AddrPort(), addrPort) {
 		_ = listener.Close()
-		return nil, fmt.Errorf("gateway: asked for %s but the listener bound %s", addrPort, actual.AddrPort())
+		return nil, fmt.Errorf("%s: asked for %s but the listener bound %s", subject, addrPort, actual.AddrPort())
 	}
 	return listener, nil
 }

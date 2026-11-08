@@ -107,6 +107,7 @@ func allocateModel(router Router, events <-chan protocol.Event, slots []Slot) *M
 		router: router,
 		events: events,
 		active: len(slots),
+		graph:  graphState{polls: true, messages: true, selected: graphLocalKey},
 		drafts: make(map[protocol.AgentID]bool, 2),
 		// The clock is injectable so the Ctrl+C window can be tested without a
 		// sleep; production always uses time.Now.

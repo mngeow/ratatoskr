@@ -37,8 +37,9 @@ const (
 	CodeNoSuchSession   Code = "no_such_session" // no session with that agent ID
 	CodeInputFailed     Code = "input_failed"    // the transport failed; Message has the reason
 	CodeShuttingDown    Code = "shutting_down"
-	CodeBusy            Code = "busy"        // a session operation is already running
-	CodeNotRunning      Code = "not_running" // an attach expected a session that is not running (ended, replaced or never there)
+	CodeBusy            Code = "busy"          // a session operation is already running
+	CodeNotRunning      Code = "not_running"   // an attach expected a session that is not running (ended, replaced or never there)
+	CodeCardConflict    Code = "card_conflict" // a card operation carried a stale token; the answer holds the current card view
 	CodeInternal        Code = "internal"
 )
 
@@ -282,6 +283,8 @@ const (
 	QuerySnapshot      = "snapshot"
 	QueryNetwork       = "network" // Network: NetworkRequest; the answer is Result.Network
 	QueryEnter         = "enter"   // Enter: EnterRequest; the answer is Result.Plan. Window connections only.
+	QueryCard          = "card"    // no arguments; the answer is Result.Card. Needs no gateway.
+	QueryGraph         = "graph"   // Graph: GraphRequest; the answer is Result.Graph. Window connections only.
 )
 
 // Query is one read. Only the fields its Kind uses are set.
@@ -292,6 +295,7 @@ type Query struct {
 	ID      string                 `json:"id,omitempty"`
 	Network *NetworkRequest        `json:"network,omitempty"`
 	Enter   *EnterRequest          `json:"enter,omitempty"`
+	Graph   *GraphRequest          `json:"graph,omitempty"`
 }
 
 // Result answers a query or a status request. Exactly one of Error and the payload
@@ -312,6 +316,13 @@ type Result struct {
 	NetworkVersion uint64                `json:"network_version,omitempty"`
 	// Plan answers an enter query.
 	Plan *EnterPlan `json:"plan,omitempty"`
+	// Card answers a card query or operation. For a card_conflict refusal, Error and Card are both
+	// set: Card is the current view the caller should refresh from.
+	Card *protocol.CardView `json:"card,omitempty"`
+	// Graph answers a graph query. GraphVersion is the daemon's own change counter for it, and is
+	// what a caller sends back as GraphRequest.Since.
+	Graph        *protocol.GraphView `json:"graph,omitempty"`
+	GraphVersion uint64              `json:"graph_version,omitempty"`
 }
 
 // Limits for a network request. They sit under the 10 s query deadline so a window's wait always
@@ -337,6 +348,66 @@ type NetworkRequest struct {
 	FirstWaitMS int    `json:"first_wait_ms,omitempty"`
 }
 
+// Limits for a graph request, the same as the network's and for the same reason.
+const (
+	MaxGraphWaitMS  = 8000
+	MaxGraphFirstMS = 8000
+)
+
+// GraphRequest asks the daemon for the graph answer. Its fields mean what NetworkRequest's do, and
+// the window is a graph consumer from a successful attach until it closes, like the network
+// consumer: asking does not register anything new.
+type GraphRequest struct {
+	Since       uint64 `json:"since,omitempty"`
+	WaitMS      int    `json:"wait_ms,omitempty"`
+	FirstWaitMS int    `json:"first_wait_ms,omitempty"`
+}
+
+// Card operations.
+const (
+	CardOpGet      = "get"      // answer the current view; changes nothing
+	CardOpEdit     = "edit"     // apply Edit to the working copy
+	CardOpValidate = "validate" // re-validate the working copy; changes nothing but Problems
+	CardOpPublish  = "publish"  // validate, then publish the working copy as a new revision
+	CardOpHistory  = "history"  // answer the view; with Revision set, also View.Preview = that revision in full (a rollback preview)
+	CardOpRollback = "rollback" // copy revision Revision into the working copy and publish it as a new revision
+	CardOpRescan   = "rescan"   // scan this host's skill locations again
+)
+
+// CardOp is one operation on this host's own card. Only the owner's own daemon serves it, on its
+// Unix socket; there is no remote write path.
+//
+// BaseToken is the CardView.Token the caller last saw. Edit, publish and rollback are refused with
+// card_conflict when it is stale. Get, validate, history and rescan ignore it.
+//
+// Edit.Skills replaces the declared skills. An entry with FoundLabel takes fresh evidence from the scan;
+// an entry without one keeps the evidence the working copy already holds for the same ID, so an edit that
+// leaves a skill alone cannot lose it. To drop a skill's evidence, remove the skill or give it a new ID.
+type CardOp struct {
+	Op        string    `json:"op"`
+	BaseToken string    `json:"base_token,omitempty"`
+	Edit      *CardEdit `json:"edit,omitempty"`
+	Revision  int       `json:"revision,omitempty"` // for rollback
+}
+
+// CardEdit changes the working copy. A nil field is left alone. Skills, when set, REPLACES the
+// declared skills: each entry may name the found skill it is declared from (FoundLabel), which is
+// how evidence is attached.
+type CardEdit struct {
+	Name        *string          `json:"name,omitempty"`
+	Description *string          `json:"description,omitempty"`
+	Skills      *[]CardSkillEdit `json:"skills,omitempty"`
+}
+
+// CardSkillEdit is one declared skill as the owner wrote it.
+type CardSkillEdit struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags,omitempty"`
+	FoundLabel  string   `json:"found_label,omitempty"`
+}
+
 // StopSession names the session `rtk daemon stop --session` ends.
 type StopSession struct {
 	Name string `json:"name"`
@@ -350,9 +421,12 @@ type Status struct {
 	LogPath   string    `json:"log_path"`
 	Windows   int       `json:"windows"`
 	// Link is the gateway link's state, or empty when the daemon has not reported one.
-	Link     string          `json:"link,omitempty"`
-	LinkErr  string          `json:"link_err,omitempty"`
-	Sessions []SessionStatus `json:"sessions"`
+	Link    string `json:"link,omitempty"`
+	LinkErr string `json:"link_err,omitempty"`
+	// Card is whether this daemon serves its host card, and where. Omitted by a daemon that
+	// predates it.
+	Card     *protocol.CardListener `json:"card,omitempty"`
+	Sessions []SessionStatus        `json:"sessions"`
 }
 
 // SessionStatus is one running session in a Status.

@@ -24,6 +24,9 @@ const adminUsage = `usage:
   rtk gateway pair HOST
   rtk gateway unpair HOST
   rtk gateway hosts
+  rtk gateway card-target set HOST URL [--fingerprint sha256:...] [--insecure-http]
+  rtk gateway card-target show [HOST]
+  rtk gateway card-target clear HOST
   rtk gateway log [--follow] [--limit N]
   rtk gateway show ID`
 
@@ -44,7 +47,7 @@ func RunAdmin(ctx context.Context, stateDir string, args []string, out, errOut i
 
 	command, rest := args[0], args[1:]
 	switch command {
-	case "pair", "unpair", "hosts", "log", "show":
+	case "pair", "unpair", "hosts", "log", "show", "card-target":
 	default:
 		return fmt.Errorf("gateway: unknown command %q\n%s", command, adminUsage)
 	}
@@ -66,6 +69,8 @@ func RunAdmin(ctx context.Context, stateDir string, args []string, out, errOut i
 		return runHosts(ctx, store, rest, out, errOut, now())
 	case "log":
 		return runLog(ctx, store, rest, out, errOut)
+	case "card-target":
+		return runCardTarget(ctx, store, rest, out, errOut, now())
 	default:
 		return runShow(ctx, store, rest, out, errOut)
 	}

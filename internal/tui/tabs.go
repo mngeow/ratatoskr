@@ -1,6 +1,6 @@
 package tui
 
-// The daemon window's tab strip: Terminals and Network, always on the title row.
+// The daemon window's tab strip: Terminals, Network and Graph, on the title row.
 //
 // The user asked for a clickable tab that is always visible, not a dashboard. So the strip shares the
 // row the title already used: no new row, no change to chromeRows, screenTop, the header row or any
@@ -36,6 +36,7 @@ type tabKind int
 const (
 	tabTerminals tabKind = iota
 	tabNetwork
+	tabGraph
 )
 
 // tabMarker is the plain-text mark on the active tab.
@@ -53,8 +54,8 @@ const tabMarker = ">"
 // strip's width never depends on the profile or on which tab is active.
 //
 // UNTESTED.
-func tabLabels(active tabKind, colour bool) (labels [2]string) {
-	names := [2]string{"Terminals", "Network"}
+func tabLabels(active tabKind, colour bool) (labels [3]string) {
+	names := [3]string{"Terminals", "Network", "Graph"}
 	for index, name := range names {
 		labels[index] = " " + name + " "
 	}
@@ -68,7 +69,7 @@ func tabLabels(active tabKind, colour bool) (labels [2]string) {
 // the cell count - and so every hit box - identical with and without colour.
 //
 // UNTESTED.
-func markActiveTab(labels [2]string, active tabKind, colour bool) [2]string {
+func markActiveTab(labels [3]string, active tabKind, colour bool) [3]string {
 	if colour {
 		return labels
 	}
@@ -82,8 +83,8 @@ func markActiveTab(labels [2]string, active tabKind, colour bool) [2]string {
 // compactLabels are the narrow form: the same blocks, one letter each.
 //
 // UNTESTED.
-func compactLabels(active tabKind, colour bool) (labels [2]string) {
-	names := [2]string{"T", "N"}
+func compactLabels(active tabKind, colour bool) (labels [3]string) {
+	names := [3]string{"T", "N", "G"}
 	for index, name := range names {
 		labels[index] = " " + name + " "
 	}
@@ -98,8 +99,8 @@ func compactLabels(active tabKind, colour bool) (labels [2]string) {
 const tabGap = 0
 
 // tabStripWidth is the width of one form of the strip.
-func tabStripWidth(labels [2]string) int {
-	return ansi.StringWidth(labels[0]) + tabGap + ansi.StringWidth(labels[1])
+func tabStripWidth(labels [3]string) int {
+	return ansi.StringWidth(labels[0]) + tabGap + ansi.StringWidth(labels[1]) + tabGap + ansi.StringWidth(labels[2])
 }
 
 // tabLayout is the one description of the strip: what to draw, and where it is.
@@ -180,7 +181,7 @@ func (m *Model) tabSegment(label string, active bool, visible bool) string {
 
 // daemonTitleRow draws row 0 of a daemon window: the strip, then as much title as fits.
 //
-// The title takes remaining space. Below six columns even compact tabs clip;
+// The title takes remaining space. Below nine columns even compact tabs clip;
 // their hit boxes are clipped to exactly the cells that remain visible.
 //
 // UNTESTED.
@@ -206,6 +207,9 @@ func (m *Model) daemonTitleRow(width int) string {
 //
 // The log is a subview of Terminals, so it belongs to that tab: opening F3 does not move the strip.
 func (m *Model) activeTab() tabKind {
+	if m.graphMode {
+		return tabGraph
+	}
 	if m.networkMode {
 		return tabNetwork
 	}
@@ -235,12 +239,18 @@ func (m *Model) tabAt(x int) (tabKind, bool) {
 // and the Network view. Selecting the tab already active does nothing.
 func (m *Model) selectTab(kind tabKind) tea.Cmd {
 	switch kind {
+	case tabGraph:
+		if m.graphMode {
+			return nil
+		}
+		return m.openGraph()
 	case tabNetwork:
 		if m.networkMode {
 			return nil
 		}
 		return m.openNetwork()
 	default:
+		m.closeGraph()
 		if m.logMode {
 			m.leaveHistory()
 		}
@@ -272,6 +282,9 @@ type tabGesture struct {
 func (m *Model) tabMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 	if msg == nil || m.daemon == nil {
 		return nil, false
+	}
+	if m.graphMode && m.graph.urlPanel {
+		return nil, true
 	}
 
 	// A child owns a gesture: the strip never takes one away, so its motion and release keep going

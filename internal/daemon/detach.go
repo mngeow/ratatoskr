@@ -52,8 +52,17 @@ func Start(cfg Config, out io.Writer) error {
 		return err
 	}
 
+	// The card listener's flags are validated here, before a child exists, so a mistake shows in this
+	// terminal and not only in a log.
+	if _, _, err := planCardListen(cfg); err != nil {
+		return err
+	}
+
 	// Ask first: a daemon that already answers must not be duplicated.
 	if ack, err := probeDaemon(cfg.StateDir, detachDialTimeout); err == nil {
+		if cfg.CardListen != "" {
+			return fmt.Errorf("a daemon is already running (pid %d); the card listener can only be set when the daemon starts, and stopping it ends every session (rtk daemon stop)", ack.PID)
+		}
 		return fmt.Errorf("a daemon is already running (pid %d)", ack.PID)
 	}
 
@@ -80,7 +89,17 @@ func Start(cfg Config, out io.Writer) error {
 
 	// The child's stderr is the log, so its logf lines land in the file without the child
 	// opening it again.
-	child := exec.Command(rtkPath, "daemon", "--foreground")
+	childArgs := []string{"daemon", "--foreground"}
+	if cfg.CardListen != "" {
+		childArgs = append(childArgs, "--card-listen", cfg.CardListen)
+		if cfg.CardAllowLAN {
+			childArgs = append(childArgs, "--allow-lan")
+		}
+		if cfg.CardInsecureHTTP {
+			childArgs = append(childArgs, "--insecure-http")
+		}
+	}
+	child := exec.Command(rtkPath, childArgs...)
 	child.Stdin = nil // the child gets /dev/null, not this terminal
 	child.Stdout = logFile
 	child.Stderr = logFile

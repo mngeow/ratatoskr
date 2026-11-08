@@ -33,10 +33,15 @@ const (
 // the address is bound.
 //
 // UNTESTED.
-func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, status io.Writer) error {
+func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, cardPoll time.Duration, status io.Writer) error {
 	plan, err := PlanListen(listen, allowLAN, insecureHTTP)
 	if err != nil {
 		return err
+	}
+	// A card poll interval outside its range is a mistyped flag, refused before any file or lock is
+	// touched (0 means the default).
+	if cardPoll != 0 && (cardPoll < MinCardPollInterval || cardPoll > MaxCardPollInterval) {
+		return fmt.Errorf("gateway: --card-poll-interval must be between %s and %s", MinCardPollInterval, MaxCardPollInterval)
 	}
 
 	store, err := Open(ctx, stateDir, true)
@@ -46,6 +51,13 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 	defer func() {
 		_ = store.Close()
 	}()
+
+	// An upgraded database says so, with the backup's path, before anything else is printed: the
+	// owner needs that path if the older binary has to come back.
+	if migrated := store.Migration(); migrated.Backup != "" {
+		fmt.Fprintf(status, "migrated the gateway database from schema %d to %d; backup at %s\n",
+			migrated.From, migrated.To, migrated.Backup)
+	}
 
 	// PrepareDir is idempotent and returns the directory this gateway owns, which is
 	// what the status line reports. It runs after Open so the order above holds.
@@ -80,6 +92,17 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 	}
 
 	srv := NewServer(store, Options{})
+
+	// The card poller runs for the life of the gateway, after the bind and independent of any viewer.
+	// It is built and started BEFORE Serve begins, so the server's reference to it is written before
+	// any request goroutine can read it (there is no lock around that field). It is stopped (cancelled
+	// and waited for) before the deferred store.Close above runs, because deferred calls run last-in
+	// first-out and this one is registered after it.
+	stopCardPoller := srv.StartCardPoller(ctx, cardPoll, func(format string, args ...any) {
+		fmt.Fprintf(status, format+"\n", args...)
+	})
+	defer stopCardPoller()
+
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- srv.Serve(listener)

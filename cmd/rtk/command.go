@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/mngeow/ratatoskr/internal/entry"
 )
@@ -31,6 +32,7 @@ const (
 	kindDaemonStatus
 	kindDaemonStop
 	kindDaemonNetwork
+	kindDaemonCard
 )
 
 // command is one parsed invocation. Only the fields its kind uses are set.
@@ -60,6 +62,17 @@ type command struct {
 	session      string // kindDaemonStop, --session NAME
 	networkJSON  bool   // kindDaemonNetwork, --json
 	networkWatch bool   // kindDaemonNetwork, --watch
+
+	// cardListen is `rtk daemon --card-listen ADDR` (kindDaemonRun): the address the host card is
+	// served on, empty for off. allowLAN and insecureHTTP above carry the two LAN opt-ins, as they do
+	// for the gateway. cardArgs is `rtk daemon card ...` (kindDaemonCard), passed through so the
+	// daemon package's own parsing and usage errors stay the single source of truth.
+	cardListen string
+	cardArgs   []string
+
+	// cardPollInterval is `rtk gateway --card-poll-interval`; 0 means the default. The range is
+	// checked by gateway.Run, before any state is touched.
+	cardPollInterval time.Duration
 }
 
 const (
@@ -76,6 +89,8 @@ var adminCommands = map[string]bool{
 	"hosts":  true,
 	"log":    true,
 	"show":   true,
+
+	"card-target": true,
 }
 
 // parseCommand turns the command line into one command.
@@ -127,6 +142,7 @@ func parseGateway(args []string) (command, error) {
 	listen := fs.String("listen", "", "")
 	allowLAN := fs.Bool("allow-lan", false, "")
 	insecureHTTP := fs.Bool("insecure-http", false, "")
+	cardPoll := fs.Duration("card-poll-interval", 0, "")
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("%s (%v)", gatewayNeedsListen, err)
 	}
@@ -138,7 +154,7 @@ func parseGateway(args []string) (command, error) {
 	}
 	return command{
 		kind: kindGatewayServe, listen: *listen,
-		allowLAN: *allowLAN, insecureHTTP: *insecureHTTP,
+		allowLAN: *allowLAN, insecureHTTP: *insecureHTTP, cardPollInterval: *cardPoll,
 	}, nil
 }
 
@@ -160,19 +176,29 @@ func parseDaemon(args []string) (command, error) {
 			return parseDaemonStop(args[1:])
 		case "network":
 			return parseDaemonNetwork(args[1:])
+		case "card":
+			return command{kind: kindDaemonCard, cardArgs: args[1:]}, nil
 		}
 	}
 
 	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	foreground := fs.Bool("foreground", false, "")
+	cardListen := fs.String("card-listen", "", "")
+	allowLAN := fs.Bool("allow-lan", false, "")
+	insecureHTTP := fs.Bool("insecure-http", false, "")
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("rtk: daemon: %v", err)
 	}
 	if rest := fs.Args(); len(rest) > 0 {
 		return command{}, fmt.Errorf("rtk: daemon: unexpected argument %q", rest[0])
 	}
-	return command{kind: kindDaemonRun, foreground: *foreground}, nil
+	// The two LAN opt-ins mean something only with a card listener; the daemon package refuses them
+	// otherwise, before any state is touched.
+	return command{
+		kind: kindDaemonRun, foreground: *foreground,
+		cardListen: *cardListen, allowLAN: *allowLAN, insecureHTTP: *insecureHTTP,
+	}, nil
 }
 
 // parseDaemonNetwork handles `rtk daemon network [--json] [--watch]`. No flag has a meaning the

@@ -135,6 +135,8 @@ func (s *daemonServer) handleAttach(w *window, request wire.Attach) bool {
 	// Network view has data without the user having to open it first. Every refusal returned above
 	// never reaches this line.
 	w.acquireNetwork()
+	// The Graph tab is just as always present, so it is fed the same way.
+	w.acquireGraph()
 
 	w.startWriter()
 	s.log.logf("window %s attached: %d slots, %d start errors", w.id, len(slots), len(startErrors))

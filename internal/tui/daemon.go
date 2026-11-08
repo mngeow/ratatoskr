@@ -47,6 +47,9 @@ type daemonWindow struct {
 	// daemonClient so a test client needs no new method, and a window built without it simply has no
 	// Network view to open.
 	network func(ctx context.Context, request wire.NetworkRequest) (protocol.NetworkView, uint64, error)
+	graph   func(context.Context, wire.GraphRequest) (protocol.GraphView, uint64, error)
+	card    func(context.Context) (protocol.CardView, error)
+	cardOp  func(context.Context, wire.CardOp) (protocol.CardView, error)
 	// enter asks the daemon what pressing Enter on one Network row should do. Nil in a test-built
 	// window, which is what makes the Network view's Enter answer politely instead of panicking.
 	enter func(ctx context.Context, request wire.EnterRequest) (wire.EnterPlan, error)
@@ -154,7 +157,7 @@ func NewDaemon(client *windowclient.Client) (*Model, error) {
 		model = built
 	}
 
-	daemon := &daemonWindow{client: client, network: client.Network, enter: client.Enter}
+	daemon := &daemonWindow{client: client, network: client.Network, enter: client.Enter, graph: client.Graph, card: client.Card, cardOp: client.CardOp}
 	for i, slot := range slots {
 		state := client.Pane(slot.ID).State()
 		daemon.lastRev[i] = state.Rev
@@ -302,6 +305,7 @@ func (m *Model) detachWindow() {
 		return
 	}
 	m.daemon.detached = true
+	m.graph.urlPanel = false
 }
 
 // reconcileDaemon applies the cached daemon state to the model: focus-independent labels,

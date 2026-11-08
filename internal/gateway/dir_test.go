@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // openStore opens a gateway store in a fresh temporary state directory. The
@@ -113,8 +114,12 @@ func TestOpenCreatesTheDatabaseAt0600(t *testing.T) {
 	if err := store.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatalf("read user_version: %v", err)
 	}
-	if version != schemaVersion {
-		t.Fatalf("user_version = %d, want %d", version, schemaVersion)
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	if latest := migrations[len(migrations)-1].version; version != latest {
+		t.Fatalf("user_version = %d, want %d", version, latest)
 	}
 }
 
@@ -208,16 +213,20 @@ func TestMigrateRefusesANewerSchema(t *testing.T) {
 	if _, err := store.db.Exec("PRAGMA user_version = 99"); err != nil {
 		t.Fatalf("set version: %v", err)
 	}
-	if err := migrate(context.Background(), store.db); err == nil {
-		t.Fatal("migrate accepted a newer schema")
+	if _, err := migrate(context.Background(), store.db, filepath.Join(store.dir, dbName), true, time.Now()); !errors.Is(err, ErrNewerSchema) {
+		t.Fatalf("migrate accepted a newer schema: %v", err)
 	}
 }
 
 func TestMigrateIsIdempotent(t *testing.T) {
 	store, _ := openStore(t, false)
 
-	if err := migrate(context.Background(), store.db); err != nil {
+	migrated, err := migrate(context.Background(), store.db, filepath.Join(store.dir, dbName), true, time.Now())
+	if err != nil {
 		t.Fatalf("second migrate: %v", err)
+	}
+	if migrated != (Migrated{}) {
+		t.Fatalf("a current database reported a migration: %+v", migrated)
 	}
 }
 

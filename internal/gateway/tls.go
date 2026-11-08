@@ -265,6 +265,14 @@ func writePrivateFile(path string, data []byte) error {
 	return nil
 }
 
+// ServerTLSConfig is the server configuration the daemon's card listener uses for its pinned,
+// self-signed certificate: the same TLS 1.3, HTTP/1.1-only rules as the gateway's.
+//
+// UNTESTED.
+func ServerTLSConfig(cert tls.Certificate) *tls.Config {
+	return serverTLSConfig(cert)
+}
+
 // serverTLSConfig is the gateway's TLS configuration: TLS 1.3 and HTTP/1.1 only, with
 // no client authentication.
 //

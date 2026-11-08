@@ -115,6 +115,11 @@ type Server struct {
 	// networkTick is how often the shared recompute runs while a poll is parked. It is a
 	// field so a test can use a millisecond instead of a second.
 	networkTick time.Duration
+	// graph is the graph snapshot's revision machinery, separate from network's.
+	graph *graphState
+	// cards is the card poller, nil until StartCardPoller. A nil poller leaves every stored card
+	// "restored" and measures freshness against the default interval.
+	cards *cardPoller
 	// closing is closed once when Shutdown begins, so a parked long poll leaves before
 	// the HTTP server is asked to stop.
 	closing   chan struct{}
@@ -159,6 +164,7 @@ func NewServer(store *Store, opts Options) *Server {
 	server.streamOpen = server.hub.open
 	server.startedAt = server.opts.Now()
 	server.network = newNetworkState()
+	server.graph = newGraphState()
 	server.networkTick = defaultNetworkTick
 	server.closing = make(chan struct{})
 	server.onDirectoryChanged = server.pushDirectory
@@ -227,6 +233,7 @@ func (s *Server) Handler() http.Handler {
 	router.Get("/v1/messages/{id}", s.withAuth(s.handleGetMessage))
 	router.Put(protocol.ReportPath, s.withAuth(s.handleReport))
 	router.Get(protocol.NetworkPath, s.withAuth(s.handleNetwork))
+	router.Get(protocol.GraphPath, s.withAuth(s.handleGraph))
 
 	return s.withVersion(rewriteBareErrors(router))
 }

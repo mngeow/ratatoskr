@@ -42,6 +42,10 @@ type hub struct {
 	// network is the network service, when one is running. Every hook below is nil-safe, so a hub
 	// built without one (a test, or an early slice) behaves exactly as before.
 	network *networkService
+	// graph is the graph service, when one is running; nil-safe like network.
+	graph *graphService
+	// card is the host card service, nil-safe like the others.
+	card *cardService
 
 	mu      sync.Mutex
 	windows map[string]*window
