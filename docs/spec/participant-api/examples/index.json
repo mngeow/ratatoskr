@@ -1,0 +1,105 @@
+{
+  "contract": "1.0",
+  "examples": [
+    {
+      "file": "01-discovery.json",
+      "name": "discovery",
+      "flow": "onboarding"
+    },
+    {
+      "file": "02-pair-ok.json",
+      "name": "pair-ok",
+      "flow": "onboarding"
+    },
+    {
+      "file": "03-pair-bad-code.json",
+      "name": "pair-bad-code",
+      "flow": "onboarding"
+    },
+    {
+      "file": "04-register-session.json",
+      "name": "register-session",
+      "flow": "onboarding"
+    },
+    {
+      "file": "05-register-ninth-session.json",
+      "name": "register-ninth-session",
+      "flow": "limits"
+    },
+    {
+      "file": "06-send-to-managed-session.json",
+      "name": "send-to-managed-session",
+      "flow": "send"
+    },
+    {
+      "file": "07-send-to-unknown-name.json",
+      "name": "send-to-unknown-name",
+      "flow": "send"
+    },
+    {
+      "file": "08-send-to-offline-participant.json",
+      "name": "send-to-offline-participant",
+      "flow": "send"
+    },
+    {
+      "file": "09-send-with-bare-to.json",
+      "name": "send-with-bare-to",
+      "flow": "send"
+    },
+    {
+      "file": "10-poll-with-offer.json",
+      "name": "poll-with-offer",
+      "flow": "receive"
+    },
+    {
+      "file": "11-poll-timeout.json",
+      "name": "poll-timeout",
+      "flow": "receive"
+    },
+    {
+      "file": "12-poll-replaced.json",
+      "name": "poll-replaced",
+      "flow": "receive"
+    },
+    {
+      "file": "13-ack-saved.json",
+      "name": "ack-saved",
+      "flow": "ack"
+    },
+    {
+      "file": "14-ack-refused.json",
+      "name": "ack-refused",
+      "flow": "ack"
+    },
+    {
+      "file": "15-status-accepted.json",
+      "name": "status-accepted",
+      "flow": "status"
+    },
+    {
+      "file": "16-status-out-of-order.json",
+      "name": "status-out-of-order",
+      "flow": "status"
+    },
+    {
+      "file": "17-read-message.json",
+      "name": "read-message",
+      "flow": "read"
+    },
+    {
+      "file": "18-revoked-credential.json",
+      "name": "revoked-credential",
+      "flow": "errors"
+    },
+    {
+      "file": "19-unsupported-contract.json",
+      "name": "unsupported-contract",
+      "flow": "errors"
+    },
+    {
+      "file": "20-send-delivery-uncertain.json",
+      "name": "send-delivery-uncertain",
+      "flow": "send"
+    }
+  ]
+}

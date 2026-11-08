@@ -1,0 +1,22 @@
+{
+  "name": "poll-timeout",
+  "description": "An empty offers array is the normal timeout answer, not an error. The adapter asks again at once.",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1/inbox?wait=20",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "offers": [],
+      "replaced": false
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "register-ninth-session",
+  "description": "A participant holds at most 8 open sessions after replacement.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/sessions",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "name": "worker-9"
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "code": "too_many_sessions",
+      "message": "a participant may hold 8 open sessions"
+    }
+  }
+}

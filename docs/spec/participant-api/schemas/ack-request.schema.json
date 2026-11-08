@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/ack-request.schema.json",
+  "title": "Ack request",
+  "description": "POST /participant/v1/messages/{id}/ack, by the participant that owns the message's recipient session. saved:true records host_stored; saved:false records session_gone with the reason. A second ack is idempotent. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "saved": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "saved"
+  ]
+}

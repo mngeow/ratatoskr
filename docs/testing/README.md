@@ -13,5 +13,6 @@ Documentation home: [index.html](../index.html).
 | [3. Tailnet](scenario-3-tailnet/README.md) | The same machines over Tailscale | Supported **without HTTPS**. `rtk` refuses HTTPS on a Tailscale address |
 | [4. Network tab and SSH entry](scenario-4-network-tab/README.md) | The Network tab and SSH entry, on the machines of scenario 2 or 3 |
 | [5. Host cards and the Graph tab](scenario-5-host-cards/README.md) | Public host cards, scheduled polling, the gateway migration and the Graph tab, on the machines of scenario 2 or 3 | Written, **never run** |
+| [7. The participant API](scenario-7-participant-api/README.md) | A participant (adapter) paired to the gateway on its own HTTPS listener, sending to and receiving from managed sessions, on the machines of scenario 2 or 3 | Written, **never run**; the migration `0003` has never run. Short form only; the HTML guide has no scenario 7 yet. (Scenario 6 was the deferred A2A guide; it exists only on the A2A branch.) |
 
 Everything lives under `~/rtk-test`, so your normal `rtk` binary, pairing and database aren't touched.

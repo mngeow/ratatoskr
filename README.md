@@ -287,13 +287,26 @@ Nothing is resent automatically, and `accepted` means only that the harness took
 - **Linux and SSH use are untested** at runtime. Whether the daemon survives logging out of macOS is unknown.
 - **The newest features are unproven by the team:** the Network and Graph tabs, SSH entry, polling, the fresh-start and 304 fixes, the YAML reload and model drafting have been written and checked by `gofmt`, `go vet` and `go build` only. Colour, mouse and narrow-width rendering on real terminals are undrawn.
 
+## Participant API (on the branch `feat/adapter-integration`, never run)
+
+An **optional** HTTP+JSON API on the gateway for **external adapters**, written in any language, that is separate from the host protocol (which is unchanged). It is built against [ADR-0007](docs/adr/0007-adapter-integration-contract/index.html) and described in [`docs/spec/participant-api/`](docs/spec/participant-api/README.md) with JSON Schemas and 20 conformance examples. **Nothing has been run, and no external harness (OpenRig, Pi or any other) is claimed to work with it.** It is not on `main`.
+
+How it fits, in outline:
+
+- The owner starts a **second listener** with `rtk gateway --listen ADDR --participant-listen ADDR2`. It is off unless asked for, LAN and tailnet (and loopback) only, **HTTPS by default** with the gateway's own pinned certificate, and plain HTTP only with `--participant-insecure-http`.
+- The owner enrols an adapter with `rtk gateway participant pair ID`, which prints a single-use code and the certificate pins. `participant list` and `participant revoke ID` manage them.
+- The adapter redeems the code, registers named sessions (`coder@pi-lab`), sends with `POST /participant/v1/messages` and receives by **long-polling** `GET /participant/v1/inbox`. A send to an offline participant fails at once; nothing is queued.
+- Managed Claude and Codex sessions message a participant session with the existing `ratatoskr_send`; no change was made to them.
+
+A single-file, standard-library-only **Python reference adapter** ([`integrations/participant-reference-py/`](integrations/participant-reference-py/README.md), also never run) shows the contract is not Go-specific. An adapter must pin the gateway certificate, which a stock `curl` cannot do against it; the spec explains why and shows a Python recipe, also untested. Test steps: [scenario 7](docs/testing/scenario-7-participant-api/README.md).
+
 ## Roadmap (proposals, nothing built)
 
 These are decision records, not features. None is implemented, and none authorises code.
 
 | Proposal | What it would add |
 | --- | --- |
-| [ADR-0007](docs/adr/0007-adapter-integration-contract/index.html) | A language-neutral contract so outside harnesses and orchestrators (OpenRig, Pi, custom) join through adapters in any language; the user chose a separate HTTP+JSON participant API on the gateway, the rest is open |
+| [ADR-0007](docs/adr/0007-adapter-integration-contract/index.html) | A language-neutral contract so outside harnesses and orchestrators (OpenRig, Pi, custom) join through adapters in any language; the user approved a separate HTTP+JSON participant API on the gateway with a long-poll inbox; being built on branch `feat/adapter-integration`, never run |
 | [ADR-0008](docs/adr/0008-openrig-operator-integration/index.html) | Only the main OpenRig operator on the network, through a small bridge; OpenRig keeps its lifecycle and queues. Blocked until the participant API of ADR-0007 is decided |
 | [ADR-0009](docs/adr/0009-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search |
 
@@ -303,7 +316,7 @@ Not on the list yet: worker spawning, teams, Pi and OpenCode adapters, remote di
 
 ## Testing
 
-The step-by-step guides are in [`docs/testing/`](docs/testing/) (full HTML guide: [`index.html`](docs/testing/index.html)): [one Mac](docs/testing/scenario-1-local/README.md), [LAN, plain HTTP](docs/testing/scenario-2-lan-http/README.md), [tailnet](docs/testing/scenario-3-tailnet/README.md), [Network tab and SSH entry](docs/testing/scenario-4-network-tab/README.md) and [host cards and the Graph tab](docs/testing/scenario-5-host-cards/README.md). Their expected results come from reading the code, so tell the team where reality differs. **No automated test has ever been run**, and the only run-time evidence is the owner's hand-testing noted above, at the scopes they reported. Running `go test -race ./...` is not part of the quickstart.
+The step-by-step guides are in [`docs/testing/`](docs/testing/) (full HTML guide: [`index.html`](docs/testing/index.html)): [one Mac](docs/testing/scenario-1-local/README.md), [LAN, plain HTTP](docs/testing/scenario-2-lan-http/README.md), [tailnet](docs/testing/scenario-3-tailnet/README.md), [Network tab and SSH entry](docs/testing/scenario-4-network-tab/README.md), [host cards and the Graph tab](docs/testing/scenario-5-host-cards/README.md) and, on the participant-API branch, [the participant API](docs/testing/scenario-7-participant-api/README.md). Their expected results come from reading the code, so tell the team where reality differs. **No automated test has ever been run**, and the only run-time evidence is the owner's hand-testing noted above, at the scopes they reported. Running `go test -race ./...` is not part of the quickstart.
 
 ## Architecture decisions
 
@@ -317,7 +330,7 @@ Decisions are kept in [`docs/adr/`](docs/adr/), one folder and one self-containe
 | [0004](docs/adr/0004-network-tab/index.html) | A Network tab and SSH entry, following agent-net | Proposed; implemented, not run by the team |
 | [0005](docs/adr/0005-host-agent-cards-and-graph/index.html) | Public A2A-style host cards from `card.yaml`, polled by the gateway and drawn in a Graph tab | Proposed; implemented, not run by the team; the gateway database needs a migration |
 | [0006](docs/adr/0006-a2a-routing-and-identity/index.html) | A2A routing and identity, with managed and external participants ([deferral record](docs/adr/deferred/0006-a2a-deferral/index.html)) | **Deferred** 2026-11-08; not on `main` |
-| [0007](docs/adr/0007-adapter-integration-contract/index.html) | Adapter integration contract (language-neutral) | Proposal only; wire direction chosen (HTTP+JSON participant API), details open |
+| [0007](docs/adr/0007-adapter-integration-contract/index.html) | Adapter integration contract (language-neutral) | Approved; implemented on `feat/adapter-integration` (not on `main`), never run |
 | [0008](docs/adr/0008-openrig-operator-integration/index.html) | OpenRig operator integration | Proposal only; blocked on the participant API |
 | [0009](docs/adr/0009-agent-discovery-tool/index.html) | Agent discovery tool | Proposal only |
 

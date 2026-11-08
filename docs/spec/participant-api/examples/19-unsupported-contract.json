@@ -1,0 +1,23 @@
+{
+  "name": "unsupported-contract",
+  "description": "A client may send X-Ratatoskr-Contract to say what it speaks. A different major is refused, naming the major served.",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1/directory",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "X-Ratatoskr-Contract": "2.0"
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "code": "unsupported_contract",
+      "message": "this gateway serves contract major 1 only"
+    }
+  }
+}

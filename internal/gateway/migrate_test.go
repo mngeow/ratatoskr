@@ -90,8 +90,8 @@ func TestMigrationsAreNumberedWithoutGaps(t *testing.T) {
 			t.Fatalf("migration %d has version %d", index, m.version)
 		}
 	}
-	if len(all) < 2 {
-		t.Fatalf("expected 0001 and 0002, got %d files", len(all))
+	if len(all) < 3 {
+		t.Fatalf("expected 0001 to 0003, got %d files", len(all))
 	}
 }
 

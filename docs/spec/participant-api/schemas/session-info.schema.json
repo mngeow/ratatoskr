@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/session-info.schema.json",
+  "title": "Session",
+  "description": "One registered session.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,32}@[a-z0-9-]{1,63}$",
+      "description": "name@participant."
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Opaque; new on every registration."
+    }
+  },
+  "required": [
+    "name",
+    "address",
+    "session_id"
+  ]
+}

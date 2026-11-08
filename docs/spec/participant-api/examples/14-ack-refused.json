@@ -1,0 +1,24 @@
+{
+  "name": "ack-refused",
+  "description": "saved:false records session_gone for the sender, with the reason as the detail. A second ack of the same message is idempotent.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages/msg-0101/ack",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "saved": false,
+      "reason": "the session's harness is not running"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {}
+  }
+}

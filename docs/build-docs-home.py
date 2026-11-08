@@ -39,7 +39,7 @@ CATS = [
 CONTRACTS = {
     'interfaces.md', 'cross-machine-contract.md', 'cross-machine-design.md', 'daemon-contract.md', 'daemon-design.md',
     'network-api-contract.md', 'host-cards-contract.md', 'router-design.md', 'server-agent-design.md',
-    'backend-structure.md', 'frontend-structure.md',
+    'backend-structure.md', 'frontend-structure.md', 'participant-api-contract.md',
 }
 REPORTS = {'backend-report.md', 'candidate-report.md', 'store-review.md', 'outstanding-issues.md', 'pane-risks.md', 'frontend-input-bugs.md'}
 
@@ -204,6 +204,14 @@ def main():
             else:
                 add('papers', path, rel, 'md', t, s, WORKING_NOTE)
             previews[rel] = text
+        elif rel.startswith('spec/participant-api/'):
+            name = rel.split('/', 2)[2]
+            if name in ('README.md', 'CHANGELOG.md'):
+                tt, ss = md_title_summary(text)
+                add('contracts', path, rel, 'md', tt, 'The language-neutral participant API: normative prose for adapter authors (README) or its change log (CHANGELOG). Implemented on a branch, never run' if name == 'README.md' else ss, 'Spec, never run')
+                previews[rel] = text
+            elif not any(i['path'] == 'docs/spec/participant-api/schemas/' for i in items):
+                add('contracts', 'docs/spec/participant-api/schemas/', 'spec/participant-api/schemas/', 'other', 'Participant API schemas and conformance examples', 'The JSON Schemas (schemas/) and the conformance exchanges (examples/) of the participant API: a folder of files, not a page', 'Spec, never run')
         elif rel == 'build-docs-home.py':
             add('tools', path, rel, 'tool', 'build-docs-home.py', 'Regenerates this page and adds the "Docs home" link to the HTML pages. Optional; a Python 3 script that only reads files and writes docs/index.html.', 'Helper')
         else:
@@ -293,7 +301,10 @@ def main():
             f.write(text.replace('<body>', '<body>\n' + tag, 1))
         linked += 1
 
-    missing = sorted(set(all_docs_files()) - {it['path'][5:].split('#')[0] for it in items if it['path'].startswith('docs/')})
+    listed = {it['path'][5:].split('#')[0] for it in items if it['path'].startswith('docs/')}
+    folders = [p for p in listed if p.endswith('/')]
+    # A file inside a folder entry (the participant API schemas and examples) is listed through that folder.
+    missing = sorted(f for f in set(all_docs_files()) - listed if not any(f.startswith(d) for d in folders) and not f.startswith('spec/participant-api/examples/'))
     print('items', total, 'categories', {k: v for k, v in counts.items() if v}, 'pages linked', linked, 'unlisted docs files', missing)
 
 

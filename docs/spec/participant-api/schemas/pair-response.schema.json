@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/pair-response.schema.json",
+  "title": "Pair response",
+  "description": "The credential, shown once. The gateway keeps only its hash.",
+  "type": "object",
+  "properties": {
+    "participant": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,63}$"
+    },
+    "credential": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Send as Authorization: Bearer <credential> on every other route. Treat it as opaque."
+    }
+  },
+  "required": [
+    "participant",
+    "credential"
+  ]
+}

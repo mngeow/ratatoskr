@@ -1,0 +1,47 @@
+{
+  "name": "register-session",
+  "description": "Registers one named session. The session id is new on every registration; registering the same name again ends the earlier session of that name. The directory lists every registered session, live or not.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/sessions",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "name": "coder"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "participant": "pi-lab",
+      "session": {
+        "name": "coder",
+        "address": "coder@pi-lab",
+        "session_id": "00000000000000000000000000000001"
+      },
+      "directory": [
+        {
+          "address": "coder@pi-lab",
+          "host": "pi-lab",
+          "live": true
+        },
+        {
+          "address": "claude@vm-b",
+          "host": "vm-b",
+          "live": true
+        },
+        {
+          "address": "helper@lab-2",
+          "host": "lab-2",
+          "live": false
+        }
+      ]
+    }
+  }
+}

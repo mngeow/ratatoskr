@@ -83,6 +83,11 @@ func (s *Store) CreatePairingCode(ctx context.Context, host string, now time.Tim
 		_ = tx.Rollback()
 	}()
 
+	// A host name must never equal a participant id (revoked ones keep their name).
+	if err := refuseParticipantName(ctx, tx, host); err != nil {
+		return "", err
+	}
+
 	// One live code per host: an older unused code must stop working the moment a
 	// new one is minted.
 	if _, err := tx.ExecContext(ctx,
@@ -157,6 +162,16 @@ func (s *Store) redeem(ctx context.Context, code, host string, now time.Time) (s
 		return "", "", ErrBadCode
 	}
 	host = storedHost
+
+	// The name check runs in the transaction that writes the row, so a race with `participant pair`
+	// cannot create both. A participant name is the same ErrBadCode as any other failure, and the code
+	// is not marked used.
+	if err := refuseParticipantName(ctx, tx, host); err != nil {
+		if errors.Is(err, ErrNameIsParticipant) {
+			return "", "", ErrBadCode
+		}
+		return "", "", err
+	}
 
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE pairing_codes SET used_at=? WHERE code_hash=?`, now.UnixMilli(), codeHash); err != nil {

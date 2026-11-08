@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/inbox-response.schema.json",
+  "title": "Inbox response",
+  "description": "GET /participant/v1/inbox?wait=N. An empty offers is the normal timeout answer; ask again at once. replaced is true when a second poll from the same participant displaced this one.",
+  "type": "object",
+  "properties": {
+    "offers": {
+      "type": "array",
+      "items": {
+        "$ref": "offer.schema.json"
+      },
+      "maxItems": 8
+    },
+    "replaced": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "offers",
+    "replaced"
+  ]
+}

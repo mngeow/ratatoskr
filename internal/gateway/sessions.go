@@ -72,6 +72,12 @@ var ErrTooManySessions = errors.New("gateway: too many open sessions on this hos
 //
 // UNTESTED.
 func (s *Store) AddSession(ctx context.Context, host, name string, now time.Time, newID func() (string, error)) (SessionRow, error) {
+	return s.addSession(ctx, host, name, now, newID, nil)
+}
+
+// addSession is AddSession's body. check, when set, runs inside the transaction before anything is
+// written, so a participant registration can verify its participant in the same transaction.
+func (s *Store) addSession(ctx context.Context, host, name string, now time.Time, newID func() (string, error), check func(context.Context, *sql.Tx) error) (SessionRow, error) {
 	if !hostNamePattern.MatchString(host) {
 		return SessionRow{}, fmt.Errorf("%w: %q", ErrBadHostName, host)
 	}
@@ -94,6 +100,12 @@ func (s *Store) AddSession(ctx context.Context, host, name string, now time.Time
 	defer func() {
 		_ = tx.Rollback()
 	}()
+
+	if check != nil {
+		if err := check(ctx, tx); err != nil {
+			return SessionRow{}, err
+		}
+	}
 
 	// The same name first: an add replaces a running session of that name, and nothing
 	// else.

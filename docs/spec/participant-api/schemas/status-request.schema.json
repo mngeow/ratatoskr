@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/status-request.schema.json",
+  "title": "Status request",
+  "description": "POST /participant/v1/messages/{id}/status. Stored as a report with a rank, so an out-of-order report cannot undo a later one; queued is refused. at is optional. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "state": {
+      "enum": [
+        "held",
+        "delivering",
+        "pasted",
+        "accepted",
+        "unconfirmed",
+        "failed",
+        "interrupted"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, UTC."
+    }
+  },
+  "required": [
+    "state"
+  ]
+}

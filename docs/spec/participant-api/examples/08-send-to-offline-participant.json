@@ -1,0 +1,30 @@
+{
+  "name": "send-to-offline-participant",
+  "description": "Nothing is queued for an offline participant: the send fails at once, and nothing is delivered later.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "id": "msg-0003",
+      "from": "coder",
+      "to": "helper@lab-2",
+      "body": "Are you polling?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "id": "msg-0003",
+      "result": "destination_unreachable",
+      "detail": "the participant is not polling"
+    }
+  }
+}

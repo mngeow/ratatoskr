@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/directory-response.schema.json",
+  "title": "Directory response",
+  "description": "GET /participant/v1/directory.",
+  "type": "object",
+  "properties": {
+    "directory": {
+      "type": "array",
+      "items": {
+        "$ref": "directory-entry.schema.json"
+      }
+    }
+  },
+  "required": [
+    "directory"
+  ]
+}

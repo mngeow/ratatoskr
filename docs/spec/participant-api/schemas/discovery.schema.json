@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/discovery.schema.json",
+  "title": "Discovery",
+  "description": "GET /participant/v1. No credential, no secret.",
+  "type": "object",
+  "properties": {
+    "contract": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "major.minor."
+    },
+    "versions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The majors served."
+    },
+    "now": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339, UTC."
+    }
+  },
+  "required": [
+    "contract",
+    "versions",
+    "now"
+  ]
+}

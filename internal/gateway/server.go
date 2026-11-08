@@ -126,6 +126,14 @@ type Server struct {
 	closeOnce sync.Once
 
 	http *http.Server
+	// participantHTTP is the participant API's own http.Server, nil unless EnableParticipantServer was
+	// called (the participant API is off by default). It shares the store, the hub and the closing signal.
+	participantHTTP *http.Server
+	// phub holds the participants' inboxes, parked polls and pending offers. It exists in memory only.
+	phub *participantHub
+	// participantWork counts participant handlers that are running, so Shutdown can wait for them before the
+	// shared Store is closed: http.Server.Close does not join handler goroutines.
+	participantWork sync.WaitGroup
 }
 
 // NewServer builds the HTTP surface. A nil store is a wiring bug and is documented
@@ -159,6 +167,7 @@ func NewServer(store *Store, opts Options) *Server {
 		store: store,
 		opts:  opts,
 		hub:   newHub(),
+		phub:  newParticipantHub(),
 	}
 	// Liveness reads the hub, and every registration pushes a directory.
 	server.streamOpen = server.hub.open
@@ -264,21 +273,115 @@ func (s *Server) Serve(listener net.Listener) error {
 	return nil
 }
 
+// EnableParticipantServer builds the participant API's http.Server. It must be called before Serve or
+// ServeParticipant, because no lock guards the field. The settings are NewServer's (header and idle limits,
+// no HTTP/2) plus a WriteTimeout of participantWriteTimeout, well over the longest poll (20 s) plus the
+// authentication, database and write time around it. There is deliberately no ReadTimeout: net/http cancels
+// a request's context when the read deadline passes, which would cut a parked poll. A request body is
+// bounded by its size and by a deadline set around the read (decodeParticipantBody).
+//
+// UNTESTED.
+func (s *Server) EnableParticipantServer() {
+	s.participantHTTP = &http.Server{
+		Handler:           s.ParticipantHandler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
+		IdleTimeout:       idleTimeout,
+		WriteTimeout:      participantWriteTimeout,
+		TLSNextProto:      map[string]func(*http.Server, *tls.Conn, http.Handler){},
+	}
+}
+
+// ServeParticipant runs the participant server until Shutdown. EnableParticipantServer must have been
+// called.
+//
+// UNTESTED.
+func (s *Server) ServeParticipant(listener net.Listener) error {
+	if s.participantHTTP == nil {
+		return errors.New("gateway: the participant server is not enabled")
+	}
+	err := s.participantHTTP.Serve(listener)
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("gateway: serve participant API: %w", err)
+	}
+	return nil
+}
+
 // Shutdown stops the server and is idempotent.
+//
+// With the participant API off this is exactly the single-server shutdown. With it on, both http servers
+// drain under the ONE deadline in ctx, and whatever is still open when it expires is closed.
 //
 // UNTESTED.
 func (s *Server) Shutdown(ctx context.Context) error {
 	// The snapshot machinery goes first: a parked long poll selects on this channel, so it
-	// leaves before the HTTP server is asked to stop, and the shared ticker stops too.
+	// leaves before the HTTP server is asked to stop, and the shared ticker stops too. The
+	// participant inbox's parked polls and pending offers use the same signal (P2), so they are
+	// cancelled and withdrawn here, before either server drains.
 	s.closeOnce.Do(func() { close(s.closing) })
 
 	// Streams next: each handler is parked in its own loop, and cancelling is
 	// what gets it out so the http server is not waiting on it.
 	s.hub.closeAll()
-	if err := s.http.Shutdown(ctx); err != nil {
-		return fmt.Errorf("gateway: shutdown: %w", err)
+
+	if s.participantHTTP == nil {
+		if err := s.http.Shutdown(ctx); err != nil {
+			return fmt.Errorf("gateway: shutdown: %w", err)
+		}
+		return nil
+	}
+
+	// Both drain at once, so the one deadline is shared and not spent twice.
+	servers := []*http.Server{s.http, s.participantHTTP}
+	results := make(chan error, len(servers))
+	for _, server := range servers {
+		go func() {
+			results <- server.Shutdown(ctx)
+		}()
+	}
+	var failure error
+	for range servers {
+		if err := <-results; err != nil && failure == nil {
+			failure = err
+		}
+	}
+	if failure != nil {
+		// The deadline passed with connections still open: close them rather than leave them.
+		for _, server := range servers {
+			_ = server.Close()
+		}
+	}
+
+	// Close does not join handler goroutines, and the caller closes the shared Store next. Their contexts
+	// are cancelled by now (the closing signal, then the closed connections), so they finish quickly; wait
+	// for them for a short, bounded time and say so if they do not.
+	if !waitGroupFor(&s.participantWork, participantJoinWait) {
+		failure = errors.Join(failure, errors.New("participant handlers were still running"))
+	}
+	if failure != nil {
+		return fmt.Errorf("gateway: shutdown: %w", failure)
 	}
 	return nil
+}
+
+// waitGroupFor waits for the group for at most d and reports whether it finished.
+func waitGroupFor(group *sync.WaitGroup, d time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		group.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 // withVersion refuses a request that does not carry this gateway's protocol
@@ -524,7 +627,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request, host st
 // Liveness is decided only by HostLive, with the hub seam standing in for "has an
 // open stream"; no other code tests the 15 s window.
 func (s *Server) directoryEntries(ctx context.Context) ([]protocol.DirectoryEntry, error) {
-	rows, err := s.store.Directory(ctx)
+	rows, err := s.store.WireDirectory(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -532,10 +635,16 @@ func (s *Server) directoryEntries(ctx context.Context) ([]protocol.DirectoryEntr
 	now := s.opts.Now()
 	entries := make([]protocol.DirectoryEntry, 0, len(rows))
 	for _, row := range rows {
+		// A host is live by its stream and heartbeat, a participant by a parked poll and its last poll;
+		// both are the one HostLive rule over their own "open" half.
+		open := s.streamOpen(row.Host)
+		if row.Participant {
+			open = s.phub.parked(row.Host)
+		}
 		entries = append(entries, protocol.DirectoryEntry{
 			Address: row.Name + "@" + row.Host,
 			Host:    row.Host,
-			Live:    HostLive(row.LastHeartbeat, s.streamOpen(row.Host), now),
+			Live:    HostLive(row.LastSeen, open, now),
 		})
 	}
 	return entries, nil

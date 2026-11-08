@@ -1,0 +1,30 @@
+{
+  "name": "send-delivery-uncertain",
+  "description": "The recipient was offered the message once and did not answer in time. It may have been saved, so this is uncertain, never failed: do not resend under a new id as if it had failed. A late ack or report corrects the gateway's record, and GET /messages/{id} shows the correction. A client that meets a result it does not know treats it as uncertain.",
+  "request": {
+    "method": "POST",
+    "path": "/participant/v1/messages",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "id": "msg-0005",
+      "from": "coder",
+      "to": "claude@vm-b",
+      "body": "Is the build green?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "id": "msg-0005",
+      "result": "delivery_uncertain",
+      "detail": "the recipient did not answer in time; the message may have been saved"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/empty.schema.json",
+  "title": "Empty object",
+  "description": "The body of a successful ack or status response.",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "maxProperties": 0
+}

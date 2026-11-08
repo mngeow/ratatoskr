@@ -212,6 +212,27 @@ func TestParseCommandLANFlags(t *testing.T) {
 			want: command{kind: kindRuntimePair, gatewayAddr: "192.168.1.20:7777", code: "abcd", fingerprint: fingerprint, insecureHTTP: true},
 		},
 		{
+			name: "gateway with the participant API on a tailnet address",
+			args: []string{"gateway", "--listen", "100.64.0.1:7777", "--participant-listen", "100.64.0.1:7790"},
+			want: command{kind: kindGatewayServe, listen: "100.64.0.1:7777", participantListen: "100.64.0.1:7790"},
+		},
+		{
+			name: "gateway with all three participant flags",
+			args: []string{"gateway", "--listen", "127.0.0.1:7777", "--participant-listen", "192.168.1.20:7790", "--participant-allow-lan", "--participant-insecure-http"},
+			want: command{kind: kindGatewayServe, listen: "127.0.0.1:7777", participantListen: "192.168.1.20:7790", participantAllowLAN: true, participantInsecureHTTP: true},
+		},
+		{
+			// Accepted here and refused by PlanParticipantListen: no rule in the parser.
+			name: "a participant flag without --participant-listen",
+			args: []string{"gateway", "--listen", "100.64.0.1:7777", "--participant-allow-lan"},
+			want: command{kind: kindGatewayServe, listen: "100.64.0.1:7777", participantAllowLAN: true},
+		},
+		{
+			name: "the participant admin command passes through",
+			args: []string{"gateway", "participant", "revoke", "pi-lab"},
+			want: command{kind: kindGatewayAdmin, admin: []string{"participant", "revoke", "pi-lab"}},
+		},
+		{
 			// An admin subcommand keeps its own flags: nothing is parsed here.
 			name: "an admin subcommand passes the opt-ins through",
 			args: []string{"gateway", "log", "--allow-lan"},
@@ -229,6 +250,9 @@ func TestParseCommandLANFlags(t *testing.T) {
 				got.gatewayAddr != tc.want.gatewayAddr || got.code != tc.want.code ||
 				got.fingerprint != tc.want.fingerprint ||
 				got.allowLAN != tc.want.allowLAN || got.insecureHTTP != tc.want.insecureHTTP ||
+				got.participantListen != tc.want.participantListen ||
+				got.participantAllowLAN != tc.want.participantAllowLAN ||
+				got.participantInsecureHTTP != tc.want.participantInsecureHTTP ||
 				strings.Join(got.admin, "\x00") != strings.Join(tc.want.admin, "\x00") {
 				t.Fatalf("parseCommand(%q) = %+v, want %+v", tc.args, got, tc.want)
 			}

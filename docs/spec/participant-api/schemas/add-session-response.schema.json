@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/add-session-response.schema.json",
+  "title": "Register session response",
+  "description": "The new session and the current directory.",
+  "type": "object",
+  "properties": {
+    "participant": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,63}$"
+    },
+    "session": {
+      "$ref": "session-info.schema.json"
+    },
+    "directory": {
+      "type": "array",
+      "items": {
+        "$ref": "directory-entry.schema.json"
+      }
+    }
+  },
+  "required": [
+    "participant",
+    "session",
+    "directory"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ratatoskr.invalid/schemas/participant-api/1/pair-request.schema.json",
+  "title": "Pair request",
+  "description": "POST /participant/v1/pair. The code is the secret; no credential is sent. Unknown fields are ignored by the gateway on a request and must be ignored by a client on a response.",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,32}$",
+      "description": "The one-time pairing code, case-insensitive; dashes are ignored."
+    },
+    "participant": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,63}$",
+      "description": "Optional. The code was minted for one participant id; a mismatch is refused."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}

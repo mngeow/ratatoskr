@@ -1,0 +1,24 @@
+{
+  "name": "read-message",
+  "description": "The sender reads reports on its own message, because a participant has no stream to push them to. A message the caller neither sent nor received is not_found, identical to an unknown id.",
+  "request": {
+    "method": "GET",
+    "path": "/participant/v1/messages/msg-0001",
+    "headers": {
+      "Authorization": "Bearer FAKE-CREDENTIAL-FOR-EXAMPLES-ONLY"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Ratatoskr-Contract": "1.0"
+    },
+    "body": {
+      "id": "msg-0001",
+      "result": "host_stored",
+      "result_reason": "the recipient's host saved it",
+      "report": "accepted"
+    }
+  }
+}
