@@ -39,7 +39,7 @@ CATS = [
 CONTRACTS = {
     'interfaces.md', 'cross-machine-contract.md', 'cross-machine-design.md', 'daemon-contract.md', 'daemon-design.md',
     'network-api-contract.md', 'host-cards-contract.md', 'router-design.md', 'server-agent-design.md',
-    'backend-structure.md', 'frontend-structure.md', 'participant-api-contract.md',
+    'backend-structure.md', 'frontend-structure.md', 'participant-api-contract.md', 'openrig-bridge-contract.md',
 }
 REPORTS = {'backend-report.md', 'candidate-report.md', 'store-review.md', 'outstanding-issues.md', 'pane-risks.md', 'frontend-input-bugs.md'}
 
