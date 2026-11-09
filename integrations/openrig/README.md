@@ -8,6 +8,8 @@ The bridge between the Ratatoskr participant API (ADR-0007) and one existing Ope
 program, three entry points: a guided `setup` TUI, a long-running sidecar (`serve`) that holds the participant
 credential, and a thin local client (`send`, `directory`, `status`) that holds none. The design contract is
 [`docs/implementation/openrig-bridge-contract.md`](../../docs/implementation/openrig-bridge-contract.md).
+For users: [How the OpenRig integration works](../../docs/guides/openrig-integration/index.html) and the
+[setup guide](../../docs/guides/openrig-setup/README.md) (Mac operator, gateway on VM-A, Claude on VM-B).
 
 ## Known limitation, stated plainly
 

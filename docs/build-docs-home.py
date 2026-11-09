@@ -27,6 +27,7 @@ OUT = os.path.join(DOCS, 'index.html')
 CATS = [
     ('adr', 'Decision records', 'ADR-0001 to ADR-0009. Each is a self-contained HTML page with its status near the top. ADR-0006 is deferred.'),
     ('deferred', 'Deferred ADRs', 'Decisions set aside on purpose, with the reason. Not accepted, not rejected, not active requirements.'),
+    ('guides', 'User guides', 'How a feature works and how to set it up, for the person using it. Written from the source; nothing here has been run by the team.'),
     ('design', 'Design guides', 'Ground rules, the design index and the two early proposals.'),
     ('testing', 'Testing guides', 'Step-by-step manual test guides. Written from the source; nothing here has been run by the team.'),
     ('contracts', 'Contracts and designs', 'The authoritative description of what each part is meant to do, and where it is described as built. A contract is not evidence of behaviour unless it says so.'),
@@ -184,6 +185,15 @@ def main():
             t, s = md_title_summary(text)
             add('testing', path, rel, 'md', t, s, 'Short form of one scenario; the full HTML guide has diagrams and copy buttons')
             previews[rel] = text
+        elif rel.startswith('guides/'):
+            if rel.endswith('.html'):
+                add('guides', path, rel, 'html', html_title(text) or rel, 'How the pieces fit together, with diagrams and message-flow scenarios', 'Written from the source; not run by the team')
+            elif rel.endswith('.md'):
+                t, s = md_title_summary(text)
+                add('guides', path, rel, 'md', t, s, 'Written from the source; not run by the team')
+                previews[rel] = text
+            else:
+                add('guides', path, rel, 'other', rel, 'A supporting file of a guide.', '')
         elif rel.startswith('design/'):
             if rel.endswith('.html'):
                 m = table.get(os.path.normpath(rel)) or ('', '', '')

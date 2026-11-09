@@ -247,6 +247,10 @@ type model struct {
 	exitCode  int
 
 	dialog       dialog
+	notice       dialog
+	noticeKind   noticeKind
+	noticeActs   []noticeAction
+	stageFrom    screen
 	helpOpen     bool
 	quitWhenIdle bool
 
@@ -340,6 +344,7 @@ func (m *model) applyCmd(a setup.Answers, discard bool) tea.Cmd {
 // pasteCmd parses a copy of the masked block. Keeping the original lets the owner clear or retry after
 // a parse error; ParsePaste zeroes the command's copy.
 func (m *model) pasteCmd(block []byte) tea.Cmd {
+	m.stageFrom = screenPaste
 	m.phase = phaseApplying
 	m.busy = true
 	m.busyLabel = "reading the pasted block"
@@ -354,6 +359,7 @@ func (m *model) pasteCmd(block []byte) tea.Cmd {
 
 // fieldsCmd stages the values typed one at a time. code may be nil; the engine zeroes it.
 func (m *model) fieldsCmd(url, pin string, code []byte) tea.Cmd {
+	m.stageFrom = screenFields
 	m.phase = phaseApplying
 	m.busy = true
 	m.busyLabel = "checking the typed values"
@@ -432,12 +438,78 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// noticeKind names why the recoverable notice is on screen.
+type noticeKind int
+
+const (
+	noticeNone noticeKind = iota
+	noticeStagePaste
+	noticeStageFields
+	noticeNotApplied
+	noticeFieldErrors
+	noticeBlocked
+)
+
+// noticeAction is one button on the recoverable notice.
+type noticeAction int
+
+const (
+	actOK noticeAction = iota
+	actRetry
+	actBack
+)
+
+// idle ends a command: nothing is in flight and, unless the run is over, the pane accepts keys again.
+//
+// Every reply handler calls this. Leaving phase at phaseApplying is what made the review screen render and
+// then ignore every key, so this is the single place that can restore it.
+func (m *model) idle() {
+	m.busy = false
+	m.busyLabel = ""
+	if m.screen == screenSummary || m.phase == phaseSummary {
+		return
+	}
+	m.phase = phaseEditing
+}
+
+// showNotice opens the recoverable notice. It never carries a secret: callers pass engine text and labels.
+func (m *model) showNotice(kind noticeKind, title string, lines []string, actions ...string) {
+	m.notice = dialog{
+		Title: title,
+		Body:  append([]string(nil), lines...),
+		Hint:  "enter: confirm · tab/←/→: choose · esc: close",
+		open:  true,
+	}
+	m.notice.Buttons = buttonRow{Labels: actions}
+	m.notice.Buttons.blocked = make([]string, len(actions))
+	m.notice.Buttons.Focus()
+	m.noticeKind = kind
+	m.noticeActs = m.noticeActs[:0]
+	for _, action := range actions {
+		switch action {
+		case "Retry":
+			m.noticeActs = append(m.noticeActs, actRetry)
+		case "Back":
+			m.noticeActs = append(m.noticeActs, actBack)
+		default:
+			m.noticeActs = append(m.noticeActs, actOK)
+		}
+	}
+}
+
+// closeNotice dismisses it without touching any engine state.
+func (m *model) closeNotice() {
+	m.notice.open = false
+	m.noticeKind = noticeNone
+	m.noticeActs = nil
+}
+
 // onPlan shows a step's plan, or applies an automatic step at once.
 func (m *model) onPlan(msg planMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.gen {
 		return m, nil
 	}
-	m.busy = false
+	m.idle()
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
@@ -623,11 +695,10 @@ func (m *model) onApply(msg applyMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.gen {
 		return m, nil
 	}
-	m.busy = false
+	m.idle()
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
-	m.phase = phaseEditing
 	res := msg.res
 
 	if msg.discard {
@@ -660,6 +731,8 @@ func (m *model) onApply(msg applyMsg) (tea.Model, tea.Cmd) {
 		m.lines = res.Lines
 		m.wipeSecrets()
 		m.focusFirstError(res.FieldErrors)
+		// The inline messages stay where they are; the notice summarises them once.
+		m.showNotice(noticeFieldErrors, "Not applied", []string{m.fieldErrorSummary(res.FieldErrors)}, "OK")
 		return m, nil
 	}
 
@@ -676,6 +749,7 @@ func (m *model) onApply(msg applyMsg) (tea.Model, tea.Cmd) {
 		// http:// gateway needs allow_http). Keep the staged values, stay where the owner is, show why.
 		m.lines = res.Lines
 		m.refreshButtons()
+		m.showNotice(noticeNotApplied, "Not applied", res.Lines, "OK", "Back")
 		return m, nil
 	}
 
@@ -708,13 +782,21 @@ func (m *model) statuses() map[setup.StepID]setup.Status {
 
 // onValidated records one validation answer and schedules the newest queued value.
 func (m *model) onValidated(msg validateMsg) (tea.Model, tea.Cmd) {
+	// Only one validation is ever in flight, so this reply always ends it, even when a newer command has
+	// moved the generation on: returning early here would leave validating set and Continue blocked for good.
+	// The step/value match below keeps a stale answer from landing on the field.
 	m.validating = false
+	if msg.gen == m.gen {
+		m.idle()
+	}
 
 	input := m.fields[msg.fieldID]
 	if input != nil && m.index < len(m.steps) && m.steps[m.index] == msg.step && input.Value() == msg.value {
 		input.SetMessage(msg.message)
 		if msg.message == "" {
 			delete(m.fieldErrors, msg.fieldID)
+		} else {
+			m.fieldErrors[msg.fieldID] = msg.message
 		}
 	}
 	if m.quitWhenIdle {
@@ -753,15 +835,22 @@ func (m *model) onStage(msg stageMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.gen {
 		return m, nil
 	}
-	m.busy = false
+	m.idle()
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
 
 	if msg.err != nil {
-		// Nothing was staged; the engine's message names the field and never echoes the secret.
+		// Nothing was staged; the engine's message names the field and never echoes the secret. The
+		// notice keeps the owner on the screen they were on, with the masked block still available for a
+		// retry when the failure came from the paste box.
 		m.lines = []string{msg.err.Error()}
 		m.staged = nil
+		if m.stageFrom == screenPaste {
+			m.showNotice(noticeStagePaste, "Could not read the pasted block", []string{msg.err.Error()}, "OK", "Retry", "Back")
+		} else {
+			m.showNotice(noticeStageFields, "Could not use those values", []string{msg.err.Error()}, "OK", "Back")
+		}
 		m.refreshButtons()
 		return m, nil
 	}
@@ -780,7 +869,7 @@ func (m *model) onStage(msg stageMsg) (tea.Model, tea.Cmd) {
 
 // onPaste appends a bracketed paste to whatever accepts text.
 func (m *model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	if m.phase != phaseEditing || m.busy || msg.Content == "" || m.dialog.open || m.helpOpen {
+	if m.phase != phaseEditing || m.busy || msg.Content == "" || m.dialog.open || m.notice.open || m.helpOpen {
 		return m, nil
 	}
 
@@ -872,6 +961,10 @@ func (m *model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.dialog.open {
 		return m.onDialogKey(msg)
+	}
+
+	if m.notice.open {
+		return m.onNoticeKey(msg)
 	}
 
 	if m.helpOpen {
@@ -1076,7 +1169,7 @@ func (m *model) pressEnter() (tea.Model, tea.Cmd) {
 	switch current.kind {
 	case controlButtons:
 		if reason, blocked := m.buttons.Disabled(); blocked {
-			m.lines = []string{reason}
+			m.blockedNotice(reason)
 			m.refreshButtons()
 			return m, nil
 		}
@@ -1119,6 +1212,10 @@ func (m *model) pressButton(index int) (tea.Model, tea.Cmd) {
 		if index == 0 {
 			return m.back()
 		}
+		if reason := m.fieldsBlocked(); reason != "" {
+			m.blockedNotice(reason)
+			return m, nil
+		}
 		return m.submitFields()
 	case screenReview:
 		if index == 0 {
@@ -1133,10 +1230,51 @@ func (m *model) pressButton(index int) (tea.Model, tea.Cmd) {
 	}
 }
 
+// fieldErrorSummary names the fields the engine rejected, with its own message for each and no values.
+func (m *model) fieldErrorSummary(errors map[string]string) string {
+	var parts []string
+	for _, fieldID := range m.order {
+		message, failed := errors[fieldID]
+		if !failed || message == "" {
+			continue
+		}
+		label := fieldID
+		for _, field := range m.plan.Fields {
+			if field.ID == fieldID {
+				label = field.Label
+				break
+			}
+		}
+		parts = append(parts, terminalText(label)+": "+terminalText(message))
+	}
+	if len(parts) == 0 {
+		return "some fields need attention"
+	}
+	prefix := "1 field needs attention: "
+	if len(parts) > 1 {
+		prefix = itoa(len(parts)) + " fields need attention: "
+	}
+	return prefix + strings.Join(parts, "; ")
+}
+
+// blockedNotice raises the notice for a Continue that a field error stops, and reports that it did.
+func (m *model) blockedNotice(reason string) bool {
+	if reason == "" {
+		return false
+	}
+	message := reason
+	if len(m.fieldErrors) > 0 {
+		message = m.fieldErrorSummary(m.fieldErrors)
+	}
+	m.lines = []string{message}
+	m.showNotice(noticeBlocked, "Needs attention", []string{message}, "OK")
+	return true
+}
+
 // continueForm applies the step with the answers on screen.
 func (m *model) continueForm() (tea.Model, tea.Cmd) {
 	if reason, blocked := m.continueBlocked(); blocked {
-		m.lines = []string{reason}
+		m.blockedNotice(reason)
 		return m, nil
 	}
 	answers := setup.Answers{Text: map[string]string{}, Yes: map[string]bool{}}
@@ -1273,6 +1411,7 @@ func (m *model) openQuitDialog() {
 		Body:    body,
 		Details: m.doneLines(),
 		Buttons: buttonRow{Labels: []string{"Stay", "Quit"}},
+		Hint:    "←/→ or tab: choose · enter: confirm · esc: stay",
 	}
 	m.dialog.Open()
 }
@@ -1290,7 +1429,7 @@ func (m *model) doneLines() []string {
 
 // requestQuit opens the dialog, or quits at once when nothing has happened yet.
 func (m *model) requestQuit() (tea.Model, tea.Cmd) {
-	if !m.changedSomething && len(m.statuses()) == 0 && !m.busy && !m.validating {
+	if !m.notice.open && !m.changedSomething && len(m.statuses()) == 0 && !m.busy && !m.validating {
 		return m.quitNow()
 	}
 	m.openQuitDialog()
@@ -1305,6 +1444,57 @@ func (m *model) quitNow() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, tea.Quit
+}
+
+// onNoticeKey drives the recoverable notice. Esc always dismisses it: it cannot destroy anything, and it
+// is the key an owner reaches for first. Enter presses whichever action is selected.
+func (m *model) onNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
+	case tea.KeyEscape:
+		m.closeNotice()
+		return m, nil
+	case tea.KeyEnter, tea.KeyKpEnter:
+		return m.activateNotice()
+	}
+	buttons, _ := m.notice.Buttons.Update(msg)
+	m.notice.Buttons = buttons
+	return m, nil
+}
+
+// activateNotice runs the selected notice action.
+func (m *model) activateNotice() (tea.Model, tea.Cmd) {
+	action := actOK
+	if index := m.notice.Buttons.Selected; index >= 0 && index < len(m.noticeActs) {
+		action = m.noticeActs[index]
+	}
+	kind := m.noticeKind
+	m.closeNotice()
+
+	switch action {
+	case actRetry:
+		if kind == noticeStagePaste {
+			// The masked block was kept for exactly this: read the retained copy again.
+			return m.startPaste()
+		}
+		return m, nil
+	case actBack:
+		switch kind {
+		case noticeNotApplied:
+			if m.from != screenChoice && m.from != screenForm && m.from != screenFields && m.from != screenPaste {
+				m.screen = screenChoice
+			} else {
+				m.screen = m.from
+			}
+		case noticeStageFields:
+			m.screen = screenFields
+		default:
+			m.screen = screenChoice
+		}
+		m.focus = 0
+		m.rebuildControls()
+		return m, nil
+	}
+	return m, nil
 }
 
 // onDialogKey drives the quit dialog.
@@ -1532,6 +1722,15 @@ func (m *model) render() string {
 			"(the wizard keeps its place; resize and carry on)\n"
 	}
 
+	if m.notice.open && !m.dialog.open {
+		contentWidth := minInt(width-6, 68)
+		if contentWidth < 24 {
+			contentWidth = width - 2
+		}
+		content := lipgloss.NewStyle().Width(contentWidth).Border(lipgloss.RoundedBorder()).Padding(1, 2).
+			Render(m.notice.View(m.theme, contentWidth-4))
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content) + "\n"
+	}
 	if m.dialog.open {
 		contentWidth := minInt(width-6, 68)
 		if contentWidth < 24 {

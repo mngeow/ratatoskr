@@ -8,6 +8,8 @@ the bridge, skill activation or a message exchange works.
 The [HTML guide](../index.html#s8) has the same scenario with fill-in fields and copy buttons. The bridge is described
 in [`integrations/openrig/`](../../../integrations/openrig/); use its
 [launchd README](../../../integrations/openrig/launchd/README.md) for the exact service install and removal commands.
+For a first install, the [setup guide](../../guides/openrig-setup/README.md) walks through the same three machines
+end to end, and [How the OpenRig integration works](../../guides/openrig-integration/index.html) explains the pieces.
 
 ## Outcome and machines
 
@@ -204,6 +206,14 @@ The sequence:
   to the source without discarding the staged review. Esc at a step's top level opens **Quit setup?**, with **Stay**
   focused by default. Ctrl+C uses the same safe quit path; if an engine operation is running, choosing Quit waits
   for it to finish. The final checklist exits with Enter or `q`.
+
+### When something needs your attention
+
+Engine errors appear in a dialog over the screen you are on, with the engine's own safe text and never the pairing
+code or a credential. **OK** dismisses it, **Retry** re-reads the retained pasted block where that is offered (a failed
+paste keeps its masked content), and **Back** returns to the previous screen. Inline field errors stay on the form as
+well, and pressing Continue on a step that is blocked explains why in the same dialog. Ctrl+C still opens the quit
+confirmation above it: **Stay** closes only that, and the error dialog is still there.
 
 ### When the launchd service step is skipped
 

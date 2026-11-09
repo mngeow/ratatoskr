@@ -160,7 +160,7 @@ func TestEnterPerControl(t *testing.T) {
 	if len(fake.applyCalls) != 0 {
 		t.Fatal("apply ran inside Update instead of a command")
 	}
-	if _, ok := cmd().(applyMsg); !ok {
+	if _, ok := runLastBatchCommand(t, cmd).(applyMsg); !ok {
 		t.Fatal("the Continue command did not report an apply result")
 	}
 }
@@ -281,7 +281,7 @@ func TestTypedCodeUsesMaskedBuffer(t *testing.T) {
 	if cmd == nil || m.secret != nil {
 		t.Fatal("submission did not transfer and drop the buffered code")
 	}
-	if _, ok := cmd().(stageMsg); !ok {
+	if _, ok := runLastBatchCommand(t, cmd).(stageMsg); !ok {
 		t.Fatal("typed fields did not return a staging result")
 	}
 	if !bytes.Equal(fake.stageCode, []byte(code)) {
@@ -967,5 +967,335 @@ func TestClearResetsTheArrivalLatch(t *testing.T) {
 	}
 	if len(m.lines) != 1 || !strings.Contains(m.lines[0], "line added") {
 		t.Fatalf("lines = %v, want the typed feedback", m.lines)
+	}
+}
+
+// ---- idle restoration and recoverable notices ----------------------------------------------------
+
+// stageOnce drives the paste box to a bracketed block, presses Enter and returns the resulting command's
+// message, which is what a real program would hand back to Update.
+func stageOnce(t *testing.T, m *model, block string) stageMsg {
+	t.Helper()
+	if _, cmd := m.Update(tea.PasteMsg{Content: block}); cmd != nil {
+		raw := runLastBatchCommand(t, cmd)
+		msg, ok := raw.(stageMsg)
+		if !ok {
+			t.Fatalf("paste command returned %T, want stageMsg", raw)
+		}
+		return msg
+	}
+	_, cmd := m.pasteKey(key(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("the paste was neither read automatically nor on Enter")
+	}
+	raw := runLastBatchCommand(t, cmd)
+	msg, ok := raw.(stageMsg)
+	if !ok {
+		t.Fatalf("paste command returned %T, want stageMsg", raw)
+	}
+	return msg
+}
+
+// TestStageReplyRestoresEditing: a successful stage leaves the review editable, which is the freeze regression.
+func TestStageReplyRestoresEditing(t *testing.T) {
+	fake := &fakeEngine{staged: setup.PasteSummary{URL: "https://10.0.0.5:7790", CodeReceived: true}}
+	m := pasteModel(fake)
+
+	msg := stageOnce(t, m, "PAIR-CODE\nparticipant: openrig-main")
+	m.Update(msg)
+
+	if m.screen != screenReview {
+		t.Fatalf("screen = %v, want the review", m.screen)
+	}
+	if m.busy {
+		t.Fatal("the model is still busy after the reply")
+	}
+	if m.phase != phaseEditing {
+		t.Fatalf("phase = %v, want editing: the review would ignore every key", m.phase)
+	}
+
+	before := m.focus
+	m.Update(key(tea.KeyTab))
+	if m.focus == before {
+		t.Fatal("Tab did not move focus on the review screen")
+	}
+}
+
+// TestFailedStageOpensANoticeThatDismisses: the error is visible, Enter closes it, and keys work again.
+func TestFailedStageOpensANoticeThatDismisses(t *testing.T) {
+	fake := &fakeEngine{pasteErr: errors.New("the first line is not a pairing code")}
+	m := pasteModel(fake)
+
+	msg := stageOnce(t, m, "not-a-code\nstill-not")
+	m.Update(msg)
+
+	if !m.notice.open {
+		t.Fatal("a failed parse opened no notice")
+	}
+	if m.phase != phaseEditing {
+		t.Fatalf("phase = %v, want editing after the failure", m.phase)
+	}
+	if len(m.notice.Body) != 1 || !strings.Contains(m.notice.Body[0], "pairing code") {
+		t.Fatalf("notice body = %v, want the parser's message", m.notice.Body)
+	}
+
+	m.Update(key(tea.KeyEnter))
+	if m.notice.open {
+		t.Fatal("Enter on OK did not dismiss the notice")
+	}
+	before := m.focus
+	m.Update(key(tea.KeyTab))
+	if m.focus == before {
+		t.Fatal("focus did not move after dismissing the notice")
+	}
+}
+
+// TestNoticeRendersNoSecretBytes: the dialog shows engine text only.
+func TestNoticeRendersNoSecretBytes(t *testing.T) {
+	const code = "SECRET-PAIRING-CODE-9876"
+	fake := &fakeEngine{pasteErr: errors.New("the first line is not a pairing code")}
+	m := pasteModel(fake)
+	msg := stageOnce(t, m, code+"\nparticipant: openrig-main")
+	m.Update(msg)
+	m.width, m.height = 100, 30
+
+	view := m.View().Content
+	if !strings.Contains(view, "pairing code") {
+		t.Fatal("the notice is not rendered")
+	}
+	if strings.Contains(view, code) {
+		t.Fatal("the notice leaked the pairing code")
+	}
+}
+
+// TestRetryReadsTheRetainedBlock: Retry calls ParsePaste again with the masked copy.
+func TestRetryReadsTheRetainedBlock(t *testing.T) {
+	fake := &fakeEngine{pasteErr: errors.New("incomplete block")}
+	m := pasteModel(fake)
+	msg := stageOnce(t, m, "code\nparticipant: openrig-main")
+	m.Update(msg)
+	if fake.pasteCalls != 1 {
+		t.Fatalf("%d parse calls, want 1", fake.pasteCalls)
+	}
+
+	// Retry is the second action.
+	m.notice.Buttons.Selected = 1
+	_, cmd := m.activateNotice()
+	if fake.pasteCalls != 1 {
+		t.Fatal("Retry parsed before the command ran")
+	}
+	if cmd == nil {
+		t.Fatal("Retry scheduled no parse")
+	}
+	result, ok := runLastBatchCommand(t, cmd).(stageMsg)
+	if !ok {
+		t.Fatalf("Retry returned %T, want stageMsg", result)
+	}
+	m.Update(result)
+	if fake.pasteCalls != 2 {
+		t.Fatalf("%d parse calls after Retry, want 2", fake.pasteCalls)
+	}
+	if m.secret == nil || m.secret.empty() {
+		t.Fatal("Retry dropped the masked block")
+	}
+}
+
+// TestPlainReviewContinueSendsBothConsents: the HTTP flow still works through the notice machinery.
+func TestPlainReviewContinueSendsBothConsents(t *testing.T) {
+	fake := &fakeEngine{}
+	m := reviewModel(fake, true)
+
+	// The allow_http toggle is the first control on the review.
+	m.Update(key(tea.KeySpace))
+	if !m.toggles[allowHTTPQuestion].Yes {
+		t.Fatal("Space did not flip the plain-HTTP consent")
+	}
+
+	// Continue is the last control.
+	for m.currentControl().kind != controlButtons {
+		m.Update(key(tea.KeyTab))
+	}
+	_, cmd := m.Update(key(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("Continue scheduled no command")
+	}
+	result := runLastBatchCommand(t, cmd)
+	if _, ok := result.(applyMsg); !ok {
+		t.Fatalf("Continue returned %T, want applyMsg", result)
+	}
+	if len(fake.applyCalls) != 1 {
+		t.Fatalf("%d apply calls, want 1", len(fake.applyCalls))
+	}
+	if !fake.applyCalls[0].Yes[allowHTTPQuestion] || !fake.applyCalls[0].Yes["use"] {
+		t.Fatalf("answers = %v, want use and allow_http", fake.applyCalls[0].Yes)
+	}
+}
+
+// TestNotAppliedOpensANoticeAndKeepsTheReview: the review, the staged values and the step survive.
+func TestNotAppliedOpensANoticeAndKeepsTheReview(t *testing.T) {
+	fake := &fakeEngine{}
+	m := reviewModel(fake, true)
+	before := m.index
+
+	const line = "This gateway is plain http://: set 'Accept plain HTTP' to Yes to use it, or ask for an https listener."
+	m.Update(applyMsg{gen: m.gen, res: setup.Result{Step: setup.StepPairingMaterial, Lines: []string{line}}})
+
+	if !m.notice.open {
+		t.Fatal("the not-applied result opened no notice")
+	}
+	if m.notice.Title != "Not applied" {
+		t.Fatalf("notice title = %q", m.notice.Title)
+	}
+	if got := len(m.notice.Buttons.Labels); got != 2 {
+		t.Fatalf("%d notice actions, want OK and Back", got)
+	}
+	if m.screen != screenReview || m.staged == nil || m.index != before {
+		t.Fatal("the review, the staged values or the step were lost")
+	}
+	if m.phase != phaseEditing {
+		t.Fatalf("phase = %v, want editing", m.phase)
+	}
+
+	// Back returns to the subview the review came from.
+	m.notice.Buttons.Selected = 1
+	m.activateNotice()
+	if m.screen != screenPaste {
+		t.Fatalf("screen after Back = %v, want the paste view", m.screen)
+	}
+}
+
+// TestFieldErrorsKeepInlineAndOpenASummary: both the field message and the notice are present.
+func TestFieldErrorsKeepInlineAndOpenASummary(t *testing.T) {
+	plan := setup.Plan{
+		Step:   setup.StepLocalOpenRig,
+		Fields: []setup.Field{{ID: "rig_path", Label: "Path of rig"}, {ID: "openrig_home", Label: "OpenRig home"}},
+	}
+	m := newTestModel(&fakeEngine{}, plan)
+
+	m.Update(applyMsg{gen: m.gen, res: setup.Result{FieldErrors: map[string]string{
+		"rig_path":     "not an absolute path of an executable file",
+		"openrig_home": "not an existing absolute directory",
+	}}})
+
+	if m.fieldErrors["rig_path"] == "" || m.fieldErrors["openrig_home"] == "" {
+		t.Fatal("the inline field errors were dropped")
+	}
+	if !m.notice.open {
+		t.Fatal("no summary notice was opened")
+	}
+	body := strings.Join(m.notice.Body, " ")
+	if !strings.Contains(body, "2 fields need attention") {
+		t.Fatalf("notice body = %q, want the count", body)
+	}
+	if !strings.Contains(body, "OpenRig home") {
+		t.Fatalf("notice body = %q, want the field labels", body)
+	}
+	if len(m.notice.Buttons.Labels) != 1 {
+		t.Fatalf("notice actions = %v, want OK only", m.notice.Buttons.Labels)
+	}
+	if m.currentControl().kind != controlField {
+		t.Fatal("focus did not land on an invalid field")
+	}
+}
+
+// TestValidationNoticeOnlyOnBlockedContinue: typing shows the inline message, Continue raises the notice.
+func TestValidationNoticeOnlyOnBlockedContinue(t *testing.T) {
+	plan := setup.Plan{Step: setup.StepLocalOpenRig, Fields: []setup.Field{{ID: "rig_path", Label: "Path of rig"}}}
+	fake := &fakeEngine{}
+	m := newTestModel(fake, plan)
+
+	// The first failure is stale because the owner changed the field while it was in flight; the
+	// serialized queue schedules validation for the new value and only that answer may block Continue.
+	m.fields["rig_path"].SetValue("older-value")
+	first := m.validateCmd("rig_path", "older-value")
+	m.fields["rig_path"].SetValue("bad-path")
+	if queued := m.validateCmd("rig_path", "bad-path"); queued != nil {
+		t.Fatal("validation overlapped the first value")
+	}
+	_, next := m.Update(first().(validateMsg))
+	if m.notice.open {
+		t.Fatal("a stale validation answer raised a notice")
+	}
+	if next == nil {
+		t.Fatal("the latest value was not validated after the stale answer")
+	}
+
+	// The current value fails: the inline message appears, and still no notice while typing.
+	m.Update(next().(validateMsg))
+	if m.fieldErrors["rig_path"] != "not acceptable" && m.fields["rig_path"].message != "not acceptable" {
+		t.Fatal("the inline validation message was not recorded")
+	}
+	if m.notice.open {
+		t.Fatal("a validation answer raised a notice while typing")
+	}
+
+	// Continue is blocked, so pressing it explains itself in a notice.
+	for m.currentControl().kind != controlButtons {
+		m.Update(key(tea.KeyTab))
+	}
+	m.Update(key(tea.KeyEnter))
+	if !m.notice.open {
+		t.Fatal("Continue on an invalid field raised no notice")
+	}
+	if m.notice.Title != "Needs attention" {
+		t.Fatalf("notice title = %q", m.notice.Title)
+	}
+	if len(m.notice.Body) != 1 || !strings.Contains(m.notice.Body[0], "Path of rig: not acceptable") {
+		t.Fatalf("notice body = %v, want the current field error", m.notice.Body)
+	}
+}
+
+// TestCtrlCOverANoticeKeepsIt: quit confirmation stacks above, and Stay returns to the notice.
+func TestCtrlCOverANoticeKeepsIt(t *testing.T) {
+	fake := &fakeEngine{pasteErr: errors.New("incomplete block")}
+	m := pasteModel(fake)
+	msg := stageOnce(t, m, "code\nparticipant: x")
+	m.Update(msg)
+	if !m.notice.open {
+		t.Fatal("no notice to stack over")
+	}
+	m.changedSomething = false // the notice itself must still make Ctrl+C ask before quitting.
+
+	m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !m.dialog.open {
+		t.Fatal("Ctrl+C did not open the quit confirmation over the notice")
+	}
+	if !m.notice.open {
+		t.Fatal("the notice was lost when the quit dialog opened")
+	}
+
+	// Stay is the default button.
+	m.Update(key(tea.KeyEnter))
+	if m.dialog.open {
+		t.Fatal("Stay did not close the quit dialog")
+	}
+	if !m.notice.open {
+		t.Fatal("Stay closed the notice as well")
+	}
+}
+
+// TestTypedStageBackReturnsToFields: the code is gone, but non-secret values remain editable.
+func TestTypedStageBackReturnsToFields(t *testing.T) {
+	plan := setup.Plan{Step: setup.StepPairingMaterial, NeedCode: true, Fields: []setup.Field{
+		{ID: "url", Label: "Participant URL"}, {ID: "pin", Label: "Certificate pin"},
+	}}
+	m := newTestModel(&fakeEngine{}, plan)
+	m.screen = screenFields
+	m.rebuildControls()
+	m.fields["url"].SetValue("https://example.test:7790")
+	m.fields["pin"].SetValue("sha256:abcd")
+	m.stageFrom = screenFields
+	m.Update(stageMsg{gen: m.gen, err: errors.New("the pairing material was refused")})
+
+	if !m.notice.open || len(m.notice.Buttons.Labels) != 2 {
+		t.Fatal("typed staging error should offer OK and Back, without Retry")
+	}
+	m.notice.Buttons.Selected = 1
+	m.activateNotice()
+	if m.screen != screenFields {
+		t.Fatalf("screen after Back = %v, want typed fields", m.screen)
+	}
+	if got := m.fieldValue("url"); got != "https://example.test:7790" {
+		t.Fatalf("URL after Back = %q, want it retained", got)
 	}
 }

@@ -485,7 +485,10 @@ type dialog struct {
 	Body    []string
 	Details []string
 	Buttons buttonRow
-	open    bool
+	// Hint is the dim line under the buttons. The quit confirmation and an error notice say different
+	// things, so it is data rather than a fixed string.
+	Hint string
+	open bool
 }
 
 // dialogKeys is the dialog's help.
@@ -535,10 +538,10 @@ func (d dialog) Update(msg tea.KeyPressMsg) (dialog, tea.Cmd) {
 func (d dialog) View(theme theme, width int) string {
 	var out strings.Builder
 	out.WriteString("\n")
-	out.WriteString(theme.warn(d.Title))
+	out.WriteString(theme.warn(terminalText(d.Title)))
 	out.WriteString("\n\n")
 	for _, line := range d.Body {
-		for _, piece := range wrapText(line, width) {
+		for _, piece := range wrapText(terminalText(line), width) {
 			out.WriteString(piece)
 			out.WriteString("\n")
 		}
@@ -546,7 +549,7 @@ func (d dialog) View(theme theme, width int) string {
 	if len(d.Details) > 0 {
 		out.WriteString("\n" + theme.dim("Done so far:") + "\n")
 		for _, detail := range d.Details {
-			for _, piece := range wrapText("  - "+detail, width) {
+			for _, piece := range wrapText("  - "+terminalText(detail), width) {
 				out.WriteString(piece)
 				out.WriteString("\n")
 			}
@@ -555,7 +558,11 @@ func (d dialog) View(theme theme, width int) string {
 	out.WriteString("\n")
 	out.WriteString(d.Buttons.View(theme, width))
 	out.WriteString("\n")
-	out.WriteString(theme.dim("←/→ or tab: choose · enter: confirm · esc: stay"))
+	hint := d.Hint
+	if hint == "" {
+		hint = "←/→ or tab: choose · enter: confirm · esc: close"
+	}
+	out.WriteString(theme.dim(hint))
 	return out.String()
 }
 
