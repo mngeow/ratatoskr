@@ -32,8 +32,8 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway pair HOST                  print a one-time code for HOST
        rtk gateway unpair HOST                remove HOST
        rtk gateway hosts                      list paired hosts and their state
-       rtk gateway participant pair ID|list|revoke ID
-                                              pair, list or revoke participants (external adapters)
+       rtk gateway participant pair ID [--insecure-http]|list|revoke ID
+                                              pair, list or revoke participants (external adapters); --insecure-http asks for the plain-HTTP block of a plain listener
        rtk gateway log [--follow] [--limit N] read the gateway's ledger
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
        rtk gateway --listen ADDR [--card-poll-interval 5s]

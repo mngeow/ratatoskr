@@ -271,7 +271,7 @@ func TestParticipantRevoke(t *testing.T) {
 // TestAdminDispatchesParticipantAndListsItInUsage.
 func TestAdminDispatchesParticipantAndListsItInUsage(t *testing.T) {
 	for _, line := range []string{
-		"rtk gateway participant pair ID",
+		"rtk gateway participant pair ID [--insecure-http]",
 		"rtk gateway participant list",
 		"rtk gateway participant revoke ID",
 	} {
@@ -286,4 +286,61 @@ func TestAdminDispatchesParticipantAndListsItInUsage(t *testing.T) {
 	if out.String() != "no participants\n" {
 		t.Fatalf("output = %q", out.String())
 	}
+}
+
+func codeCount(t *testing.T, store *Store) int {
+	t.Helper()
+	var codes int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM participant_pairing_codes`).Scan(&codes); err != nil {
+		t.Fatal(err)
+	}
+	return codes
+}
+
+// TestParticipantPairInsecureHTTP: the flag asks for the plain block of a plain tailnet or LAN listener, may come
+// before or after the ID, and every refusal mints no code.
+func TestParticipantPairInsecureHTTP(t *testing.T) {
+	t.Run("plain tailnet listener prints the plain block", func(t *testing.T) {
+		for _, args := range [][]string{{"pair", "--insecure-http", "pi-lab"}, {"pair", "pi-lab", "--insecure-http"}} {
+			store, _ := openStore(t, false)
+			recordEndpoint(t, store, ParticipantOptions{Listen: "100.64.0.1:7790", InsecureHTTP: true})
+			out, _, err := participantCmd(t, store, args...)
+			if err != nil || !strings.Contains(out, "participant API: http://100.64.0.1:7790") || !strings.Contains(out, ParticipantPlainHTTPWarning) ||
+				strings.Contains(out, "SHA-256") || strings.Contains(out, "key pin") || codeCount(t, store) != 1 {
+				t.Fatalf("%v: %q %v", args, out, err)
+			}
+		}
+	})
+	t.Run("HTTPS listener refuses before minting a code and names the remedy", func(t *testing.T) {
+		store, _ := openStore(t, false)
+		recordEndpoint(t, store, ParticipantOptions{Listen: "100.64.0.1:7790"})
+		out, errOut, err := participantCmd(t, store, "pair", "pi-lab", "--insecure-http")
+		if err == nil || !strings.Contains(err.Error(), "is HTTPS") || !strings.Contains(err.Error(), FlagParticipantInsecureHTTP) ||
+			!strings.Contains(err.Error(), "does not apply to the participant API") || out != "" || errOut != "" || codeCount(t, store) != 0 {
+			t.Fatalf("%q %q %v", out, errOut, err)
+		}
+	})
+	t.Run("loopback refuses the flag", func(t *testing.T) {
+		store, _ := openStore(t, false)
+		recordEndpoint(t, store, ParticipantOptions{Listen: "127.0.0.1:7790"})
+		out, _, err := participantCmd(t, store, "pair", "--insecure-http", "pi-lab")
+		if err == nil || !strings.Contains(err.Error(), "loopback") || out != "" || codeCount(t, store) != 0 {
+			t.Fatalf("%q %v", out, err)
+		}
+	})
+	t.Run("without the flag nothing changes", func(t *testing.T) {
+		store, _ := openStore(t, false)
+		recordEndpoint(t, store, ParticipantOptions{Listen: "100.64.0.1:7790"})
+		out, _, err := participantCmd(t, store, "pair", "pi-lab")
+		if err != nil || !strings.Contains(out, "participant API: https://") || !strings.Contains(out, "SHA-256") {
+			t.Fatalf("%q %v", out, err)
+		}
+	})
+	t.Run("two IDs are still refused", func(t *testing.T) {
+		store, _ := openStore(t, false)
+		recordEndpoint(t, store, ParticipantOptions{Listen: "100.64.0.1:7790", InsecureHTTP: true})
+		if _, _, err := participantCmd(t, store, "pair", "a", "b", "--insecure-http"); err == nil || codeCount(t, store) != 0 {
+			t.Fatalf("err = %v", err)
+		}
+	})
 }
