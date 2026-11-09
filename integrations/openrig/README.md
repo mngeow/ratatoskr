@@ -23,8 +23,11 @@ not accepted it yet.
 
 `setup` requires terminal stdin and stdout. It guides the owner through preflight, local OpenRig settings, VM-A
 pairing material, config, pairing, service, readiness, skill activation and the final checklist. It never starts an
-OpenRig seat. The screens, key behavior, consent defaults, service skip cases and manual fallback are covered in the
-[scenario 8 guide](../../docs/testing/scenario-8-openrig-bridge/README.md). The TUI and multi-line paste have not been
+OpenRig seat. It uses a progress header, a responsive step sidebar, a scrolling form, visible Back/Continue controls,
+and contextual key help. Pairing offers a masked whole-block paste or typed URL/pin/code fields; the paste is read
+when its end-marker line arrives, and Enter inserts line breaks while typing it. The code is held in a wipeable byte
+buffer and is never rendered. See the [scenario 8 guide](../../docs/testing/scenario-8-openrig-bridge/README.md) for
+the current keys, consent defaults, service skip cases and manual fallback. The TUI and multi-line paste have not been
 run; the round trip remains **PENDING USER EXECUTION**.
 
 ## Commands

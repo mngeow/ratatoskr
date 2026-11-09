@@ -1,24 +1,26 @@
 package tui
 
-// The wizard's model: the nine setup steps, one at a time, with the step list on the left and the current
-// step on the right (contract 4.1).
+// The setup wizard's model: a conventional, discoverable form over internal/setup's nine steps
+// (contract 4.1, ruling W5).
 //
-// Rules this file keeps:
-//   - Update and View do no terminal I/O and never call the engine directly. Plan, Apply, ParsePaste,
-//     StagePair and Validate all run inside a tea.Cmd, with the run's context, so the UI stays responsive
-//     and a slow readiness check cannot freeze the screen (the engine waits up to 20 s).
-//   - Secrets live only in secretInput buffers (secret.go). They are never placed in a tea.Msg, a command
-//     error, a log line or a rendered string, and they are wiped when handed to the engine, when a field
-//     error arrives, and on every exit path.
-//   - Consent starts exactly on Question.DefaultYes and is never inverted.
-//   - While a command is in flight no second engine call is started, and a quit request waits for it.
+// One focus order, one visible form, a scrolling pane, and a key legend that always says what the focused
+// control accepts. Update and View do no terminal I/O and never call the engine directly: Plan, Apply,
+// ParsePaste, StagePair and Validate all run inside a tea.Cmd with the run's context, so a 20-second
+// readiness wait cannot freeze the screen.
+//
+// Secrets live in secretInput only. They are wiped when handed to the engine, when the owner clears them,
+// when the method changes, when a staged review is discarded and on every exit path, and no view ever
+// renders a byte of them.
+//
+// UNTESTED (GR-3): nothing here has been run. Compile checks only.
 
 import (
 	"context"
 	"fmt"
+	"image/color"
+	"os"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -26,16 +28,25 @@ import (
 	"github.com/mngeow/ratatoskr/integrations/openrig/internal/setup"
 )
 
-// spinnerInterval is how often the frame advances while a command is in flight.
-const spinnerInterval = 80 * time.Millisecond
+const (
+	// spinnerInterval is how often the busy frame advances.
+	spinnerInterval = 100 * time.Millisecond
 
-// spinnerFrames is hand-rolled, so this package needs no charm.land/bubbles dependency.
-var spinnerFrames = []string{"|", "/", "-", "\\"}
+	// Layout thresholds, in cells.
+	sidebarMinWidth  = 80 // at or above this the nine-step list has its own column
+	singleColMaxWide = 60 // at or below this the layout is one column
+	minWidth         = 40
+	minHeight        = 12
 
-// engine is the part of *setup.Engine the wizard uses.
-//
-// The model depends on this interface, not on the concrete engine, so the front end can be driven by a
-// fake in a test without exporting anything else from this package.
+	sidebarWidth = 26
+	footerLines  = 2
+)
+
+// spinnerFrames are ASCII, so no glyph is ever missing and nothing needs a Bubbles dependency.
+var spinnerFrames = []string{"-", "\\", "|", "/"}
+
+// engine is the part of *setup.Engine the wizard uses. The model depends on the interface so the front
+// end can be driven by a fake without widening the package API.
 type engine interface {
 	Plan(context.Context, setup.StepID) (setup.Plan, error)
 	Apply(context.Context, setup.StepID, setup.Answers) setup.Result
@@ -47,35 +58,119 @@ type engine interface {
 	Close()
 }
 
-// The real engine satisfies it, so Run can pass *setup.Engine unchanged.
+// The real engine satisfies it, so Run passes *setup.Engine unchanged.
 var _ engine = (*setup.Engine)(nil)
 
-// phase is what the right pane is doing.
+// Status aliases, so the sidebar and the components can compare without importing setup in components.go.
+const (
+	statusDone     = setup.StatusDone
+	statusAlready  = setup.StatusAlready
+	statusSkipped  = setup.StatusSkipped
+	statusNotDone  = setup.StatusNotDone
+	statusYourTurn = setup.StatusYourTurn
+)
+
+// phase is what the engine side is doing.
 type phase int
 
 const (
-	phasePlanning phase = iota // a Plan command is in flight
-	phaseEditing               // the pane shows a plan and collects answers
-	phaseApplying              // an Apply, ParsePaste or StagePair command is in flight
-	phaseSummary               // the closing checklist is on screen
+	phasePlanning phase = iota
+	phaseEditing
+	phaseApplying
+	phaseSummary
 )
 
-// focusKind is one selectable row of the right pane.
-type focusKind int
+// screen is which form is on the right, inside the current step.
+type screen int
 
 const (
-	focusPaste    focusKind = iota // the masked block area (step 3, paste mode)
-	focusField                     // a text field
-	focusQuestion                  // a consent question
+	screenForm    screen = iota // a step's ordinary form
+	screenChoice                // step 3: choose how to supply the pairing material
+	screenPaste                 // step 3: the masked block
+	screenFields                // step 3: URL, pin, code typed separately
+	screenReview                // step 3: what was parsed, plus the consent
+	screenSummary               // the closing checklist
 )
 
-// focusItem points at one selectable row.
-type focusItem struct {
-	kind  focusKind
+// controlKind is one focusable row.
+type controlKind int
+
+const (
+	controlField   controlKind = iota // a text field
+	controlToggle                     // a consent toggle
+	controlChoice                     // the method list on step 3
+	controlPaste                      // the masked block area
+	controlButtons                    // the Back/Continue row
+)
+
+// control points at one focusable row.
+type control struct {
+	kind  controlKind
 	index int
 }
 
-// Messages. Every one carries the generation of the operation that produced it, so a late answer from a
+// setupStepStatus is one sidebar line.
+type setupStepStatus struct {
+	Title  string
+	Status setup.Status
+}
+
+// theme renders text. Colour is decorative: every state also carries a word or a mark, so the screen is
+// readable with colour off, which is what NO_COLOR, TERM=dumb and a non-colour profile produce.
+type theme struct {
+	colour bool
+}
+
+// accent is the emphatic style: bold, and coloured only when colour is on.
+func (t theme) accent(text string) string {
+	style := lipgloss.NewStyle().Bold(true)
+	if t.colour {
+		style = style.Foreground(lipgloss.Color("6"))
+	}
+	return style.Render(text)
+}
+
+// ok marks something that passed.
+func (t theme) ok(text string) string {
+	style := lipgloss.NewStyle().Bold(true)
+	if t.colour {
+		style = style.Foreground(lipgloss.Color("2"))
+	}
+	return style.Render(text)
+}
+
+// warn marks something to notice.
+func (t theme) warn(text string) string {
+	style := lipgloss.NewStyle().Bold(true)
+	if t.colour {
+		style = style.Foreground(lipgloss.Color("3"))
+	}
+	return style.Render(text)
+}
+
+// err marks something wrong.
+func (t theme) err(text string) string {
+	style := lipgloss.NewStyle().Bold(true)
+	if t.colour {
+		style = style.Foreground(lipgloss.Color("1"))
+	}
+	return style.Render(text)
+}
+
+// dim marks secondary text.
+func (t theme) dim(text string) string {
+	return lipgloss.NewStyle().Faint(true).Render(text)
+}
+
+// borderColour is the border colour used by boxes, or nil when colour is off.
+func (t theme) borderColour() color.Color {
+	if !t.colour {
+		return nil
+	}
+	return lipgloss.Color("6")
+}
+
+// Messages. Every one carries the generation of the operation that produced it, so an answer to a
 // superseded operation can never change the screen.
 type (
 	planMsg struct {
@@ -85,9 +180,10 @@ type (
 		err  error
 	}
 	applyMsg struct {
-		gen  int
-		step setup.StepID
-		res  setup.Result
+		gen     int
+		step    setup.StepID
+		res     setup.Result
+		discard bool // this Apply only discarded a staged block
 	}
 	stageMsg struct {
 		gen     int
@@ -95,7 +191,8 @@ type (
 		err     error
 	}
 	validateMsg struct {
-		gen     int // the field's own sequence number
+		gen     int
+		step    setup.StepID
 		fieldID string
 		value   string
 		message string
@@ -109,63 +206,96 @@ type model struct {
 	engine engine
 	steps  []setup.StepID
 
-	index int   // the step being worked on
-	phase phase // what the pane is doing
-	plan  setup.Plan
+	index  int
+	phase  phase
+	screen screen
+	plan   setup.Plan
+	follow bool
 
-	lines   []string // Result lines and other text the owner should see
+	lines   []string
 	notices []setup.Notice
+	theme   theme
 
-	fieldValues map[string]string
+	// editing
+	fields   map[string]*textInput
+	order    []string
+	toggles  map[string]*toggle
+	choices  choiceList
+	controls []control
+	focus    int
+	buttons  buttonRow
+
+	// step 3
+	method int // 0 paste, 1 fields
+	secret *secretInput
+	staged *setup.PasteSummary
+	from   screen // which subview a staged review came from
+
+	// validation, serialised: one engine Validate call in flight at a time
+	validating  bool
+	queued      map[string]string
 	fieldErrors map[string]string
-	answers     map[string]bool
-	statuses    map[setup.StepID]setup.Status
-
-	focus  int
-	cursor int // rune offset inside the focused field's value
-	items  []focusItem
-
-	secret    *secretInput
-	fieldMode bool // step 3: type the fields instead of pasting the block
-	staged    *setup.PasteSummary
 
 	busy      bool
 	busyLabel string
 	frame     int
 
-	gen                   int
-	validating            map[string]int
-	validationBusy        string
-	validationPending     map[string]string
-	validationOrder       []string
-	submitAfterValidation bool
-	scrollTop             int
+	gen int
 
-	summary  setup.Summary
-	exitCode int
+	statusMap map[setup.StepID]setup.Status
+	summary   setup.Summary
+	exitCode  int
 
-	quitArmed    bool
+	dialog       dialog
+	helpOpen     bool
 	quitWhenIdle bool
 
-	width  int
-	height int
+	pane             pane
+	width, height    int
+	profileLabel     string
+	changedSomething bool
 }
 
 // newModel starts at the first step. The caller owns the context and the engine.
 func newModel(eng engine, ctx context.Context) *model {
-	return &model{
-		ctx:               ctx,
-		engine:            eng,
-		steps:             setup.Steps,
-		index:             0,
-		phase:             phasePlanning,
-		fieldValues:       make(map[string]string),
-		fieldErrors:       make(map[string]string),
-		answers:           make(map[string]bool),
-		statuses:          make(map[setup.StepID]setup.Status),
-		validating:        make(map[string]int),
-		validationPending: make(map[string]string),
-		exitCode:          setup.ExitFailed, // unless a step says otherwise, an unfinished run is not a success
+	m := &model{
+		ctx:         ctx,
+		engine:      eng,
+		steps:       setup.Steps,
+		phase:       phasePlanning,
+		fields:      make(map[string]*textInput),
+		toggles:     make(map[string]*toggle),
+		queued:      make(map[string]string),
+		fieldErrors: make(map[string]string),
+		exitCode:    setup.ExitFailed,
+		theme:       theme{colour: colourEnabled()},
+	}
+	m.buttons = buttonRow{Labels: []string{"Back", "Continue"}}
+	return m
+}
+
+// colourEnabled reports whether decoration may use colour.
+//
+// NO_COLOR is honoured when present and non-empty, TERM=dumb means no decoration, and a profile that
+// arrives later as Ascii/NoTTY/Unknown switches colour off through applyProfile.
+func colourEnabled() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	return true
+}
+
+// applyProfile takes the terminal's colour profile from Bubble Tea. The profile is reduced to its name so
+// this package never imports the colorprofile module directly (GR-2).
+func (m *model) applyProfile(name string) {
+	m.profileLabel = name
+	m.theme.colour = colourEnabled()
+	switch name {
+	case "Ascii", "NoTTY", "Unknown", "":
+		m.theme.colour = false
 	}
 }
 
@@ -174,7 +304,7 @@ func (m *model) Init() tea.Cmd { return m.planCmd() }
 
 // ---- commands ------------------------------------------------------------------------------------
 
-// planCmd plans the current step. Planning is read-only but may stat files, so it runs off the UI loop.
+// planCmd plans the current step.
 func (m *model) planCmd() tea.Cmd {
 	step := m.steps[m.index]
 	m.phase = phasePlanning
@@ -190,23 +320,25 @@ func (m *model) planCmd() tea.Cmd {
 }
 
 // applyCmd runs the step with the answers collected so far.
-func (m *model) applyCmd(a setup.Answers) tea.Cmd {
+func (m *model) applyCmd(a setup.Answers, discard bool) tea.Cmd {
 	step := m.steps[m.index]
 	m.phase = phaseApplying
 	m.busy = true
-	m.busyLabel = "applying " + step.Title()
+	if discard {
+		m.busyLabel = "discarding the staged values"
+	} else {
+		m.busyLabel = "applying " + step.Title()
+	}
 	gen := m.nextGen()
 
 	eng, ctx := m.engine, m.ctx
 	return tea.Batch(m.spinCmd(gen), func() tea.Msg {
-		return applyMsg{gen: gen, step: step, res: eng.Apply(ctx, step, a)}
+		return applyMsg{gen: gen, step: step, res: eng.Apply(ctx, step, a), discard: discard}
 	})
 }
 
-// pasteCmd parses the pasted block.
-//
-// The buffer is taken (and the wizard's copy zeroed) before the command is returned, so the goroutine owns
-// the only reference; the engine zeroes it when it is done.
+// pasteCmd parses a copy of the masked block. Keeping the original lets the owner clear or retry after
+// a parse error; ParsePaste zeroes the command's copy.
 func (m *model) pasteCmd(block []byte) tea.Cmd {
 	m.phase = phaseApplying
 	m.busy = true
@@ -220,7 +352,7 @@ func (m *model) pasteCmd(block []byte) tea.Cmd {
 	})
 }
 
-// fieldsCmd stages the values typed one at a time. code may be nil and is zeroed by the engine.
+// fieldsCmd stages the values typed one at a time. code may be nil; the engine zeroes it.
 func (m *model) fieldsCmd(url, pin string, code []byte) tea.Cmd {
 	m.phase = phaseApplying
 	m.busy = true
@@ -234,43 +366,30 @@ func (m *model) fieldsCmd(url, pin string, code []byte) tea.Cmd {
 	})
 }
 
-// validateCmd asks the engine about one field. It may stat the filesystem, so it never runs in Update.
+// validateCmd asks the engine about one field. Only one call is in flight; the newest value is queued and
+// scheduled when the active call answers, which keeps the engine's Validate serialised.
 func (m *model) validateCmd(fieldID, value string) tea.Cmd {
-	seq := m.validating[fieldID] + 1
-	m.validating[fieldID] = seq
-	if _, queued := m.validationPending[fieldID]; !queued {
-		m.validationOrder = append(m.validationOrder, fieldID)
-	}
-	m.validationPending[fieldID] = value
-	return m.startValidation()
-}
-
-// startValidation serializes Validate calls with every other engine operation.
-func (m *model) startValidation() tea.Cmd {
-	if m.validationBusy != "" || len(m.validationOrder) == 0 || m.busy || m.quitWhenIdle {
+	if m.validating {
+		m.queued[fieldID] = value
 		return nil
 	}
-	fieldID := m.validationOrder[0]
-	m.validationOrder = m.validationOrder[1:]
-	value := m.validationPending[fieldID]
-	delete(m.validationPending, fieldID)
-	m.validationBusy = fieldID
-	seq, step, eng := m.validating[fieldID], m.plan.Step, m.engine
+	m.validating = true
+	step := m.steps[m.index]
+	gen := m.nextGen()
+
+	eng := m.engine
 	return func() tea.Msg {
-		return validateMsg{gen: seq, fieldID: fieldID, value: value, message: eng.Validate(step, fieldID, value)}
+		return validateMsg{gen: gen, step: step, fieldID: fieldID, value: value, message: eng.Validate(step, fieldID, value)}
 	}
 }
 
-// spinCmd schedules the next spinner frame.
+// spinCmd schedules the next busy frame.
 func (m *model) spinCmd(gen int) tea.Cmd {
 	return tea.Tick(spinnerInterval, func(time.Time) tea.Msg { return spinnerMsg{gen: gen} })
 }
 
-// nextGen starts a new operation and invalidates every answer to an older one.
-func (m *model) nextGen() int {
-	m.gen++
-	return m.gen
-}
+// nextGen invalidates every answer to an older operation.
+func (m *model) nextGen() int { m.gen++; return m.gen }
 
 // ---- update --------------------------------------------------------------------------------------
 
@@ -279,12 +398,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.scrollTop = 0
+		return m, nil
+
+	case tea.ColorProfileMsg:
+		m.applyProfile(msg.Profile.String())
 		return m, nil
 
 	case spinnerMsg:
 		if !m.busy || msg.gen != m.gen {
-			return m, nil // the command finished: the ticker stops here
+			return m, nil
 		}
 		m.frame++
 		return m, m.spinCmd(m.gen)
@@ -299,32 +421,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onStage(msg)
 
 	case validateMsg:
-		if m.validationBusy == msg.fieldID {
-			m.validationBusy = ""
-		}
-		// A result for a value the owner has already changed is stale and is dropped.
-		if m.validating[msg.fieldID] == msg.gen && m.fieldValues[msg.fieldID] == msg.value {
-			if msg.message == "" {
-				delete(m.fieldErrors, msg.fieldID)
-			} else {
-				m.fieldErrors[msg.fieldID] = msg.message
-			}
-		}
-		if cmd := m.startValidation(); cmd != nil {
-			return m, cmd
-		}
-		if m.quitWhenIdle {
-			return m, tea.Quit
-		}
-		if m.submitAfterValidation {
-			m.submitAfterValidation = false
-			if len(m.fieldErrors) > 0 {
-				m.focusOnFirstError(m.fieldErrors)
-				return m, nil
-			}
-			return m.submitStep()
-		}
-		return m, nil
+		return m.onValidated(msg)
 
 	case tea.PasteMsg:
 		return m.onPaste(msg)
@@ -332,11 +429,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	}
-
 	return m, nil
 }
 
-// onPlan shows a step's plan, or starts an automatic step straight away.
+// onPlan shows a step's plan, or applies an automatic step at once.
 func (m *model) onPlan(msg planMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.gen {
 		return m, nil
@@ -345,81 +441,181 @@ func (m *model) onPlan(msg planMsg) (tea.Model, tea.Cmd) {
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
-
 	if msg.err != nil {
-		// The engine's own message is terminal-safe; a planning failure stops the run rather than
-		// guessing at a step it could not read.
 		m.lines = []string{msg.err.Error()}
 		m.summary = m.engine.Summary()
 		m.exitCode = setup.ExitFailed
+		m.screen = screenSummary
 		m.phase = phaseSummary
 		return m, nil
 	}
 
-	m.enterPlan(msg.plan)
-
-	// An automatic step has nothing to ask: apply it now, still inside a command.
+	m.enterPlan(msg.plan, false)
 	if msg.plan.Auto && len(msg.plan.Fields) == 0 && len(msg.plan.Questions) == 0 {
-		return m, m.applyCmd(setup.Answers{Yes: map[string]bool{}})
+		return m, m.applyCmd(setup.Answers{Yes: map[string]bool{}}, false)
 	}
 	return m, nil
 }
 
-// enterPlan replaces the pane's editing state with a plan's.
-func (m *model) enterPlan(plan setup.Plan) {
-	m.plan = plan
+// enterPlan sets up the form for one plan. follow marks a consent round inside the same step.
+func (m *model) enterPlan(plan setup.Plan, follow bool) {
+	m.plan, m.follow = plan, follow
 	m.phase = phaseEditing
 	m.notices = plan.Notices
 	m.lines = nil
 	m.fieldErrors = make(map[string]string)
-	m.answers = make(map[string]bool)
 	m.staged = nil
-	m.focus, m.cursor = 0, 0
+	m.focus = 0
 
-	// Paste mode is the default whenever the step offers it; ctrl+f switches to the fields.
-	m.fieldMode = plan.PasteBlock && len(plan.Fields) == 0
-
-	m.fieldValues = make(map[string]string, len(plan.Fields))
+	m.order = m.order[:0]
 	for _, field := range plan.Fields {
-		m.fieldValues[field.ID] = field.Default
+		input := m.fields[field.ID]
+		if input == nil {
+			input = &textInput{ID: field.ID}
+			m.fields[field.ID] = input
+		}
+		input.Label, input.Help, input.Optional, input.Secret = field.Label, field.Help, field.Optional, field.Secret
+		if field.Secret {
+			input.SetValue("")
+		} else {
+			input.SetValue(field.Default)
+		}
+		input.Blur()
+		m.order = append(m.order, field.ID)
 	}
 
 	for _, question := range plan.Questions {
-		// The engine's ruling is the starting selection, exactly as given.
-		m.answers[question.ID] = question.DefaultYes
+		m.toggles[question.ID] = &toggle{ID: question.ID, Prompt: question.Prompt, Detail: question.Detail, Yes: question.DefaultYes}
 	}
 
-	if plan.PasteBlock && !m.fieldMode {
-		m.secret = &secretInput{}
-	} else if field := secretFieldOf(plan); field != nil {
-		m.secret = &secretInput{}
-	} else {
+	// Step 3 opens on the method chooser; every other step opens on its form.
+	if plan.Step == setup.StepPairingMaterial {
+		m.method = 0
 		m.secret = nil
+		m.choices = choiceList{
+			Options: []string{
+				"Paste the whole output of `rtk gateway participant pair openrig-main` (recommended)",
+				"Enter the URL, the certificate pin and the code separately",
+			},
+			Notes: []string{
+				"one paste; the wizard reads the code, the URL and the certificate pin from it",
+				"for an output you cannot paste, or when the code is already in a file",
+			},
+		}
+		m.screen = screenChoice
+	} else {
+		m.screen = screenForm
 	}
-
-	m.rebuildItems()
+	m.rebuildControls()
 }
 
-// rebuildItems lays the focusable rows out in display order.
-func (m *model) rebuildItems() {
-	m.items = m.items[:0]
-	if m.plan.PasteBlock && !m.fieldMode {
-		m.items = append(m.items, focusItem{kind: focusPaste})
-	}
-	if m.fieldMode || !m.plan.PasteBlock {
-		for index := range m.plan.Fields {
-			m.items = append(m.items, focusItem{kind: focusField, index: index})
+// rebuildControls lays out the focusable rows for the current screen.
+func (m *model) rebuildControls() {
+	m.controls = m.controls[:0]
+
+	switch m.screen {
+	case screenForm:
+		for index := range m.order {
+			m.controls = append(m.controls, control{kind: controlField, index: index})
 		}
+		for index, question := range m.plan.Questions {
+			m.controls = append(m.controls, control{kind: controlToggle, index: index})
+			_ = question
+		}
+		m.controls = append(m.controls, control{kind: controlButtons})
+	case screenChoice:
+		for index, question := range m.plan.Questions {
+			if question.ID == "use" || question.ID == allowHTTPQuestion {
+				continue // those consents belong on the review screen
+			}
+			m.controls = append(m.controls, control{kind: controlToggle, index: index})
+		}
+		m.controls = append(m.controls, control{kind: controlChoice})
+		m.controls = append(m.controls, control{kind: controlButtons})
+	case screenPaste:
+		m.controls = append(m.controls, control{kind: controlPaste})
+		m.controls = append(m.controls, control{kind: controlButtons})
+	case screenFields:
+		for index := range m.order {
+			m.controls = append(m.controls, control{kind: controlField, index: index})
+		}
+		m.controls = append(m.controls, control{kind: controlButtons})
+	case screenReview:
+		for index, question := range m.plan.Questions {
+			switch question.ID {
+			case allowHTTPQuestion:
+				if !m.allowsPlainHTTPToggle() {
+					continue
+				}
+			case "use":
+			default:
+				continue
+			}
+			m.controls = append(m.controls, control{kind: controlToggle, index: index})
+		}
+		m.controls = append(m.controls, control{kind: controlButtons})
 	}
-	for index := range m.plan.Questions {
-		m.items = append(m.items, focusItem{kind: focusQuestion, index: index})
-	}
-	if m.focus >= len(m.items) {
-		m.focus = len(m.items) - 1
+
+	if m.focus >= len(m.controls) {
+		m.focus = len(m.controls) - 1
 	}
 	if m.focus < 0 {
 		m.focus = 0
 	}
+	m.refreshButtons()
+	m.syncFocus()
+}
+
+// syncFocus applies Focus/Blur to the components and refreshes the button row.
+func (m *model) syncFocus() {
+	for _, input := range m.fields {
+		input.Blur()
+	}
+	for _, item := range m.toggles {
+		item.Blur()
+	}
+	m.choices.Blur()
+	m.buttons.Blur()
+
+	current := m.currentControl()
+	switch current.kind {
+	case controlField:
+		if index, ok := m.fieldIndex(current.index); ok {
+			m.fields[index].Focus()
+		}
+	case controlToggle:
+		if question, ok := m.toggleAt(current.index); ok {
+			m.toggles[question].Focus()
+		}
+	case controlChoice:
+		m.choices.Focus()
+	case controlButtons:
+		m.buttons.Focus()
+	}
+}
+
+// currentControl is the focused control, or the button row when there is nothing else.
+func (m *model) currentControl() control {
+	if m.focus >= 0 && m.focus < len(m.controls) {
+		return m.controls[m.focus]
+	}
+	return control{kind: controlButtons}
+}
+
+// fieldIndex turns a form index into a field ID.
+func (m *model) fieldIndex(index int) (string, bool) {
+	if index < 0 || index >= len(m.order) {
+		return "", false
+	}
+	return m.order[index], true
+}
+
+// toggleAt turns a question index into an ID.
+func (m *model) toggleAt(index int) (string, bool) {
+	if index < 0 || index >= len(m.plan.Questions) {
+		return "", false
+	}
+	return m.plan.Questions[index].ID, true
 }
 
 // onApply takes a step's result.
@@ -431,10 +627,22 @@ func (m *model) onApply(msg applyMsg) (tea.Model, tea.Cmd) {
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
+	m.phase = phaseEditing
 	res := msg.res
 
+	if msg.discard {
+		// The staged block is gone; stay on the method chooser.
+		m.staged = nil
+		m.screen = screenChoice
+		m.rebuildControls()
+		if len(res.Lines) > 0 {
+			m.lines = res.Lines
+		}
+		return m, nil
+	}
+
 	if res.Status != "" && res.Follow == nil && len(res.FieldErrors) == 0 {
-		m.statuses[res.Step] = res.Status
+		m.markStep(res.Step, res.Status)
 	}
 
 	if res.Stop {
@@ -442,84 +650,105 @@ func (m *model) onApply(msg applyMsg) (tea.Model, tea.Cmd) {
 		m.summary = m.engine.Summary()
 		m.exitCode = res.ExitCode
 		m.phase = phaseSummary
-		m.secret.wipe()
-		m.secret = nil
+		m.screen = screenSummary
+		m.wipeSecrets()
 		return m, nil
 	}
 
 	if len(res.FieldErrors) > 0 {
-		// Nothing was applied. Show the messages beside the fields, drop any secret the owner typed
-		// (it was not used, and keeping it would invite a second, confusing submit) and stay here.
 		m.fieldErrors = res.FieldErrors
 		m.lines = res.Lines
-		m.secret.wipe()
-		m.secret = nil
-		m.phase = phaseEditing
-		m.focusOnFirstError(res.FieldErrors)
+		m.wipeSecrets()
+		m.focusFirstError(res.FieldErrors)
 		return m, nil
 	}
 
 	if res.Follow != nil {
-		// Another consent round on the same step: show it and keep what the owner already typed.
 		follow := *res.Follow
 		follow.Step = res.Step
-		m.enterFollow(follow, res.Lines)
+		m.enterPlan(follow, true)
+		m.lines = res.Lines
+		return m, nil
+	}
+
+	if msg.step == setup.StepPairingMaterial && m.screen == screenReview && res.Status == "" && len(res.Lines) > 0 {
+		// Nothing was applied and nothing failed: the engine is waiting for another consent (a plain
+		// http:// gateway needs allow_http). Keep the staged values, stay where the owner is, show why.
+		m.lines = res.Lines
+		m.refreshButtons()
 		return m, nil
 	}
 
 	m.lines = res.Lines
-
-	// The step is finished: move on.
-	m.secret.wipe()
-	m.secret = nil
+	m.changedSomething = true
+	m.wipeSecrets()
 	m.index++
 	if m.index >= len(m.steps) {
 		m.summary = m.engine.Summary()
 		m.exitCode = m.engine.ExitCode()
 		m.phase = phaseSummary
+		m.screen = screenSummary
 		return m, nil
 	}
 	return m, m.planCmd()
 }
 
-// enterFollow shows a follow-up round on the same step.
-func (m *model) enterFollow(plan setup.Plan, lines []string) {
-	m.plan = plan
-	m.phase = phaseEditing
-	m.lines = lines
-	m.notices = plan.Notices
-	m.staged = nil
-	m.focus, m.cursor = 0, 0
-
-	// Keep typed values that the follow plan still asks for; a follow round normally carries only
-	// questions, and its answers start at the engine's ruling.
-	values := make(map[string]string, len(plan.Fields))
-	for _, field := range plan.Fields {
-		if existing, ok := m.fieldValues[field.ID]; ok {
-			values[field.ID] = existing
-		} else {
-			values[field.ID] = field.Default
-		}
-	}
-	m.fieldValues = values
-
-	m.answers = make(map[string]bool, len(plan.Questions))
-	for _, question := range plan.Questions {
-		m.answers[question.ID] = question.DefaultYes
-	}
-
-	m.fieldMode = plan.PasteBlock && len(plan.Fields) == 0
-	if !plan.PasteBlock || m.fieldMode {
-		m.secret.wipe()
-		m.secret = nil
-	} else if m.secret == nil {
-		m.secret = &secretInput{}
-	}
-
-	m.rebuildItems()
+// markStep records a step's status for the sidebar.
+func (m *model) markStep(step setup.StepID, status setup.Status) {
+	m.statuses()[step] = status
 }
 
-// onStage takes the result of parsing or staging the pairing material.
+// statuses is the map behind the sidebar.
+func (m *model) statuses() map[setup.StepID]setup.Status {
+	if m.statusMap == nil {
+		m.statusMap = make(map[setup.StepID]setup.Status)
+	}
+	return m.statusMap
+}
+
+// onValidated records one validation answer and schedules the newest queued value.
+func (m *model) onValidated(msg validateMsg) (tea.Model, tea.Cmd) {
+	m.validating = false
+
+	input := m.fields[msg.fieldID]
+	if input != nil && m.index < len(m.steps) && m.steps[m.index] == msg.step && input.Value() == msg.value {
+		input.SetMessage(msg.message)
+		if msg.message == "" {
+			delete(m.fieldErrors, msg.fieldID)
+		}
+	}
+	if m.quitWhenIdle {
+		m.wipeSecrets()
+		return m, tea.Quit
+	}
+
+	// The newest value wins: if the owner typed again while this call was in flight, send that now.
+	next := ""
+	found := false
+	for fieldID, value := range m.queued {
+		if input := m.fields[fieldID]; input != nil && input.Value() == value {
+			next, found = fieldID, true
+			break
+		}
+		delete(m.queued, fieldID)
+	}
+	if found {
+		delete(m.queued, next)
+		return m, m.validateCmd(next, m.fields[next].Value())
+	}
+
+	m.refreshButtons()
+	if m.screen == screenPaste && m.pasteComplete() {
+		return m.startPaste()
+	}
+	if m.quitWhenIdle {
+		m.wipeSecrets()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// onStage takes a parsed or staged pairing block.
 func (m *model) onStage(msg stageMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != m.gen {
 		return m, nil
@@ -528,153 +757,164 @@ func (m *model) onStage(msg stageMsg) (tea.Model, tea.Cmd) {
 	if m.quitWhenIdle {
 		return m, tea.Quit
 	}
-	m.phase = phaseEditing
 
 	if msg.err != nil {
-		// The parser names the field and never echoes the secret; nothing is staged, so the owner can
-		// try again.
+		// Nothing was staged; the engine's message names the field and never echoes the secret.
 		m.lines = []string{msg.err.Error()}
 		m.staged = nil
-		m.secret = &secretInput{}
-		m.focusOn("use")
+		m.refreshButtons()
 		return m, nil
 	}
 
 	summary := msg.summary
+	m.wipeSecrets()
 	m.staged = &summary
+	m.changedSomething = true
 	m.lines = nil
-	m.focusOn("use")
+	m.from = m.screen
+	m.screen = screenReview
+	m.focus = 0
+	m.rebuildControls()
 	return m, nil
 }
 
-// secretFieldOf returns a plan's secret field, if it has one.
-func secretFieldOf(plan setup.Plan) *setup.Field {
-	for index := range plan.Fields {
-		if plan.Fields[index].Secret {
-			return &plan.Fields[index]
-		}
-	}
-	return nil
-}
-
-// focusOnFirstError puts the cursor on the first field the engine complained about.
-func (m *model) focusOnFirstError(errors map[string]string) {
-	for index, item := range m.items {
-		if item.kind != focusField {
-			continue
-		}
-		if _, failed := errors[m.plan.Fields[item.index].ID]; failed {
-			m.focus, m.cursor = index, 0
-			return
-		}
-	}
-}
-
-// focusOn focuses the question with this ID, if the round has one.
-func (m *model) focusOn(questionID string) {
-	for index, item := range m.items {
-		if item.kind == focusQuestion && m.plan.Questions[item.index].ID == questionID {
-			m.focus = index
-			return
-		}
-	}
-}
-
-// onPaste appends bracketed-paste text to whatever is focused.
+// onPaste appends a bracketed paste to whatever accepts text.
 func (m *model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
-	if m.phase != phaseEditing || m.busy {
-		return m, nil
-	}
-	if msg.Content == "" {
+	if m.phase != phaseEditing || m.busy || msg.Content == "" || m.dialog.open || m.helpOpen {
 		return m, nil
 	}
 
-	if m.secretActive() {
-		m.secret.appendText(msg.Content, m.secretLimit())
+	switch m.screen {
+	case screenPaste:
+		m.secret.appendText(msg.Content, setup.MaxPasteBytes)
+		// The arrival source is what distinguishes a block from typing, and it is not content.
+		m.secret.pasted = true
+		m.changedSomething = true
+		if m.pasteComplete() {
+			return m.startPaste()
+		}
+		m.refreshButtons()
 		return m, nil
 	}
 
-	if field := m.focusedField(); field != nil {
-		m.insertText(msg.Content)
-		return m, m.validateCmd(field.ID, m.fieldValues[field.ID])
+	if current := m.currentControl(); current.kind == controlField {
+		if fieldID, ok := m.fieldIndex(current.index); ok {
+			input := m.fields[fieldID]
+			if input.Secret {
+				if m.secret == nil {
+					m.secret = &secretInput{}
+				}
+				m.secret.appendText(msg.Content, setup.MaxCodeBytes)
+				m.changedSomething = true
+				m.refreshButtons()
+				return m, nil
+			}
+			content := msg.Content
+			if fieldID == "url" {
+				// A copied URL often carries a line ending. Drop exactly one final LF or CRLF, then
+				// trim the gateway's label and surrounding whitespace. A real line break inside the paste
+				// is refused below and leaves the field untouched.
+				if strings.HasSuffix(content, "\r\n") {
+					content = content[:len(content)-2]
+				} else if strings.HasSuffix(content, "\n") {
+					content = content[:len(content)-1]
+				}
+				content = strings.TrimSpace(content)
+				content = trimParticipantAPILabel(content)
+			}
+			if strings.ContainsAny(content, "\r\n") {
+				input.SetMessage("paste one line into this field")
+				m.fieldErrors[fieldID] = input.message
+				m.refreshButtons()
+				return m, nil
+			}
+			updated, _ := input.Update(tea.KeyPressMsg{Text: content, Code: tea.KeyExtended})
+			*input = updated
+			m.changedSomething = true
+			m.refreshButtons()
+			return m, m.validateCmd(fieldID, input.Value())
+		}
 	}
 	return m, nil
 }
 
-// secretActive reports whether typing goes into a masked buffer.
-func (m *model) secretActive() bool {
-	if m.plan.PasteBlock && !m.fieldMode {
-		return true
-	}
-	field := m.focusedField()
-	return field != nil && field.Secret
+// pasteComplete reports whether the buffer already carries the end marker of the printed block.
+func (m *model) pasteComplete() bool {
+	return m.secret.contains(setup.EndLinePrefix)
 }
 
-// focusedField returns the field the cursor is on, or nil.
-func (m *model) focusedField() *setup.Field {
-	if m.focus < 0 || m.focus >= len(m.items) {
-		return nil
+// startPaste parses the masked block.
+func (m *model) startPaste() (tea.Model, tea.Cmd) {
+	if m.validating || len(m.queued) > 0 {
+		m.lines = []string{"checking a field value; the pasted block will be ready to read when that finishes"}
+		return m, nil
 	}
-	item := m.items[m.focus]
-	if item.kind != focusField {
-		return nil
+	if m.secret == nil || m.secret.empty() {
+		m.lines = []string{"nothing was pasted yet"}
+		return m, nil
 	}
-	return &m.plan.Fields[item.index]
-}
-
-// focusedQuestion returns the question the cursor is on, or nil.
-func (m *model) focusedQuestion() *setup.Question {
-	if m.focus < 0 || m.focus >= len(m.items) {
-		return nil
+	if m.secret.truncated {
+		m.lines = []string{"the pasted block is larger than this wizard accepts; use Clear and paste again"}
+		return m, nil
 	}
-	item := m.items[m.focus]
-	if item.kind != focusQuestion {
-		return nil
-	}
-	return &m.plan.Questions[item.index]
+	return m, m.pasteCmd(m.secret.copyBytes())
 }
 
 // ---- keys ----------------------------------------------------------------------------------------
 
-// onKey handles one key press.
+// onKey routes one key press.
 func (m *model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	ctrl := msg.Mod&tea.ModCtrl != 0
 
-	// Quit is available everywhere, but a secret command that is already running is allowed to finish so
-	// nothing races with the buffer it owns.
 	if ctrl && msg.Code == 'c' {
 		return m.requestQuit()
 	}
 
-	if m.phase == phaseSummary {
-		// The checklist stays up until the owner dismisses it.
+	if m.dialog.open {
+		return m.onDialogKey(msg)
+	}
+
+	if m.helpOpen {
 		switch msg.Code {
-		case tea.KeyPgUp:
-			m.scrollTop = maxInt(0, m.scrollTop-maxInt(1, m.height-4))
-			return m, nil
-		case tea.KeyPgDown:
-			m.scrollTop += maxInt(1, m.height-4)
-			return m, nil
-		case tea.KeyEnter, tea.KeyEscape, 'q', ' ':
-			return m.requestQuit()
+		case '?', tea.KeyEscape:
+			m.helpOpen = false
 		}
 		return m, nil
 	}
 
-	if m.quitArmed {
+	if m.phase == phaseSummary || m.screen == screenSummary {
 		switch msg.Code {
-		case tea.KeyEscape, tea.KeyEnter:
-			return m.requestQuit()
-		default:
-			m.quitArmed = false
-			return m, nil
+		case tea.KeyEnter, 'q', 'Q':
+			return m.quitNow()
+		case tea.KeyEscape:
+			m.openQuitDialog()
+		case tea.KeyPgUp:
+			m.pane.ScrollBy(-5)
+		case tea.KeyPgDown:
+			m.pane.ScrollBy(5)
+		case tea.KeyHome:
+			m.pane.Top()
+		case tea.KeyEnd:
+			m.pane.Bottom()
+		case '?':
+			m.helpOpen = true
 		}
+		return m, nil
+	}
+
+	if m.busy || m.phase != phaseEditing {
+		return m, nil
+	}
+
+	// In a text field or the paste box, ? is a character to type, not the help key.
+	if kind := m.currentControl().kind; msg.Code == '?' && kind != controlField && kind != controlPaste {
+		m.helpOpen = true
+		return m, nil
 	}
 
 	switch msg.Code {
 	case tea.KeyEscape:
-		m.quitArmed = true
-		return m, nil
+		return m.back()
 	case tea.KeyTab:
 		if msg.Mod&tea.ModShift != 0 {
 			m.moveFocus(-1)
@@ -683,395 +923,799 @@ func (m *model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyUp:
-		if !m.secretActive() {
-			m.moveFocus(-1)
+		if m.currentControl().kind == controlChoice {
+			updated, _ := m.choices.Update(msg)
+			m.choices = updated
+			m.changedSomething = true
+			return m, nil
 		}
+		m.moveFocus(-1)
 		return m, nil
 	case tea.KeyDown:
-		if !m.secretActive() {
-			m.moveFocus(1)
+		if m.currentControl().kind == controlChoice {
+			updated, _ := m.choices.Update(msg)
+			m.choices = updated
+			m.changedSomething = true
+			return m, nil
 		}
+		m.moveFocus(1)
 		return m, nil
 	case tea.KeyPgUp:
-		m.scrollTop = maxInt(0, m.scrollTop-maxInt(1, m.height-4))
+		m.pane.ScrollBy(-5)
 		return m, nil
 	case tea.KeyPgDown:
-		m.scrollTop += maxInt(1, m.height-4)
+		m.pane.ScrollBy(5)
+		return m, nil
+	case tea.KeyEnter, tea.KeyKpEnter:
+		return m.pressEnter()
+	}
+
+	current := m.currentControl()
+	switch current.kind {
+	case controlField:
+		return m.fieldKey(current, msg)
+	case controlToggle:
+		return m.toggleKey(current, msg)
+	case controlChoice:
+		updated, _ := m.choices.Update(msg)
+		m.choices = updated
+		return m, nil
+	case controlPaste:
+		return m.pasteKey(msg)
+	case controlButtons:
+		updated, _ := m.buttons.Update(msg)
+		m.buttons = updated
 		return m, nil
 	}
-
-	if ctrl && msg.Code == 'f' {
-		// Switch the pairing step between the pasted block and the typed fields. Offered whenever the
-		// plan allows a block, with or without a code.
-		if m.plan.PasteBlock && m.phase == phaseEditing && !m.busy {
-			m.toggleFieldMode()
-		}
-		return m, nil
-	}
-
-	if ctrl && msg.Code == 'd' {
-		// Submit the masked block, or the typed fields, while a secret area is focused.
-		if m.phase == phaseEditing && !m.busy && m.secretActive() {
-			return m.submitPairing()
-		}
-		return m, nil
-	}
-	if ctrl && msg.Code == 'u' && m.phase == phaseEditing && !m.busy && m.secretActive() {
-		m.secret.wipe()
-		m.secret = &secretInput{}
-		m.lines = nil
-		return m, nil
-	}
-
-	if msg.Code == tea.KeyEnter || msg.Code == tea.KeyKpEnter {
-		if m.busy || m.phase != phaseEditing {
-			return m, nil
-		}
-		// When bracketed paste is unavailable, a multi-line paste arrives as key presses with
-		// Enter between lines. Preserve those line boundaries in the masked block; ctrl+d is its
-		// explicit submit key. Single-line secret fields and ordinary fields still submit on Enter.
-		if m.plan.PasteBlock && !m.fieldMode && m.secretActive() {
-			m.secret.appendText("\n", setup.MaxPasteBytes)
-			return m, nil
-		}
-		return m.submitStep()
-	}
-
-	if m.busy || m.phase != phaseEditing {
-		return m, nil
-	}
-
-	// Editing a text field: cursor movement and deletion.
-	if field := m.focusedField(); field != nil && !field.Secret {
-		switch msg.Code {
-		case tea.KeyLeft:
-			if m.cursor > 0 {
-				m.cursor--
-			}
-			return m, nil
-		case tea.KeyRight:
-			if m.cursor < len([]rune(m.fieldValues[field.ID])) {
-				m.cursor++
-			}
-			return m, nil
-		case tea.KeyHome:
-			m.cursor = 0
-			return m, nil
-		case tea.KeyEnd:
-			m.cursor = len([]rune(m.fieldValues[field.ID]))
-			return m, nil
-		case tea.KeyBackspace:
-			m.deleteBack()
-			return m, m.validateCmd(field.ID, m.fieldValues[field.ID])
-		case tea.KeyDelete:
-			m.deleteForward()
-			return m, m.validateCmd(field.ID, m.fieldValues[field.ID])
-		}
-	}
-
-	if m.secretActive() {
-		if msg.Code == tea.KeyBackspace {
-			m.secret.backspace()
-		}
-		if msg.Text != "" && msg.Mod&(tea.ModAlt|tea.ModCtrl) == 0 {
-			m.secret.appendText(msg.Text, m.secretLimit())
-		}
-		return m, nil
-	}
-
-	// A consent question: y, n and space set the answer.
-	if question := m.focusedQuestion(); question != nil {
-		switch {
-		case msg.Code == 'y' || msg.Code == 'Y':
-			m.answers[question.ID] = true
-			return m, nil
-		case msg.Code == 'n' || msg.Code == 'N':
-			m.answers[question.ID] = false
-			return m, nil
-		case msg.Code == tea.KeySpace || msg.Text == " ":
-			m.answers[question.ID] = !m.answers[question.ID]
-			return m, nil
-		}
-	}
-
-	if field := m.focusedField(); field != nil && msg.Text != "" && msg.Mod&(tea.ModAlt|tea.ModCtrl) == 0 {
-		m.insertText(msg.Text)
-		return m, m.validateCmd(field.ID, m.fieldValues[field.ID])
-	}
-
 	return m, nil
 }
 
-func (m *model) secretLimit() int {
-	if m.plan.PasteBlock && !m.fieldMode {
-		return setup.MaxPasteBytes
-	}
-	return setup.MaxCodeBytes
-}
-
-// toggleFieldMode switches the pairing step between the pasted block and the typed fields.
-func (m *model) toggleFieldMode() {
-	m.fieldMode = !m.fieldMode
-	m.secret.wipe()
-	m.secret = nil
-	if !m.fieldMode || m.secretField() != nil {
-		// The masked area, or the secret field, always needs a live buffer.
-		m.secret = &secretInput{}
-	}
-	m.staged = nil
-	m.lines = nil
-	m.focus, m.cursor = 0, 0
-	m.rebuildItems()
-}
-
-// submitStep applies the current step with what the owner chose.
-func (m *model) submitStep() (tea.Model, tea.Cmd) {
-	if m.validationBusy != "" || len(m.validationOrder) > 0 {
-		m.submitAfterValidation = true
+// fieldKey sends a key to the focused field and revalidates when the text changed.
+func (m *model) fieldKey(current control, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	fieldID, ok := m.fieldIndex(current.index)
+	if !ok {
 		return m, nil
 	}
-	// On the pairing step nothing can be applied until a block or the fields are staged; the use question
-	// then sends it on.
-	if m.plan.Step == setup.StepPairingMaterial && m.staged == nil {
-		return m.submitPairing()
-	}
-
-	answers := setup.Answers{Text: map[string]string{}, Yes: map[string]bool{}}
-	for _, field := range m.plan.Fields {
-		if field.Secret {
-			continue // a secret never goes into Text
+	input := m.fields[fieldID]
+	if input.Secret {
+		if m.secret == nil {
+			m.secret = &secretInput{}
 		}
-		answers.Text[field.ID] = m.fieldValues[field.ID]
-	}
-	for id, value := range m.answers {
-		answers.Yes[id] = value
+		switch msg.Code {
+		case tea.KeyBackspace, tea.KeyDelete:
+			m.secret.backspace()
+		default:
+			if msg.Text != "" && msg.Mod&(tea.ModAlt|tea.ModCtrl) == 0 {
+				m.secret.appendText(msg.Text, setup.MaxCodeBytes)
+			}
+		}
+		m.changedSomething = true
+		m.refreshButtons()
+		return m, nil
 	}
 
-	// The block was already handed over when it was parsed; nothing secret is left to pass.
-	return m, m.applyCmd(answers)
+	// Home and End edit the field; the pane has PageUp/PageDown for scrolling.
+	before := input.Value()
+	updated, _ := input.Update(msg)
+	*input = updated
+	if input.Value() != before {
+		m.changedSomething = true
+		m.refreshButtons()
+		return m, m.validateCmd(fieldID, input.Value())
+	}
+	return m, nil
 }
 
-// submitPairing parses the pasted block or stages the typed fields.
-func (m *model) submitPairing() (tea.Model, tea.Cmd) {
-	if m.fieldMode || !m.plan.PasteBlock {
-		url := m.fieldValues["url"]
-		pin := m.fieldValues["pin"]
-
-		var code []byte
-		if field := m.secretField(); field != nil {
-			code = m.secret.take() // the wizard's copy is zeroed here
-		}
-		return m, m.fieldsCmd(url, pin, code)
+// toggleKey sends a key to the focused consent.
+func (m *model) toggleKey(current control, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	question, ok := m.toggleAt(current.index)
+	if !ok {
+		return m, nil
 	}
+	item := m.toggles[question]
+	updated, _ := item.Update(msg)
+	*item = updated
+	m.changedSomething = true
+	m.refreshButtons()
+	return m, nil
+}
 
+// pasteKey edits the masked block. Enter adds a line; keys never reach the screen.
+func (m *model) pasteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
+	case tea.KeyEnter, tea.KeyKpEnter:
+		return m.pasteEnter()
+	case tea.KeyBackspace:
+		m.secret.backspace()
+		m.changedSomething = true
+		m.refreshButtons()
+		return m, nil
+	}
+	if msg.Text != "" && msg.Mod&(tea.ModAlt|tea.ModCtrl) == 0 {
+		m.secret.appendText(msg.Text, setup.MaxPasteBytes)
+		m.changedSomething = true
+		m.refreshButtons()
+	}
+	return m, nil
+}
+
+// pasteEnter decides what Enter means in the paste box, and always leaves something on screen.
+//
+// The rules, in order: an empty buffer explains itself; a buffer that already carries the block's last
+// line is read at once; a bracketed paste that arrived without that line is read at once too, so the
+// parser's recoverable error is visible instead of the screen looking frozen; typed text gets a line
+// break and a line of feedback that says how to finish or how to reach the button.
+func (m *model) pasteEnter() (tea.Model, tea.Cmd) {
 	if m.secret == nil || m.secret.empty() {
-		m.lines = []string{"nothing was pasted: paste the block that `rtk gateway participant pair` printed, then press ctrl+d"}
+		m.lines = []string{"nothing pasted yet: paste the block, or type it, and the wizard reads it when its last line " +
+			"begins `the address above was recorded`; Tab reaches Read pasted text."}
+		m.refreshButtons()
 		return m, nil
 	}
-	if m.secret.truncated {
-		m.lines = []string{"the pasted block is larger than this wizard accepts: nothing was submitted"}
-		return m, nil
+	if m.pasteComplete() {
+		return m.startPaste()
+	}
+	if m.secret.pasted {
+		return m.startPaste()
 	}
 
-	block := m.secret.take() // the wizard's copy is zeroed before the command starts
-	return m, m.pasteCmd(block)
+	m.secret.appendText("\n", setup.MaxPasteBytes)
+	m.changedSomething = true
+	if m.pasteComplete() {
+		return m.startPaste()
+	}
+	m.lines = []string{"line added (" + itoa(m.secret.lineCount()) + " lines received). The block is read automatically " +
+		"when its last line, beginning `the address above was recorded`, arrives, or press Tab to reach Read pasted text."}
+	m.refreshButtons()
+	return m, nil
 }
 
-// secretField returns the plan's secret field, if it has one.
-func (m *model) secretField() *setup.Field {
-	for index := range m.plan.Fields {
-		if m.plan.Fields[index].Secret {
-			return &m.plan.Fields[index]
+// pressEnter implements Enter for the focused control.
+func (m *model) pressEnter() (tea.Model, tea.Cmd) {
+	current := m.currentControl()
+	switch current.kind {
+	case controlButtons:
+		if reason, blocked := m.buttons.Disabled(); blocked {
+			m.lines = []string{reason}
+			m.refreshButtons()
+			return m, nil
+		}
+		return m.pressButton(m.buttons.Selected)
+	case controlChoice:
+		return m.beginMethod()
+	case controlField, controlToggle:
+		m.moveFocus(1)
+		return m, nil
+	case controlPaste:
+		// Enter closes a typed line; pasteKey also starts the read when that line is the end marker.
+		return m.pasteKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	}
+	return m, nil
+}
+
+// pressButton runs the highlighted button.
+func (m *model) pressButton(index int) (tea.Model, tea.Cmd) {
+	switch m.screen {
+	case screenPaste:
+		switch index {
+		case 0: // Read pasted text
+			return m.startPaste()
+		case 1: // Clear
+			m.secret.wipe()
+			m.changedSomething = true
+			m.lines = nil
+			m.refreshButtons()
+			return m, nil
+		case 2: // Back
+			return m.back()
+		}
+		return m, nil
+	case screenChoice:
+		if index == 0 {
+			return m.back()
+		}
+		return m.beginMethod()
+	case screenFields:
+		if index == 0 {
+			return m.back()
+		}
+		return m.submitFields()
+	case screenReview:
+		if index == 0 {
+			return m.back()
+		}
+		return m.acceptReview()
+	default: // step forms and follow rounds
+		if index == 0 {
+			return m.back()
+		}
+		return m.continueForm()
+	}
+}
+
+// continueForm applies the step with the answers on screen.
+func (m *model) continueForm() (tea.Model, tea.Cmd) {
+	if reason, blocked := m.continueBlocked(); blocked {
+		m.lines = []string{reason}
+		return m, nil
+	}
+	answers := setup.Answers{Text: map[string]string{}, Yes: map[string]bool{}}
+	for _, fieldID := range m.order {
+		if input := m.fields[fieldID]; input != nil && !input.Secret {
+			answers.Text[fieldID] = input.Value()
 		}
 	}
-	return nil
+	for id := range m.toggles {
+		answers.Yes[id] = m.toggles[id].Yes
+	}
+	return m, m.applyCmd(answers, false)
 }
 
-// requestQuit ends the program, waiting for any command that already owns a secret.
-func (m *model) requestQuit() (tea.Model, tea.Cmd) {
+// beginMethod opens the chosen way of supplying the pairing material.
+func (m *model) beginMethod() (tea.Model, tea.Cmd) {
+	// "keep" with an existing credential needs nothing else: apply it straight away.
+	if item, ok := m.toggles["keep"]; ok && item.Yes {
+		return m, m.applyCmd(setup.Answers{Yes: map[string]bool{"keep": true}}, false)
+	}
+
+	// Switching method discards anything staged.
+	var discard tea.Cmd
+	if m.staged != nil {
+		m.staged = nil
+		discard = m.applyCmd(setup.Answers{Yes: map[string]bool{"use": false}}, true)
+	}
+
 	m.secret.wipe()
-	if m.busy || m.validationBusy != "" {
-		// A command is in flight: quit as soon as it reports back, so nothing is written underneath it.
+	m.secret = &secretInput{}
+	m.method = m.choices.Selected
+	if m.choices.Selected == 0 {
+		m.screen = screenPaste
+	} else {
+		m.screen = screenFields
+	}
+	m.focus = 0
+	m.lines = nil
+	m.rebuildControls()
+	return m, discard
+}
+
+// submitFields stages the typed URL, pin and code.
+func (m *model) submitFields() (tea.Model, tea.Cmd) {
+	url := m.fieldValue("url")
+	pin := m.fieldValue("pin")
+	var code []byte
+	if m.secret != nil {
+		code = m.secret.take()
+	}
+	m.wipeSecrets()
+	return m, m.fieldsCmd(url, pin, code)
+}
+
+// acceptReview applies the pairing material with the engine's own consent answer.
+func (m *model) acceptReview() (tea.Model, tea.Cmd) {
+	return m, m.applyCmd(m.reviewAnswers(), false)
+}
+
+// reviewAnswers returns only the consents visible for the staged pairing material.
+func (m *model) reviewAnswers() setup.Answers {
+	answers := setup.Answers{Yes: map[string]bool{}}
+	if item, ok := m.toggles["use"]; ok {
+		answers.Yes["use"] = item.Yes
+	}
+	// The transport consent travels with the answer, and only when it was offered and shown. Nothing
+	// here turns it on: it is exactly what the owner chose, which starts at No.
+	if m.allowsPlainHTTPToggle() {
+		if item, ok := m.toggles[allowHTTPQuestion]; ok {
+			answers.Yes[allowHTTPQuestion] = item.Yes
+		}
+	}
+	return answers
+}
+
+// fieldValue is a field's current text.
+func (m *model) fieldValue(fieldID string) string {
+	if input, ok := m.fields[fieldID]; ok {
+		return input.Value()
+	}
+	return ""
+}
+
+// back goes up one level: out of a subview, or into the quit dialog at a step's top level.
+func (m *model) back() (tea.Model, tea.Cmd) {
+	switch m.screen {
+	case screenReview:
+		m.screen = m.from
+		m.focus = 0
+		m.rebuildControls()
+		return m, nil
+	case screenPaste, screenFields:
+		m.wipeSecrets()
+		if m.screen == screenFields {
+			for _, fieldID := range []string{"url", "pin"} {
+				if input := m.fields[fieldID]; input != nil {
+					input.SetValue("")
+				}
+			}
+		}
+		m.lines = nil
+		if m.staged != nil {
+			// A staged block must not survive leaving review for the chooser: discard it through the
+			// engine's own use=false path so its secret is wiped there too.
+			staged := m.staged
+			m.staged = nil
+			_ = staged
+			m.screen = screenChoice
+			m.rebuildControls()
+			return m, m.applyCmd(setup.Answers{Yes: map[string]bool{"use": false}}, true)
+		}
+		m.screen = screenChoice
+		m.focus = 0
+		m.rebuildControls()
+		return m, nil
+	case screenChoice:
+		m.openQuitDialog()
+		return m, nil
+	}
+	m.openQuitDialog()
+	return m, nil
+}
+
+// openQuitDialog shows the confirmation, defaulting to Stay.
+func (m *model) openQuitDialog() {
+	title := "Quit setup? Nothing more will be changed."
+	body := []string{"Steps that are already done stay done.", "Steps that are not done stay undone.", ""}
+	if m.busy || m.validating {
+		title = "Quit setup? The current step will finish first."
+		body = []string{"The current operation finishes before the program exits.", "No later step will start.", ""}
+	}
+	m.dialog = dialog{
+		Title:   title,
+		Body:    body,
+		Details: m.doneLines(),
+		Buttons: buttonRow{Labels: []string{"Stay", "Quit"}},
+	}
+	m.dialog.Open()
+}
+
+// doneLines lists the steps already completed, for the quit dialog.
+func (m *model) doneLines() []string {
+	var lines []string
+	for _, step := range m.steps {
+		if status, ok := m.statuses()[step]; ok && status != setup.StatusNotDone && status != setup.StatusYourTurn {
+			lines = append(lines, step.Title()+" ("+string(status)+")")
+		}
+	}
+	return lines
+}
+
+// requestQuit opens the dialog, or quits at once when nothing has happened yet.
+func (m *model) requestQuit() (tea.Model, tea.Cmd) {
+	if !m.changedSomething && len(m.statuses()) == 0 && !m.busy && !m.validating {
+		return m.quitNow()
+	}
+	m.openQuitDialog()
+	return m, nil
+}
+
+// quitNow ends the program.
+func (m *model) quitNow() (tea.Model, tea.Cmd) {
+	m.wipeSecrets()
+	if m.busy || m.validating {
 		m.quitWhenIdle = true
 		return m, nil
 	}
 	return m, tea.Quit
 }
 
-// moveFocus moves the cursor through the pane's rows.
+// onDialogKey drives the quit dialog.
+func (m *model) onDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
+	case tea.KeyEscape:
+		m.dialog.Close()
+		return m, nil
+	case tea.KeyEnter, tea.KeyKpEnter:
+		if m.dialog.QuitSelected() {
+			return m.quitNow()
+		}
+		m.dialog.Close()
+		return m, nil
+	}
+	if msg.Code == tea.KeyLeft || msg.Code == tea.KeyRight || msg.Code == tea.KeyTab {
+		updated, _ := m.dialog.Update(msg)
+		m.dialog = updated
+	}
+	return m, nil
+}
+
+// moveFocus steps through the focusable rows.
 func (m *model) moveFocus(delta int) {
-	if len(m.items) == 0 {
+	if len(m.controls) == 0 {
 		return
 	}
 	m.focus += delta
 	if m.focus < 0 {
-		m.focus = len(m.items) - 1
+		m.focus = len(m.controls) - 1
 	}
-	if m.focus >= len(m.items) {
+	if m.focus >= len(m.controls) {
 		m.focus = 0
 	}
-	m.cursor = 0
+	m.syncFocus()
+	m.refreshButtons()
 }
 
-// insertText inserts printable text at the cursor of the focused field.
-func (m *model) insertText(text string) {
-	field := m.focusedField()
-	if field == nil {
-		return
+// focusFirstError puts the cursor on the first field the engine rejected.
+func (m *model) focusFirstError(errors map[string]string) {
+	for index, fieldID := range m.order {
+		if _, failed := errors[fieldID]; failed {
+			for position, item := range m.controls {
+				if item.kind == controlField && item.index == index {
+					m.focus = position
+					m.syncFocus()
+					return
+				}
+			}
+		}
 	}
-	runes := []rune(m.fieldValues[field.ID])
-	cursor := m.cursor
-	if cursor > len(runes) {
-		cursor = len(runes)
-	}
-	insert := []rune(text)
-	merged := make([]rune, 0, len(runes)+len(insert))
-	merged = append(merged, runes[:cursor]...)
-	merged = append(merged, insert...)
-	merged = append(merged, runes[cursor:]...)
-	m.fieldValues[field.ID] = string(merged)
-	m.cursor = cursor + len(insert)
 }
 
-// deleteBack removes the rune before the cursor.
-func (m *model) deleteBack() {
-	field := m.focusedField()
-	if field == nil || m.cursor == 0 {
-		return
+// refreshButtons recomputes what the button row offers and why Continue may be blocked.
+func (m *model) refreshButtons() {
+	switch m.screen {
+	case screenPaste:
+		m.buttons = buttonRow{Labels: []string{"Read pasted text", "Clear", "Back"}}
+		blocked := ""
+		if m.secret == nil || m.secret.empty() {
+			blocked = "nothing pasted yet: paste the block, or go Back"
+		} else if m.secret.truncated {
+			blocked = "the pasted block is too large: use Clear"
+		}
+		m.buttons.blocked = []string{blocked, "", ""}
+		if m.buttons.Selected >= len(m.buttons.Labels) {
+			m.buttons.Selected = 0
+		}
+	case screenChoice:
+		m.buttons = buttonRow{Labels: []string{"Back", "Continue"}, Selected: 1}
+		m.buttons.blocked = []string{m.backBlockedReason(), m.choiceBlocked()}
+	case screenFields:
+		m.buttons = buttonRow{Labels: []string{"Back", "Continue"}, Selected: 1}
+		m.buttons.blocked = []string{"", m.fieldsBlocked()}
+	case screenReview:
+		m.buttons = buttonRow{Labels: []string{"Back", "Continue"}, Selected: 1}
+		m.buttons.blocked = []string{"", ""}
+	default:
+		m.buttons = buttonRow{Labels: []string{"Back", "Continue"}, Selected: 1}
+		m.buttons.blocked = []string{m.backBlockedReason(), m.continueBlockedReason()}
 	}
-	runes := []rune(m.fieldValues[field.ID])
-	if m.cursor > len(runes) {
-		m.cursor = len(runes)
+	if m.focus < len(m.controls) && m.controls[m.focus].kind == controlButtons {
+		m.buttons.Focus()
 	}
-	runes = append(runes[:m.cursor-1], runes[m.cursor:]...)
-	m.fieldValues[field.ID] = string(runes)
-	m.cursor--
 }
 
-// deleteForward removes the rune at the cursor.
-func (m *model) deleteForward() {
-	field := m.focusedField()
-	if field == nil {
-		return
+func (m *model) backBlockedReason() string {
+	if m.index <= 0 {
+		return "there is no earlier step"
 	}
-	runes := []rune(m.fieldValues[field.ID])
-	if m.cursor >= len(runes) {
-		return
-	}
-	runes = append(runes[:m.cursor], runes[m.cursor+1:]...)
-	m.fieldValues[field.ID] = string(runes)
+	return "earlier steps are already applied and cannot be reopened"
 }
 
-// wipeSecrets forgets anything secret the model still holds.
+// continueBlocked reports whether Continue cannot act, and why.
+func (m *model) continueBlocked() (string, bool) {
+	if m.buttons.Selected >= len(m.buttons.blocked) {
+		return "", false
+	}
+	if reason := m.buttons.blocked[m.buttons.Selected]; reason != "" {
+		return reason, true
+	}
+	return "", false
+}
+
+// continueBlockedReason is the form's own rule.
+func (m *model) continueBlockedReason() string {
+	if m.validating || len(m.queued) > 0 {
+		return "checking the latest field value"
+	}
+	failing := 0
+	for _, fieldID := range m.order {
+		if m.fieldErrors[fieldID] != "" {
+			failing++
+		}
+	}
+	if failing == 1 {
+		return "1 field needs attention"
+	}
+	if failing > 1 {
+		return itoa(failing) + " fields need attention"
+	}
+	for _, fieldID := range m.order {
+		if input := m.fields[fieldID]; input != nil && !input.Optional && strings.TrimSpace(input.Value()) == "" {
+			return "a required field is still empty"
+		}
+	}
+	return ""
+}
+
+// choiceBlocked is why the method chooser cannot continue.
+func (m *model) choiceBlocked() string {
+	if m.busy {
+		return "a step is already running"
+	}
+	if m.validating || len(m.queued) > 0 {
+		return "a field check is still running"
+	}
+	return ""
+}
+
+// fieldsBlocked is why the typed values cannot be staged yet.
+func (m *model) fieldsBlocked() string {
+	if m.validating || len(m.queued) > 0 {
+		return "checking the latest field value"
+	}
+	failing := 0
+	for _, fieldID := range []string{"url", "pin"} {
+		if m.fieldErrors[fieldID] != "" {
+			failing++
+		}
+	}
+	if failing == 1 {
+		return "1 field needs attention"
+	}
+	if failing > 1 {
+		return itoa(failing) + " fields need attention"
+	}
+	if strings.TrimSpace(m.fieldValue("url")) == "" {
+		return "the participant API URL is still empty"
+	}
+	if needsPinForURL(m.fieldValue("url")) && strings.TrimSpace(m.fieldValue("pin")) == "" {
+		return "the certificate pin is required for an https:// gateway"
+	}
+	if m.plan.NeedCode && (m.secret == nil || m.secret.empty() || m.secret.truncated) {
+		return "the pairing code is empty or too long"
+	}
+	return ""
+}
+
+// participantAPILabel is the label the gateway prints in front of the participant API address.
+const participantAPILabel = "participant API:"
+
+// trimParticipantAPILabel drops one leading "participant API:" label, in any case, and the whitespace
+// around it. Anything else is returned unchanged, including a value that merely contains the words.
+func trimParticipantAPILabel(text string) string {
+	if len(text) < len(participantAPILabel) {
+		return text
+	}
+	if !strings.EqualFold(text[:len(participantAPILabel)], participantAPILabel) {
+		return text
+	}
+	return strings.TrimSpace(text[len(participantAPILabel):])
+}
+
+// needsPinForURL reports whether this address needs a certificate pin: only https does. A plain http
+// address has no certificate to pin, and a pin typed by mistake is left for the engine to refuse.
+func needsPinForURL(url string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(url)), "https://")
+}
+
+// isPlainHTTPURL reports whether a typed address is plain http.
+func isPlainHTTPURL(url string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(url)), "http://")
+}
+
+// wipeSecrets zeroes every masked buffer the model holds.
 func (m *model) wipeSecrets() {
 	if m.secret != nil {
 		m.secret.wipe()
 		m.secret = nil
 	}
+	if input, ok := m.fields["code"]; ok && input.Secret {
+		input.SetValue("")
+	}
 }
 
 // ---- view ----------------------------------------------------------------------------------------
 
-// View renders the whole screen. It never touches the terminal and never calls the engine.
+// View renders the whole screen.
 func (m *model) View() tea.View { return tea.NewView(m.render()) }
 
 // render builds the screen text.
 func (m *model) render() string {
 	width := m.width
 	if width <= 0 {
-		width = 80 // before the first WindowSizeMsg, assume a normal terminal
+		width = 80
+	}
+	height := m.height
+	if height <= 0 {
+		height = 24
 	}
 
-	var out strings.Builder
-
-	title := "Ratatoskr OpenRig bridge setup"
-	if m.phase != phaseSummary && m.index < len(m.steps) {
-		title += fmt.Sprintf(" - step %d of %d", m.index+1, len(m.steps))
-	}
-	out.WriteString(title)
-	out.WriteString("\n")
-	out.WriteString(strings.Repeat("=", minInt(len(title), width)))
-	out.WriteString("\n\n")
-
-	if m.phase == phaseSummary {
-		out.WriteString(pageSummary(m.renderSummary(width), maxInt(1, m.height-3), m.scrollTop))
-		return out.String()
+	if width < minWidth || height < minHeight {
+		return "terminal too small: make it at least " + itoa(minWidth) + "x" + itoa(minHeight) + "\n" +
+			"(the wizard keeps its place; resize and carry on)\n"
 	}
 
-	leftWidth := minInt(27, maxInt(8, width/3))
-	if width-leftWidth < 12 {
-		leftWidth = maxInt(1, width-13)
-	}
-	rightWidth := maxInt(1, width-leftWidth-3)
-	left := wrapColumn(m.renderSteps(), leftWidth)
-	right := m.renderPane(rightWidth)
-	if m.height > 0 {
-		pageSize := maxInt(1, m.height-4)
-		if len(right) > pageSize {
-			footer := right[len(right)-1]
-			body := right[:len(right)-1]
-			maxTop := maxInt(0, len(body)-maxInt(1, pageSize-1))
-			if m.scrollTop > maxTop {
-				m.scrollTop = maxTop
-			}
-			start := m.scrollTop
-			end := minInt(len(body), start+maxInt(1, pageSize-1))
-			right = append(append([]string(nil), body[start:end]...), footer)
-			if start < len(left) {
-				leftEnd := minInt(len(left), start+len(right))
-				left = left[start:leftEnd]
-			} else {
-				left = nil
-			}
-		} else {
-			m.scrollTop = 0
+	if m.dialog.open {
+		contentWidth := minInt(width-6, 68)
+		if contentWidth < 24 {
+			contentWidth = width - 2
 		}
+		content := lipgloss.NewStyle().Width(contentWidth).Border(lipgloss.RoundedBorder()).Padding(1, 2).
+			Render(m.dialog.View(m.theme, contentWidth-4))
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content) + "\n"
 	}
-	rows := maxInt(len(left), len(right))
-	for row := 0; row < rows; row++ {
-		leftLine, rightLine := "", ""
-		if row < len(left) {
-			leftLine = left[row]
-		}
-		if row < len(right) {
-			rightLine = right[row]
-		}
-		out.WriteString(leftLine)
-		out.WriteString(strings.Repeat(" ", maxInt(0, leftWidth-runeWidth(leftLine))))
-		out.WriteString(" | ")
-		out.WriteString(rightLine)
-		out.WriteString("\n")
+	if m.screen == screenSummary || m.phase == phaseSummary {
+		return m.renderSummary(width, height)
 	}
-	return out.String()
+
+	header := m.renderHeader(width)
+	bodyWidth := width
+	sidebar := []string(nil)
+	if width >= sidebarMinWidth {
+		sidebar = m.renderSidebar()
+		bodyWidth = width - sidebarWidth
+	}
+
+	body := m.renderBody(bodyWidth, height-len(header)-footerLines-1)
+	footer := m.renderFooter(width)
+
+	if len(sidebar) == 0 {
+		return strings.Join(append(append(header, body...), footer...), "\n") + "\n"
+	}
+
+	left := lipgloss.NewStyle().Width(sidebarWidth).Render(strings.Join(sidebar, "\n"))
+	right := strings.Join(body, "\n")
+	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	return strings.Join(append(append(header, strings.Split(main, "\n")...), footer...), "\n") + "\n"
 }
 
-// renderSteps is the left column: every step, with the ones already finished marked.
-func (m *model) renderSteps() string {
-	var out strings.Builder
+// renderHeader is the title, the step and the progress bar.
+func (m *model) renderHeader(width int) []string {
+	title := m.theme.accent("Ratatoskr ⇄ OpenRig setup")
+	lines := []string{title}
+
+	if m.index < len(m.steps) {
+		step := m.steps[m.index]
+		lines = append(lines, terminalText(fmt.Sprintf("Step %d of %d · %s", m.index+1, len(m.steps), step.Title())))
+	} else {
+		lines = append(lines, "Setup complete")
+	}
+
+	done := 0
+	for _, step := range m.steps {
+		if status, ok := m.statuses()[step]; ok && status != setup.StatusNotDone && status != setup.StatusYourTurn {
+			done++
+		}
+	}
+	countLabel := itoa(done) + "/" + itoa(len(m.steps)) + " steps done"
+	barWidth := width - lipgloss.Width(countLabel) - 2
+	if barWidth > 40 {
+		barWidth = 40
+	}
+	if barWidth < 1 {
+		barWidth = 1
+	}
+	lines = append(lines, renderProgress(done, len(m.steps), barWidth, m.theme)+"  "+countLabel)
+
+	if width < sidebarMinWidth {
+		lines = append(lines, m.renderStepsInline(width))
+	}
+	return lines
+}
+
+// renderStepsInline folds the step list into one line for narrow terminals.
+func (m *model) renderStepsInline(width int) string {
+	parts := make([]string, 0, len(m.steps))
 	for index, step := range m.steps {
-		marker := "  "
+		mark := "○"
 		if index == m.index {
-			marker = "> "
+			mark = "●"
+		} else if status, ok := m.statuses()[step]; ok {
+			switch status {
+			case setup.StatusDone, setup.StatusAlready:
+				mark = "✓"
+			case setup.StatusSkipped:
+				mark = "–"
+			case setup.StatusNotDone, setup.StatusYourTurn:
+				mark = "!"
+			}
 		}
-		suffix := ""
-		if status, done := m.statuses[step]; done {
-			suffix = "  (" + string(status) + ")"
-		}
-		fmt.Fprintf(&out, "%s%d. %s%s\n", marker, index+1, step.Title(), suffix)
+		parts = append(parts, mark)
 	}
-	return out.String()
+	return truncate(strings.Join(parts, " ")+"  ("+itoa(m.index+1)+"/"+itoa(len(m.steps))+")", width)
 }
 
-// renderPane is the right column: what the current step needs and what it found.
-func (m *model) renderPane(width int) []string {
+// renderSidebar is the nine-step list.
+func (m *model) renderSidebar() []string {
+	steps := make([]setupStepStatus, 0, len(m.steps))
+	for _, step := range m.steps {
+		steps = append(steps, setupStepStatus{Title: step.Title(), Status: m.statuses()[step]})
+	}
+	return renderSidebar(steps, m.index, sidebarWidth-1, m.theme)
+}
+
+// renderBody is the scrolling pane plus the footer-independent content.
+func (m *model) renderBody(width, height int) []string {
+	lines := m.buildBody(width)
+	if height < 4 {
+		height = 4
+	}
+	m.pane.height = height
+	m.pane.SetLines(lines)
+	if m.helpOpen {
+		m.pane.Bottom()
+	} else {
+		m.pane.EnsureRow(m.focusRowInBody(lines))
+	}
+	visible := m.pane.View()
+
+	out := make([]string, 0, len(visible)+2)
+	above, below := m.pane.More()
+	if above {
+		out = append(out, m.theme.dim("  ^ more above (PageUp)"))
+	}
+	out = append(out, visible...)
+	if below {
+		out = append(out, m.theme.dim("  v more below (PageDown)"))
+	}
+	return out
+}
+
+// focusRowInBody finds the rendered line of the focused control, for auto-scrolling.
+func (m *model) focusRowInBody(lines []string) int {
+	if len(m.controls) == 0 {
+		return 0
+	}
+	current := m.currentControl()
+	switch current.kind {
+	case controlField:
+		if fieldID, ok := m.fieldIndex(current.index); ok {
+			if input := m.fields[fieldID]; input != nil {
+				for index, line := range lines {
+					if strings.Contains(line, input.Label+": ") {
+						return index
+					}
+				}
+			}
+		}
+	case controlToggle:
+		if question, ok := m.toggleAt(current.index); ok {
+			if item := m.toggles[question]; item != nil {
+				for index, line := range lines {
+					if strings.Contains(line, item.Prompt) {
+						return index
+					}
+				}
+			}
+		}
+	case controlChoice:
+		for index, line := range lines {
+			if strings.Contains(line, "How do you want to supply") {
+				return index
+			}
+		}
+	case controlPaste:
+		for index, line := range lines {
+			if strings.Contains(line, "Pasted block") {
+				return index
+			}
+		}
+	case controlButtons:
+		for index, line := range lines {
+			if strings.Contains(line, "[ Back ]") {
+				return index
+			}
+		}
+	}
+	return 0
+}
+
+// buildBody renders the pane content for the current screen.
+func (m *model) buildBody(width int) []string {
 	var lines []string
 	wrap := func(text string) {
-		for _, piece := range wrapText(text, width) {
-			lines = append(lines, piece)
-		}
+		lines = append(lines, wrapText(terminalText(text), width)...)
 	}
-
-	wrap(m.steps[m.index].Title())
+	for _, titleLine := range wrapText(terminalText(m.steps[m.index].Title()), width) {
+		lines = append(lines, m.theme.accent(titleLine))
+	}
 	lines = append(lines, "")
 
 	for _, instruction := range m.plan.Instructions {
@@ -1084,143 +1728,170 @@ func (m *model) renderPane(width int) []string {
 	for _, fact := range m.plan.Facts {
 		wrap("  " + fact.Label + ": " + fact.Value)
 	}
-
 	for _, notice := range m.notices {
 		label := "note: "
 		if notice.Level == setup.Warn {
 			label = "WARNING: "
 		}
-		wrap(label + notice.Text)
+		for _, piece := range wrapText(terminalText(label+notice.Text), width) {
+			if notice.Level == setup.Warn && strings.HasPrefix(piece, "WARNING:") {
+				piece = m.theme.warn("WARNING:") + strings.TrimPrefix(piece, "WARNING:")
+			}
+			lines = append(lines, piece)
+		}
 	}
-
 	for _, change := range m.plan.Changes {
 		wrap("  ~ " + change.Field + ": " + change.Old + " -> " + change.New)
 	}
 
-	if len(m.plan.Facts) > 0 || len(m.notices) > 0 || len(m.plan.Changes) > 0 {
+	if m.busy {
 		lines = append(lines, "")
+		for _, piece := range wrapText("  "+spinnerFrames[m.frame%len(spinnerFrames)]+" "+terminalText(m.busyLabel), width) {
+			lines = append(lines, m.theme.accent(piece))
+		}
 	}
 
-	lines = append(lines, m.renderInputs(width)...)
-
-	if m.staged != nil {
-		lines = append(lines, "")
-		for _, line := range m.renderStaged(width) {
-			lines = append(lines, line)
+	if !m.busy {
+		switch m.screen {
+		case screenChoice:
+			lines = append(lines, "")
+			for _, piece := range wrapText("How do you want to supply the pairing material?", width) {
+				lines = append(lines, m.theme.accent(piece))
+			}
+			lines = append(lines, "")
+			// The consents come first, matching the focus order rebuildControls gives them.
+			for _, question := range m.plan.Questions {
+				if question.ID == "use" || question.ID == allowHTTPQuestion {
+					continue
+				}
+				if item := m.toggles[question.ID]; item != nil {
+					lines = append(lines, strings.Split(item.View(m.theme, width), "\n")...)
+				}
+			}
+			lines = append(lines, strings.Split(m.choices.View(m.theme, width), "\n")...)
+		case screenPaste:
+			lines = append(lines, "")
+			lines = append(lines, m.renderPasteBox(width)...)
+		case screenFields:
+			lines = append(lines, "")
+			for _, fieldID := range m.order {
+				if input := m.fields[fieldID]; input != nil {
+					lines = append(lines, strings.Split(m.renderField(fieldID), "\n")...)
+				}
+				if fieldID == "pin" && isPlainHTTPURL(m.fieldValue("url")) {
+					// A plain http:// address has no certificate to pin; say so beside the field
+					// without changing the engine's own Help text.
+					lines = append(lines, "    "+m.theme.dim("not used for http:// — leave this empty"))
+				}
+			}
+		case screenReview:
+			lines = append(lines, "")
+			lines = append(lines, m.renderReview(width)...)
+		default:
+			if len(m.plan.Fields) > 0 || len(m.plan.Questions) > 0 {
+				lines = append(lines, "")
+			}
+			for _, fieldID := range m.order {
+				if input := m.fields[fieldID]; input != nil {
+					lines = append(lines, strings.Split(m.renderField(fieldID), "\n")...)
+				}
+			}
+			for _, question := range m.plan.Questions {
+				if item := m.toggles[question.ID]; item != nil {
+					lines = append(lines, strings.Split(item.View(m.theme, width), "\n")...)
+				}
+			}
 		}
+	}
+
+	if !m.busy && m.showsButtons() {
+		lines = append(lines, "")
+		lines = append(lines, strings.Split(m.buttons.View(m.theme, width), "\n")...)
 	}
 
 	for _, line := range m.lines {
-		for _, piece := range wrapText(line, width) {
-			lines = append(lines, "  "+piece)
-		}
+		wrap("  " + line)
 	}
 
-	if m.busy {
+	if m.helpOpen {
 		lines = append(lines, "")
-		lines = append(lines, "  "+spinnerFrames[m.frame%len(spinnerFrames)]+" "+m.busyLabel)
-	}
-
-	lines = append(lines, "")
-	if m.quitArmed {
-		lines = append(lines, "  press esc or enter again to quit; anything not done stays undone")
-	} else {
-		lines = append(lines, "  "+m.hint())
-	}
-	var safeLines []string
-	for _, line := range lines {
-		safeLines = append(safeLines, wrapText(line, width)...)
-	}
-	return safeLines
-}
-
-// renderInputs draws the fields, the question(s) and the masked area.
-func (m *model) renderInputs(width int) []string {
-	var lines []string
-
-	for index, item := range m.items {
-		focused := index == m.focus
-		switch item.kind {
-		case focusPaste:
-			lines = append(lines, "  "+m.secret.describe("pasted block"))
-			lines = append(lines, "  paste the block that `rtk gateway participant pair` printed, then press ctrl+d")
-		case focusField:
-			field := m.plan.Fields[item.index]
-			marker := "    "
-			if focused {
-				marker = "  > "
-			}
-			switch {
-			case field.Secret:
-				lines = append(lines, marker+field.Label+": "+m.secret.describe("code"))
-			case focused:
-				lines = append(lines, marker+field.Label+": "+m.renderEditingValue(field.ID))
-			default:
-				lines = append(lines, marker+field.Label+": "+m.fieldValues[field.ID])
-			}
-			if field.Help != "" {
-				for _, piece := range wrapText(field.Help, width-4) {
-					lines = append(lines, "      "+piece)
-				}
-			}
-			if message, failed := m.fieldErrors[field.ID]; failed {
-				for _, piece := range wrapText(message, width-6) {
-					lines = append(lines, "      ! "+piece)
-				}
-			}
-		case focusQuestion:
-			question := m.plan.Questions[item.index]
-			marker := "    "
-			if focused {
-				marker = "  > "
-			}
-			answer := "[no]"
-			if m.answers[question.ID] {
-				answer = "[yes]"
-			}
-			lines = append(lines, marker+answer+" "+question.Prompt)
-			for _, detail := range question.Detail {
-				for _, piece := range wrapText(detail, width-6) {
-					lines = append(lines, "      "+piece)
-				}
-			}
-		}
-	}
-
-	if m.plan.PasteBlock {
-		lines = append(lines, "")
-		lines = append(lines, "  ctrl+f switches between the pasted block and the typed fields")
+		lines = append(lines, m.renderHelp(width)...)
 	}
 	return lines
 }
 
-// renderEditingValue draws the focused field with a visible cursor.
-func (m *model) renderEditingValue(fieldID string) string {
-	runes := []rune(m.fieldValues[fieldID])
-	cursor := m.cursor
-	if cursor > len(runes) {
-		cursor = len(runes)
+func (m *model) renderField(fieldID string) string {
+	input := m.fields[fieldID]
+	if input == nil {
+		return ""
 	}
-	return string(runes[:cursor]) + "|" + string(runes[cursor:])
+	if !input.Secret {
+		return input.View(m.theme)
+	}
+	marker := "  "
+	if input.focus {
+		marker = "> "
+	}
+	value := m.theme.dim(terminalText(input.Placeholder))
+	if m.secret != nil && !m.secret.empty() {
+		value = m.theme.accent(maskPresence(m.secret.size()))
+	}
+	line := marker + terminalText(input.Label) + ": " + value
+	if input.Help != "" {
+		line += "\n    " + terminalText(input.Help)
+	}
+	if input.message != "" {
+		line += "\n    " + m.theme.err("! "+terminalText(input.message))
+	}
+	return line + "\n"
 }
 
-// renderStaged shows the non-secret part of what was parsed.
-func (m *model) renderStaged(width int) []string {
+// showsButtons reports whether the current screen has a button row.
+func (m *model) showsButtons() bool {
+	return m.screen != screenSummary
+}
+
+// renderPasteBox draws the masked area and its buttons.
+func (m *model) renderPasteBox(width int) []string {
+	label := "Pasted block"
+	content := m.theme.dim("waiting for paste...") + "\n" +
+		m.theme.dim("paste with your terminal's paste shortcut, or type and press enter for each line")
+	if m.secret != nil && m.secret.size() > 0 {
+		content = m.theme.ok("● "+maskPresence(m.secret.size())) + "\n" +
+			m.theme.dim("the content is hidden; it is cleared after a successful read or when you leave this screen")
+	}
+	if m.secret != nil && m.secret.truncated {
+		content += "\n" + m.theme.err("! too long: use Clear, then paste again")
+	}
+
+	lines := strings.Split(box(m.theme, width, label+"\n"+content), "\n")
+	lines = append(lines, "")
+	lines = append(lines, m.theme.dim("  the block ends with a line beginning `the address above was recorded`; the wizard reads it automatically"))
+	return lines
+}
+
+// renderReview shows the parsed values and the consent.
+func (m *model) renderReview(width int) []string {
+	if m.staged == nil {
+		return []string{m.theme.dim("  nothing parsed yet")}
+	}
 	summary := m.staged
 	lines := []string{
-		"  participant URL: " + summary.URL,
+		m.theme.accent("Review"),
+		"",
+		"  participant URL: " + terminalText(summary.URL),
 	}
 	if summary.Pin != "" {
-		lines = append(lines, "  certificate pin: "+summary.Pin)
+		lines = append(lines, "  certificate pin: "+terminalText(summary.Pin))
 	}
 	if summary.Plain {
-		lines = append(lines, "  WARNING: the participant API is plain HTTP")
+		lines = append(lines, "  "+m.theme.warn("WARNING: the participant API is plain HTTP"))
 	}
 	if summary.Rotation {
-		lines = append(lines, "  note: the gateway said this is a rotation; the old credential stops working when the new code is redeemed")
+		lines = append(lines, "  note: this is a rotation; the old credential stops working when the new code is redeemed")
 	}
 	if summary.StaleNote != "" {
-		for _, piece := range wrapText("  "+summary.StaleNote, width) {
+		for _, piece := range wrapText(terminalText("  "+summary.StaleNote), width) {
 			lines = append(lines, piece)
 		}
 	}
@@ -1229,175 +1900,176 @@ func (m *model) renderStaged(width int) []string {
 	} else {
 		lines = append(lines, "  pairing code: not used by this step")
 	}
+	lines = append(lines, "")
+	for _, question := range m.plan.Questions {
+		switch question.ID {
+		case allowHTTPQuestion:
+			if !m.allowsPlainHTTPToggle() {
+				continue
+			}
+		case "use":
+		default:
+			continue
+		}
+		if item := m.toggles[question.ID]; item != nil {
+			lines = append(lines, strings.Split(item.View(m.theme, width), "\n")...)
+		}
+	}
+	return lines
+}
+
+// allowHTTPQuestion is the engine's transport-consent question ID.
+const allowHTTPQuestion = "allow_http"
+
+// allowsPlainHTTPToggle reports whether the transport consent belongs on screen now: the engine offered
+// it, and the staged address is plain HTTP.
+func (m *model) allowsPlainHTTPToggle() bool {
+	if m.staged == nil || !m.staged.Plain {
+		return false
+	}
+	_, offered := m.toggles[allowHTTPQuestion]
+	return offered
+}
+
+// renderFooter is the persistent key legend plus the context line.
+func (m *model) renderFooter(width int) []string {
+	if m.helpOpen {
+		return []string{m.theme.dim("? or esc closes the help")}
+	}
+	legend := "tab/↑/↓ move · enter next · esc back · ? help · ctrl+c quit"
+	switch m.currentControl().kind {
+	case controlField:
+		legend = "type to edit · enter next · ↑/↓ move · esc back · ctrl+c quit"
+	case controlToggle:
+		legend = "space/←/→ or y/n toggle · enter next · esc back · ? help · ctrl+c quit"
+	case controlChoice:
+		legend = "↑/↓ choose · enter select · esc back · ? help · ctrl+c quit"
+	case controlPaste:
+		legend = "paste, or type a line and press enter · tab for the buttons · esc back · ctrl+c quit"
+	case controlButtons:
+		legend = "←/→ choose · enter press · tab move · esc back · ? help · ctrl+c quit"
+	}
+	if m.busy {
+		legend = "ctrl+c: quit after this step finishes"
+	}
+	context := ""
+	if m.width >= sidebarMinWidth {
+		context = m.theme.dim("step " + itoa(m.index+1) + " of " + itoa(len(m.steps)))
+	}
+	return []string{truncate(legend, width), context}
+}
+
+// renderHelp is the non-modal full help.
+func (m *model) renderHelp(width int) []string {
+	lines := []string{m.theme.accent("Keys")}
+	lines = append(lines, wrapText("tab, shift+tab, up, down: move between the controls", width)...)
+	lines = append(lines, wrapText("enter: confirm the field and move on, press the highlighted button, or accept a choice", width)...)
+	lines = append(lines, wrapText("space, left, right, y, n: switch a Yes/No consent", width)...)
+	lines = append(lines, wrapText("page up, page down: scroll this pane", width)...)
+	lines = append(lines, wrapText("esc: back one level, or open the quit dialog at a step's top level", width)...)
+	lines = append(lines, wrapText("?: close this help; ctrl+c: quit setup", width)...)
 	return lines
 }
 
 // renderSummary is the closing checklist.
-func (m *model) renderSummary(width int) string {
-	var out strings.Builder
+func (m *model) renderSummary(width, height int) string {
+	var lines []string
+	lines = append(lines, m.theme.accent("Ratatoskr ⇄ OpenRig setup"), "")
 
 	rows := m.summary.Rows
 	if len(rows) == 0 {
 		for _, step := range m.steps {
-			status, done := m.statuses[step]
-			if !done {
-				status = setup.StatusNotDone
+			status := setup.StatusNotDone
+			if recorded, ok := m.statuses()[step]; ok {
+				status = recorded
 			}
 			rows = append(rows, setup.Row{Step: step, Status: status})
 		}
 	}
 
-	out.WriteString("Checklist\n")
+	lines = append(lines, m.theme.accent("Checklist"))
 	for _, row := range rows {
-		line := fmt.Sprintf("  %-16s %s", row.Step.Title(), row.Status)
+		mark := statusMark(row.Status)
+		line := "  " + mark + " " + terminalText(row.Step.Title()) + ": " + terminalText(string(row.Status))
 		if row.Detail != "" {
-			line += " - " + row.Detail
+			line += " - " + terminalText(row.Detail)
 		}
-		for _, piece := range wrapText(line, width) {
-			out.WriteString(piece)
-			out.WriteString("\n")
-		}
-	}
-
-	todo := append([]string(nil), m.summary.Todo...)
-	if !endsWithRoundTrip(todo) {
-		// The contract fixes this line; if the engine ever omits it, the screen must not lose it.
-		todo = append(todo, roundTripLine)
-	}
-	for _, line := range m.lines {
-		out.WriteString(terminalText(line))
-		out.WriteString("\n")
-	}
-	out.WriteString("press enter to close\n")
-	out.WriteString("\nStill yours to do\n")
-	for _, item := range todo {
-		if item == roundTripLine {
-			continue
-		}
-		for _, piece := range wrapText("  - "+item, width) {
-			out.WriteString(piece)
-			out.WriteString("\n")
-		}
-	}
-	out.WriteString(roundTripLine)
-	out.WriteString("\n")
-	return out.String()
-}
-
-// pageSummary keeps the contract's final pending-execution line visible while paging long checklists.
-func pageSummary(text string, height, top int) string {
-	if height <= 0 {
-		return text
-	}
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if len(lines) <= height {
-		return text
-	}
-	last := lines[len(lines)-1]
-	body := lines[:len(lines)-1]
-	pageSize := maxInt(1, height-1)
-	maxTop := maxInt(0, len(body)-pageSize)
-	if top > maxTop {
-		top = maxTop
-	}
-	end := minInt(len(body), top+pageSize)
-	return strings.Join(append(append([]string(nil), body[top:end]...), last), "\n") + "\n"
-}
-
-// roundTripLine is the last line of every checklist (contract 4.1 step 9).
-const roundTripLine = "scenario 8 round trip: PENDING USER EXECUTION"
-
-// endsWithRoundTrip reports whether the checklist already carries that line.
-func endsWithRoundTrip(todo []string) bool {
-	return len(todo) > 0 && todo[len(todo)-1] == roundTripLine
-}
-
-// hint is the one-line key reminder for the current pane.
-func (m *model) hint() string {
-	if m.busy {
-		return "working; keys are ignored until it finishes"
-	}
-	if m.plan.Step == setup.StepPairingMaterial && m.staged == nil {
-		if m.fieldMode || !m.plan.PasteBlock {
-			return "tab moves, enter checks fields, ctrl+f returns to paste, pgup/pgdn scroll, esc quits"
-		}
-		return "paste block, ctrl+d reads it, ctrl+f types fields, pgup/pgdn scroll, esc quits"
-	}
-	return "tab moves, y/n answer, enter continues, pgup/pgdn scroll, esc quits"
-}
-
-// ---- text helpers --------------------------------------------------------------------------------
-
-// wrapText breaks a line at word boundaries for the given width and never returns an empty slice.
-func wrapText(text string, width int) []string {
-	text = terminalText(text)
-	if width < 1 {
-		width = 1
-	}
-	if text == "" {
-		return []string{""}
-	}
-	var lines []string
-	remaining := []rune(text)
-	for lipgloss.Width(string(remaining)) > width {
-		fit := 0
-		for fit < len(remaining) && lipgloss.Width(string(remaining[:fit+1])) <= width {
-			fit++
-		}
-		if fit == 0 {
-			fit = 1 // A wide glyph cannot fit in a one-cell terminal, but keep the rune intact.
-		}
-		cut := fit
-		for index := fit - 1; index > 0; index-- {
-			if unicode.IsSpace(remaining[index]) {
-				cut = index
-				break
-			}
-		}
-		lines = append(lines, strings.TrimRight(string(remaining[:cut]), " "))
-		remaining = remaining[cut:]
-		for len(remaining) > 0 && unicode.IsSpace(remaining[0]) {
-			remaining = remaining[1:]
-		}
-	}
-	return append(lines, string(remaining))
-}
-
-// terminalText makes control and directional format characters visible so source-provided text cannot
-// inject terminal controls or visually reorder the wizard's instructions.
-func terminalText(text string) string {
-	var out strings.Builder
-	for _, r := range text {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			fmt.Fprintf(&out, "\\u{%04X}", r)
-			continue
-		}
-		out.WriteRune(r)
-	}
-	return out.String()
-}
-
-func wrapColumn(text string, width int) []string {
-	var lines []string
-	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
 		lines = append(lines, wrapText(line, width)...)
 	}
-	return lines
+
+	todo := m.summary.Todo
+	if !endsWithRoundTrip(todo) {
+		todo = append(todo, roundTripLine)
+	}
+	if len(todo) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, m.theme.accent("YOUR TURN"))
+		for _, item := range todo {
+			lines = append(lines, wrapText(terminalText("  - "+item), width)...)
+		}
+	}
+
+	if len(m.lines) > 0 {
+		lines = append(lines, "")
+		for _, line := range m.lines {
+			lines = append(lines, wrapText(terminalText(line), width)...)
+		}
+	}
+
+	// The checklist scrolls like every other screen, so a long list of YOUR TURN rows cannot be cut off.
+	m.pane.height = height - 1
+	m.pane.SetLines(lines)
+	visible := m.pane.View()
+	above, below := m.pane.More()
+
+	out := make([]string, 0, len(visible)+3)
+	if above {
+		out = append(out, m.theme.dim("^ more above (PageUp)"))
+	}
+	out = append(out, visible...)
+	if below {
+		out = append(out, m.theme.dim("v more below (PageDown)"))
+	}
+	out = append(out, m.theme.dim("enter or q: exit"))
+	return strings.Join(out, "\n") + "\n"
 }
 
-func runeWidth(text string) int { return lipgloss.Width(text) }
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+// statusWord is the plain word for a status, so the sidebar never relies on a mark or a colour alone.
+func statusWord(status setup.Status) string {
+	switch status {
+	case setup.StatusDone:
+		return "done"
+	case setup.StatusAlready:
+		return "already done"
+	case setup.StatusSkipped:
+		return "skipped"
+	case setup.StatusNotDone:
+		return "not done"
+	case setup.StatusYourTurn:
+		return "your turn"
 	}
-	return b
+	return ""
 }
 
-// minInt is the smaller of two ints.
-func minInt(a, b int) int {
-	if a < b {
-		return a
+// statusMark is the icon for a status; the status word is always shown beside it.
+func statusMark(status setup.Status) string {
+	switch status {
+	case setup.StatusDone, setup.StatusAlready:
+		return "✓"
+	case setup.StatusSkipped:
+		return "–"
+	case setup.StatusYourTurn:
+		return "!"
+	case setup.StatusNotDone:
+		return "!"
 	}
-	return b
+	return "○"
+}
+
+// roundTripLine is the fixed last line of every checklist (contract 4.1 step 9).
+const roundTripLine = "scenario 8 round trip: PENDING USER EXECUTION"
+
+// endsWithRoundTrip reports whether the checklist already carries it.
+func endsWithRoundTrip(todo []string) bool {
+	return len(todo) > 0 && todo[len(todo)-1] == roundTripLine
 }

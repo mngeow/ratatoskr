@@ -130,9 +130,9 @@ shown as YOUR TURN, are allowed), `1` failed or stopped, `2` not a terminal or b
 1. **Re-run safe.** Each step detects that it is already done, shows the result and moves on. It never deletes or silently
    overwrites the config, the credential, the journal, the plist or the logs.
 2. **The pairing code never touches disk, argv, the environment or a log.** It is passed in memory to the redemption code
-   that `pair` also uses and is never rendered, even in a redraw or an error. **Zeroing is best effort only:** Bubble Tea
-   delivers a paste as a Go string (`tea.PasteMsg.Content`), and `Redeem` and `gw.Pair` take strings, so copies cannot all be
-   wiped. `Close` zeroes what it can. (This replaces the earlier wording that said the code is held in a byte slice.)
+   that `pair` also uses and is never rendered, even in a redraw or an error (the view shows byte counts only). The TUI keeps
+   it in wipeable `[]byte` buffers, but **zeroing is best effort only:** Bubble Tea delivers a paste as a Go string
+   (`tea.PasteMsg.Content`), and `Redeem` and `gw.Pair` take strings, so copies cannot all be wiped. `Close` zeroes what it can. (This replaces the earlier wording that said the code is held in a byte slice.)
 3. **Echo.** The code goes into a masked input (or the masked paste area); there is no `stty` and no echo to restore.
    Only the URL and the pin are ever shown back; the code appears as `received`.
 4. **Terminals only:** exit `2` unless stdin and stdout are terminals.
@@ -140,12 +140,43 @@ shown as YOUR TURN, are allowed), `1` failed or stopped, `2` not a terminal or b
    (rule 6).
 6. **Exit-3 meaning is kept:** if redemption may or may not have happened, setup says so and does not retry on its own.
 
-**Keys (final, per the lead's report; UNVERIFIED, never rendered):** `tab` and `shift+tab` move between fields. In the
-masked paste area `enter` inserts a newline and `ctrl+d` submits the block (so a paste that arrives as keystrokes, not
-bracketed, still works). In the typed fallback (URL, pin, masked code) `enter` checks and stages the fields, and `ctrl+d`
-submits a focused masked code field. `ctrl+f` switches between the paste and the separate fields; `ctrl+u` clears a secret;
-`y`, `n` and `space` answer a consent; `pgup` and `pgdn` scroll. `esc` arms quit and a second `esc` or `enter` confirms;
-`ctrl+c` quits without confirming but waits for a running step to finish (`requestQuit`).
+**Screen and controls (as implemented in the redesign the lead integrated; SOURCE
+`integrations/openrig/internal/setup/tui/model.go` and `components.go`; every interactive behaviour is UNVERIFIED, nothing was
+run or rendered).** There are no Ctrl-only paths; Ctrl+D, Ctrl+F and Ctrl+U were removed.
+
+- **Layout:** a header `Ratatoskr ⇄ OpenRig setup`, `Step N of 9 · <title>` and a progress bar with `k/9 steps done`. A
+  sidebar of the nine steps appears at or above a minimum width (marks `✓` done or already, `●` current, `○` to do, `–`
+  skipped, `!` not done or your turn, **always with a word**, never colour alone); below it, a one-line mark strip sits in the
+  header. The main pane scrolls (`PgUp`/`PgDn`, with more-above and more-below hints). A footer shows a persistent legend
+  for the focused control. Below the minimum size it shows `terminal too small: make it at least WxH` and keeps its state.
+- **Navigation:** `Tab`/`Shift+Tab` and `Up`/`Down` move focus (inside the step 3 method list, `Up`/`Down` choose). `Left`/`Right`
+  move the text cursor, flip a Yes/No toggle, or pick a button. `Space`, `y` and `n` set a toggle. `Enter` moves from a field
+  or toggle to the next control, presses a focused button, opens the chosen method in the method list, and adds a line in the
+  paste box. `Home`, `End`, `Backspace` and `Delete` edit a field. `?` toggles the full help, except inside a text field or the
+  paste box, where it is typed. `Esc` leaves the paste or fields subview to the method choice (discarding its input and any
+  staged block), goes from review back to the source screen, and at a step's top level opens the quit dialog. On the summary,
+  `Enter` or `q` exits.
+- **Quit:** `Ctrl+C` anywhere, or `Esc` at a step's top level, opens `Quit setup? Nothing more will be changed.` with the steps
+  done and the buttons `[ Stay ] [ Quit ]`, **Stay focused**; `Esc` in the dialog means Stay. While an engine call or a
+  validation is running, the dialog says the current step finishes first and Quit waits for it. `Ctrl+C` quits at once only
+  if nothing has been changed or applied yet.
+- **Forms:** a visible `[ Back ] [ Continue ]` row with Continue focused; a blocked button is dimmed with the reason shown
+  (`1 field needs attention`, `checking the latest field value`, `a required field is still empty`). Back on a step form is
+  blocked: applied steps are never reopened. Each keystroke is validated by the engine's `Validate` (serialised; the newest
+  value wins) and shows `✓ valid` or `! <error>` under the field; `Apply` field errors land on their fields.
+- **Consents** start at exactly the engine's default (table below). Step 6's follow rounds are new screens within step 6.
+- **Step 3:** a method chooser (the `keep` toggle first when a credential exists; `keep` Yes applies it directly) offering
+  *Paste the whole output of `rtk gateway participant pair openrig-main` (recommended)* or *Enter the URL, the certificate pin
+  and the code separately*. **Paste screen:** a bordered masked box showing only `received, hidden (N bytes)`; a bracketed
+  paste, or `Enter` after a typed line, reads automatically once a line starting `the address above was recorded` is present;
+  buttons `[ Read pasted text ] [ Clear ] [ Back ]`; a parse error keeps the masked buffer for a retry. **Fields screen:** URL
+  and pin text fields with inline validation and a masked code field (bytes only, never validated or rendered). **Review:**
+  URL, certificate pin, the plain-HTTP warning, the rotation note, the stale-address note, `pairing code: received`, then the
+  `use` toggle and Continue.
+- **Secrets:** wipeable `[]byte` buffers; the view shows byte counts only. A bracketed paste arrives from Bubble Tea as a Go
+  string (`tea.PasteMsg.Content`), so wiping that copy is best effort (rule 2).
+- **Dependencies:** `bubbles` is **not** adopted (it needs five module downloads the user has not approved); only
+  `internal/setup/tui` imports Charm.
 
 **Steps and consent defaults (engine ids):**
 

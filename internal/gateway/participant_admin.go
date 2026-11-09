@@ -18,7 +18,7 @@ import (
 
 // participantUsage lists the three commands; adminUsage includes the same lines.
 const participantUsage = `usage:
-  rtk gateway participant pair ID
+  rtk gateway participant pair ID [--insecure-http]
   rtk gateway participant list
   rtk gateway participant revoke ID`
 
@@ -46,20 +46,52 @@ func runParticipant(ctx context.Context, store *Store, args []string, out, errOu
 // mints nothing, because a code with no address to use it at is not usable. The endpoint file is written by
 // the gateway when it starts and is advice; if the gateway has since stopped the address is stale, which the
 // output says.
+//
+// --insecure-http is the owner's explicit request for a plain-HTTP block. It does not change the listener: it
+// only checks that the recorded one is plain HTTP on a tailnet or LAN address, and refuses BEFORE a code is
+// minted otherwise. Without it nothing changes, so an HTTPS listener still gives the HTTPS block and an
+// already-plain listener still gives the plain one.
 func runParticipantPair(ctx context.Context, store *Store, args []string, out, errOut io.Writer, now time.Time) error {
 	flags := flagSet("participant pair", errOut)
-	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("gateway: participant pair: %w\n%s", err, participantUsage)
+	plainHTTP := flags.Bool("insecure-http", false, "")
+	// The flag package stops at the first non-flag, so the ID may come before the flag
+	// (`pair openrig-main --insecure-http`): parse again after taking the ID.
+	var id string
+	rest := args
+	for {
+		if err := flags.Parse(rest); err != nil {
+			return fmt.Errorf("gateway: participant pair: %w\n%s", err, participantUsage)
+		}
+		if flags.NArg() == 0 {
+			break
+		}
+		if id != "" {
+			return fmt.Errorf("gateway: participant pair needs exactly one ID\n%s", participantUsage)
+		}
+		id, rest = flags.Arg(0), flags.Args()[1:]
+		if len(rest) == 0 {
+			break
+		}
 	}
-	if flags.NArg() != 1 {
+	if id == "" {
 		return fmt.Errorf("gateway: participant pair needs exactly one ID\n%s", participantUsage)
 	}
-	id := flags.Arg(0)
 
 	endpoint, running := LoadParticipantEndpoint(store.dir)
 	if !running {
 		return fmt.Errorf("gateway: the participant listener is not running: no readable %s in %s. Start the gateway with %s ADDR, then run this again. No code was made",
 			participantEndpointName, store.dir, FlagParticipantListen)
+	}
+
+	if *plainHTTP {
+		// Checked before CreateParticipantCode: a refusal mints nothing.
+		switch {
+		case endpoint.Scheme == schemeHTTPS:
+			return fmt.Errorf("gateway: the participant listener at %s is HTTPS. For plain HTTP, restart the gateway with %s (the host's --insecure-http does not apply to the participant API), then run this again. Or pair without --insecure-http and use the HTTPS block. No code was made",
+				endpoint.Listen, FlagParticipantInsecureHTTP)
+		case endpoint.Class == "loopback":
+			return fmt.Errorf("gateway: --insecure-http does not apply: the participant listener at %s is loopback, which is plain HTTP already. Pair without --insecure-http. No code was made", endpoint.Listen)
+		}
 	}
 
 	existing, found, err := store.GetParticipant(ctx, id)

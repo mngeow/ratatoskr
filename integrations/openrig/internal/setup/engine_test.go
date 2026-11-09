@@ -183,9 +183,6 @@ func TestStagePairRefusesTheKeyPinAndShortCodes(t *testing.T) {
 	if _, err := e.StagePair("https://10.0.0.5:7790", "sha256//QUJD", []byte("code")); err == nil {
 		t.Fatal("the key pin must be refused")
 	}
-	if _, err := e.StagePair("http://10.0.0.5:7790", "", []byte("code")); err == nil {
-		t.Fatal("plain http must be refused without --insecure-http")
-	}
 	if _, err := e.StagePair("https://10.0.0.5:7790", "sha256:"+hex64, []byte("two words")); err == nil {
 		t.Fatal("a code with a space must be refused")
 	}
@@ -200,3 +197,84 @@ func TestSummaryEndsWithTheScenarioLine(t *testing.T) {
 }
 
 var _ = config.Version
+
+func TestPlainHTTPValidatesAndNoFlagTextRemains(t *testing.T) {
+	e := testEngine(t, "linux", &fakeRun{})
+	if msg := e.Validate(StepPairingMaterial, "url", "http://10.0.0.5:7790"); msg != "" {
+		t.Fatalf("http must validate without the launch flag: %q", msg)
+	}
+	for _, bad := range []string{"ftp://10.0.0.5:7790", "http://10.0.0.5", "http://u@10.0.0.5:7790", "http://10.0.0.5:7790/x"} {
+		msg := e.Validate(StepPairingMaterial, "url", bad)
+		if msg == "" || strings.Contains(msg, "--insecure-http") {
+			t.Fatalf("%q: want a format message without the flag text, got %q", bad, msg)
+		}
+	}
+}
+
+func TestNormalizeURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://10.0.0.5:7790/":                       "https://10.0.0.5:7790",
+		"https://10.0.0.5:7790\n":                      "https://10.0.0.5:7790",
+		"  participant API: http://10.0.0.5:7790/\r\n": "http://10.0.0.5:7790",
+		"Participant API:http://10.0.0.5:7790":         "http://10.0.0.5:7790",
+	} {
+		if got := NormalizeURL(in); got != want {
+			t.Errorf("NormalizeURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+	e := testEngine(t, "linux", &fakeRun{})
+	sum, err := e.StagePair("participant API: http://10.0.0.5:7790/\n", "", []byte("code"))
+	if err != nil || sum.URL != "http://10.0.0.5:7790" || !sum.Plain {
+		t.Fatalf("unexpected %v %+v", err, sum)
+	}
+	if _, err := e.StagePair("http://10.0.0.5:7790", "sha256:"+hex64, []byte("code")); err == nil {
+		t.Fatal("a pin with an http URL must still be refused")
+	}
+}
+
+func TestPlainHTTPNeedsAllowHTTP(t *testing.T) {
+	e := testEngine(t, "linux", &fakeRun{})
+	if _, err := e.ParsePaste(block(false, "http://10.0.0.5:7790", false, false)); err != nil {
+		t.Fatal(err)
+	}
+	r := e.Apply(context.Background(), StepPairingMaterial, Answers{Yes: map[string]bool{"use": true}})
+	if r.Status != "" || len(r.Lines) == 0 || len(r.FieldErrors) != 0 || e.st.staged == nil || e.st.cand.ParticipantURL != "" {
+		t.Fatalf("http without allow_http must not apply and must keep staging: %+v", r)
+	}
+	r = e.Apply(context.Background(), StepPairingMaterial, Answers{Yes: map[string]bool{"use": true, "allow_http": true}})
+	if r.Status != StatusDone || !e.insecureHTTP() || e.st.cand.ParticipantURL != "http://10.0.0.5:7790" {
+		t.Fatalf("allow_http must apply: %+v", r)
+	}
+	cr := e.Apply(context.Background(), StepConfig, Answers{})
+	if cr.Status != StatusDone {
+		t.Fatalf("an accepted http config must be written: %+v", cr)
+	}
+	if _, err := config.Load(e.env.ConfigPath, true); err != nil {
+		t.Fatalf("the written config must load: %v", err)
+	}
+}
+
+func TestHTTPsUnchangedAndLaunchFlagRemovesTheQuestion(t *testing.T) {
+	e := testEngine(t, "linux", &fakeRun{})
+	if _, err := e.ParsePaste(block(false, "https://10.0.0.5:7790", true, false)); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.Apply(context.Background(), StepPairingMaterial, Answers{Yes: map[string]bool{"use": true}}); r.Status != StatusDone || e.st.allowHTTP {
+		t.Fatalf("https must apply without allow_http: %+v", r)
+	}
+	has := func(p Plan) bool {
+		for _, q := range p.Questions {
+			if q.ID == "allow_http" {
+				return !q.DefaultYes
+			}
+		}
+		return false
+	}
+	if p, _ := e.Plan(context.Background(), StepPairingMaterial); !has(p) {
+		t.Fatal("allow_http (default No) must be offered without the launch flag")
+	}
+	e.env.InsecureHTTP = true
+	if p, _ := e.Plan(context.Background(), StepPairingMaterial); has(p) {
+		t.Fatal("the launch flag must remove the question")
+	}
+}

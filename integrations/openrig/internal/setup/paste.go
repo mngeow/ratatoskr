@@ -63,7 +63,7 @@ func Wipe(b []byte) {
 //	key pin (...): sha256//BASE64              ignored: a different rule
 //	the address above was recorded ...
 //
-// Unknown lines are ignored. The code is never part of an error message.
+// Unknown lines are ignored. Lines end at LF, CRLF or a lone CR. The code is never part of an error message.
 func ParsePaste(text []byte) (Pasted, error) {
 	var p Pasted
 	if !utf8.Valid(text) {
@@ -71,7 +71,9 @@ func ParsePaste(text []byte) (Pasted, error) {
 	}
 	haveCode := false
 	var certValue string
-	for _, raw := range bytes.Split(text, []byte("\n")) {
+	// CR, CRLF and LF all end a line: bracketed paste from macOS terminals arrives with CR. FieldsFunc yields
+	// subslices of text (no copy of the block) and drops the empty lines, which are skipped anyway.
+	for _, raw := range bytes.FieldsFunc(text, func(r rune) bool { return r == '\n' || r == '\r' }) {
 		line := strings.TrimSpace(string(raw))
 		if line == "" {
 			continue
@@ -145,14 +147,12 @@ func ParsePaste(text []byte) (Pasted, error) {
 	return p, nil
 }
 
-// CheckAgainst validates a parsed block against the configured participant and the plain-HTTP flag.
-func (p Pasted) CheckAgainst(participant string, insecureHTTP bool) error {
+// CheckAgainst validates a parsed block against the configured participant. A plain http:// block passes here:
+// whether the owner accepts plain HTTP is a consent the engine asks for when the values are confirmed.
+func (p Pasted) CheckAgainst(participant string) error {
 	if p.Participant != participant {
 		return fmt.Errorf("the block is for participant %q, but this bridge is configured as %q: run the pair command for %s on VM-A",
 			Printable(p.Participant), participant, participant)
-	}
-	if p.Plain && !insecureHTTP {
-		return errors.New("the participant API is plain http://: re-run with --insecure-http to accept it, or ask for an https listener")
 	}
 	return nil
 }

@@ -158,15 +158,24 @@ func (e *Engine) validate(step StepID, id, value string) string {
 	return ""
 }
 
+// NormalizeURL is the one place a typed or pasted participant URL is cleaned: surrounding whitespace (a trailing
+// newline included), a leading "participant API:" label and one trailing "/" are dropped. Validate, StagePair and
+// ParsePaste all use it, so what the owner confirms is what is written.
+func NormalizeURL(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= len("participant API:") && strings.EqualFold(value[:len("participant API:")], "participant API:") {
+		value = strings.TrimSpace(value[len("participant API:"):])
+	}
+	return strings.TrimSuffix(value, "/")
+}
+
 func (e *Engine) validateParticipantURL(value string) string {
-	u, err := url.Parse(value)
+	u, err := url.Parse(NormalizeURL(value))
 	switch {
-	case err != nil || u.Host == "" || u.Port() == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "":
+	case err != nil || u.Host == "" || u.Port() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "":
 		return "must be scheme://host:port"
-	case u.Scheme == "http" && !e.env.InsecureHTTP:
-		return "plain http:// needs --insecure-http, or an https listener"
 	case u.Scheme != "http" && u.Scheme != "https":
-		return "must start with https:// (or http:// with --insecure-http)"
+		return "must start with https:// or http://"
 	}
 	return ""
 }

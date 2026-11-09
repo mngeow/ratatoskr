@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -57,11 +58,8 @@ func TestParsePastePlainHTTP(t *testing.T) {
 	if err != nil || !p.Plain || p.Pin != "" {
 		t.Fatalf("unexpected %v %+v", err, p)
 	}
-	if err := p.CheckAgainst("openrig-main", false); err == nil {
-		t.Fatal("plain http must be refused without --insecure-http")
-	}
-	if err := p.CheckAgainst("openrig-main", true); err != nil {
-		t.Fatal(err)
+	if err := p.CheckAgainst("openrig-main"); err != nil {
+		t.Fatal("a plain http block must parse and check: consent is asked later")
 	}
 }
 
@@ -77,7 +75,7 @@ func TestParsePasteWrongParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.CheckAgainst("other-name", false); err == nil {
+	if err := p.CheckAgainst("other-name"); err == nil {
 		t.Fatal("a block for another participant must be refused")
 	}
 }
@@ -185,5 +183,20 @@ func TestShellQuote(t *testing.T) {
 	}
 	if got := shellQuote("/a b/it's"); got != `'/a b/it'\''s'` {
 		t.Fatalf("got %s", got)
+	}
+}
+
+func TestParsePasteAcceptsCRCRLFAndLF(t *testing.T) {
+	lf := block(false, "https://10.0.0.5:7790", true, true)
+	for name, text := range map[string][]byte{
+		"LF":   lf,
+		"CRLF": bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n")),
+		"CR":   bytes.ReplaceAll(lf, []byte("\n"), []byte("\r")),
+	} {
+		p, err := ParsePaste(append([]byte(nil), text...))
+		if err != nil || p.Participant != "openrig-main" || p.URL != "https://10.0.0.5:7790" || p.Pin != "sha256:"+hex64 ||
+			p.StaleNote == "" || len(p.Code) == 0 || bytes.ContainsAny(p.Code, "\r\n") {
+			t.Errorf("%s: %v %+v", name, err, p)
+		}
 	}
 }

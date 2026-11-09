@@ -54,6 +54,15 @@ func (e *Engine) planPairingMaterial() Plan {
 	if p.NeedCode {
 		p.Fields = append(p.Fields, Field{ID: "code", Label: "pairing code", Secret: true})
 	}
+	if !e.env.InsecureHTTP {
+		// Asked only when the staged address is http://; the front shows it for a Plain summary.
+		p.Questions = append(p.Questions, Question{ID: "allow_http", Prompt: "Accept plain HTTP for this gateway? (not encrypted)", DefaultYes: false,
+			Detail: []string{
+				"The participant API is http://, so nothing is encrypted: anything on the network path can read the pairing code, the credential and every message.",
+				"Choose Yes only on a network you trust (for example a private VM network). Otherwise give the gateway an https listener.",
+				"The bridge must then run with --insecure-http: setup prints that command for you, and the launchd service step is skipped.",
+			}})
+	}
 	p.Questions = append(p.Questions, Question{ID: "use", Prompt: "Use these values?", DefaultYes: true})
 	return p
 }
@@ -78,7 +87,7 @@ func (e *Engine) parsePaste(block []byte) (PasteSummary, error) {
 	if err != nil {
 		return PasteSummary{}, err
 	}
-	if err := p.CheckAgainst(e.st.cand.Participant, e.env.InsecureHTTP); err != nil {
+	if err := p.CheckAgainst(e.st.cand.Participant); err != nil {
 		p.Wipe()
 		return PasteSummary{}, err
 	}
@@ -97,6 +106,7 @@ func (e *Engine) stagePair(rawURL, pin string, code []byte) (PasteSummary, error
 		Wipe(code)
 		return PasteSummary{}, err
 	}
+	rawURL = NormalizeURL(rawURL)
 	if msg := e.validateParticipantURL(rawURL); msg != "" {
 		Wipe(code)
 		return PasteSummary{}, errors.New("URL: " + msg)
@@ -133,7 +143,13 @@ func (e *Engine) applyPairingMaterial(a Answers) Result {
 	st := &e.st
 	if st.oldCfg != nil && st.credHave && st.oldCfg.ParticipantURL != "" && yes(a, "keep", true) && st.staged == nil {
 		st.cand.ParticipantURL, st.cand.CertificateSHA256 = st.oldCfg.ParticipantURL, st.oldCfg.CertificateSHA256
-		return Result{Status: StatusAlready, Detail: "credential and gateway address kept"}
+		r := Result{Status: StatusAlready, Detail: "credential and gateway address kept"}
+		if strings.HasPrefix(st.oldCfg.ParticipantURL, "http://") && !e.env.InsecureHTTP {
+			// Keeping an http address the owner already runs is treated as already opted in; say so.
+			st.allowHTTP = true
+			r.Lines = append(r.Lines, "The kept gateway address is plain http:// (not encrypted); keeping it counts as accepting plain HTTP. The bridge must run with --insecure-http.")
+		}
+		return r
 	}
 	if st.staged == nil {
 		return Result{Lines: []string{"nothing is staged: paste the block, or fill the fields, before confirming"}}
@@ -142,6 +158,12 @@ func (e *Engine) applyPairingMaterial(a Answers) Result {
 		st.staged.wipe()
 		st.staged = nil
 		return Result{Lines: []string{"discarded: paste or enter the values again"}}
+	}
+	if strings.HasPrefix(st.staged.URL, "http://") && !e.env.InsecureHTTP {
+		if !yes(a, "allow_http", false) {
+			return Result{Lines: []string{"This gateway is plain http://: set 'Accept plain HTTP' to Yes to use it, or ask for an https listener."}}
+		}
+		st.allowHTTP = true
 	}
 	st.cand.ParticipantURL, st.cand.CertificateSHA256 = st.staged.URL, st.staged.Pin
 	st.chosen.wipe()
@@ -156,7 +178,7 @@ func (e *Engine) planConfig() Plan {
 	p := Plan{Step: StepConfig}
 	c := st.cand
 	c.Home = e.env.Home
-	if err := c.Check(e.env.InsecureHTTP); err != nil {
+	if err := c.Check(e.insecureHTTP()); err != nil {
 		p.Notices = append(p.Notices, Notice{Warn, line("the configuration would not be accepted: %v (nothing will be written)", err)})
 		return p
 	}
@@ -185,7 +207,7 @@ func (e *Engine) applyConfig(a Answers) Result {
 	st := &e.st
 	c := st.cand
 	c.Home = e.env.Home
-	if err := c.Check(e.env.InsecureHTTP); err != nil {
+	if err := c.Check(e.insecureHTTP()); err != nil {
 		return e.stop(StepConfig, StatusNotDone, ExitUsage, "the configuration would not be accepted: %v (nothing was written)", err)
 	}
 	if st.oldCfg != nil && len(DiffConfig(st.oldCfg, c)) == 0 {
@@ -199,11 +221,11 @@ func (e *Engine) applyConfig(a Answers) Result {
 		}
 		return e.stop(StepConfig, StatusNotDone, ExitFailed, "the configuration was not written and there is no usable one")
 	}
-	backup, err := WriteConfig(e.env.ConfigPath, c, e.env.InsecureHTTP, e.env.Now())
+	backup, err := WriteConfig(e.env.ConfigPath, c, e.insecureHTTP(), e.env.Now())
 	if err != nil {
 		return e.stop(StepConfig, StatusNotDone, ExitFailed, "%v", err)
 	}
-	loaded, err := config.Load(e.env.ConfigPath, e.env.InsecureHTTP)
+	loaded, err := config.Load(e.env.ConfigPath, e.insecureHTTP())
 	if err != nil {
 		return e.stop(StepConfig, StatusNotDone, ExitFailed, "the file was written but does not load: %v", err)
 	}

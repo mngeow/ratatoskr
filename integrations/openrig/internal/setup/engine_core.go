@@ -63,6 +63,7 @@ type state struct {
 	plistChanged   bool
 	serviceStarted bool
 	foreignJob     bool
+	allowHTTP      bool // the owner accepted plain HTTP inside the wizard (allow_http, or kept an http config)
 
 	svc serviceState
 
@@ -217,6 +218,9 @@ func (e *Engine) stop(step StepID, status Status, code int, format string, args 
 	return Result{Step: step, Status: status, Detail: fmt.Sprintf(format, args...), Stop: true, ExitCode: code,
 		Lines: []string{fmt.Sprintf(format, args...)}}
 }
+
+// insecureHTTP is the one effective plain-HTTP switch: the launch flag or the owner's consent in step 3.
+func (e *Engine) insecureHTTP() bool { return e.env.InsecureHTTP || e.st.allowHTTP }
 
 func yes(a Answers, id string, def bool) bool {
 	if v, ok := a.Yes[id]; ok {

@@ -27,7 +27,7 @@ const adminUsage = `usage:
   rtk gateway card-target set HOST URL [--fingerprint sha256:...]
   rtk gateway card-target show [HOST]
   rtk gateway card-target clear HOST
-  rtk gateway participant pair ID
+  rtk gateway participant pair ID [--insecure-http]
   rtk gateway participant list
   rtk gateway participant revoke ID
   rtk gateway log [--follow] [--limit N]

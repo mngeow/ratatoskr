@@ -23,8 +23,10 @@ sends a reply through the same gateway.
 
 Reuse the working scenario 2 or 3 gateway, `vmb` pairing, daemon and Claude. Do not make a second gateway or change
 `XDG_STATE_HOME` unless that is intentional. The Mac must reach VM-A TCP 7790; VM-B must reach VM-A TCP 7777. Restrict
-those flows to the required peers. This scenario keeps the participant API on HTTPS; a plain-LAN host connection does
-not change that. Never pass `--participant-insecure-http` here.
+those flows to the required peers. **HTTPS is the primary path for the participant API**, and a plain-LAN host
+connection does not change that. An unencrypted participant listener is an **optional, deliberately insecure variant**
+for a trusted private network - how to ask for it, and what it costs, is under
+[Optional: a plain-HTTP participant listener](#optional-a-plain-http-participant-listener).
 
 ## 1. Start or reuse the gateway and VM-B Claude
 
@@ -87,8 +89,12 @@ credential and ends this participant's open sessions`. Redeeming that code repla
 participant sessions.
 
 On a plain-HTTP participant listener, no certificate pin is printed and none may be set in `certificate_sha256`.
-Where the listener requires opt-in, the gateway prints its plain-HTTP warning instead. This scenario requires the
-participant API to remain HTTPS.
+Where the listener requires opt-in, the gateway prints its plain-HTTP warning instead.
+
+**The participant API may be `http://` as well as `https://`.** Paste whichever address the gateway prints on its
+`participant API:` line; nothing asks you to type a command-line flag into a field. This scenario's primary path is
+still HTTPS, and an `http://` gateway needs one explicit consent inside the wizard, described under
+[TUI keys and pairing input](#tui-keys-and-pairing-input).
 
 ## 3. Build the bridge on the Mac
 
@@ -113,9 +119,10 @@ status if either is not a terminal. Use an absolute config path if you do not wa
 "<USER_BIN>/ratatoskr-openrig" setup --config "<CONFIG>"
 ```
 
-For the HTTPS scenario, omit `--insecure-http`. Setup is a Bubble Tea v2 full-screen TUI: the step list stays on the
-left and the current step on the right. It is safe to re-run; it detects existing state and asks before replacing
-files or changing a running service.
+For the HTTPS scenario, omit `--insecure-http`. Setup is a Bubble Tea v2 full-screen wizard with a title, progress,
+and a step sidebar at 80 columns or wider. Below that width the step marks fold into the header; below 40×12 it
+keeps its state and asks you to resize. The current step has a scrolling form and a persistent key footer. It is safe
+to re-run; it detects existing state and asks before replacing files or changing a running service.
 
 ### The nine steps
 
@@ -124,7 +131,8 @@ files or changing a running service.
    daemon URL. Its read-only readiness check defaults to Yes; setup never starts an OpenRig seat.
 3. **VM-A pairing material** shows the VM-A command and pin rule, then accepts the full pairing block in a masked
    area or lets you enter URL, certificate pin and masked code separately. The `keep` and `use` questions default to
-   Yes when present. The pasted code is never rendered.
+   Yes when present. For a staged plain-HTTP address, `allow_http` is shown on review and defaults to No. The pasted
+   code is never rendered.
 4. **Configuration file** shows the proposed field changes. `write` defaults to Yes; an existing config is backed
    up when replaced.
 5. **Pair** redeems the staged code in memory when no credential exists. Existing credentials are left alone; setup
@@ -139,18 +147,63 @@ files or changing a running service.
 9. **Finish** shows the checklist and ends with `scenario 8 round trip: PENDING USER EXECUTION`.
 
 The other explicit choices are `check` in step 2, `keep`/`use` in step 3 and `write` in step 4; each starts at the
-engine's default, which is Yes. Press `y` or `n` (or Space) to change a focused question.
+engine's default, which is Yes. When offered for a staged plain-HTTP address, `allow_http` starts at No. Press `y` or
+`n` (or Space) to change a focused question.
 
-### TUI keys and pasted block
+### TUI keys and pairing input
 
-- Tab / Shift+Tab and Up / Down move between fields and questions; Left / Right, Home / End, Backspace and Delete edit
-  ordinary fields.
-- In the masked whole-block area, Enter inserts a newline. This preserves line breaks when a terminal or multiplexer
-  delivers the paste as individual key presses instead of one bracketed-paste event. Press Ctrl+D to submit the block.
-- Ctrl+F switches between the pasted block and typed URL/pin/code fields. In the typed fallback, Enter checks and
-  stages the pairing fields. Ctrl+D submits a focused masked code field; Ctrl+U clears the active secret buffer.
-- Esc arms quit; a second Esc or Enter confirms. Ctrl+C quits without confirming, but if a step is running it waits for that step to finish first. The wizard does not echo the pairing
-  code or pasted block.
+- Tab / Shift+Tab move focus. Up / Down move between controls, except in the pairing-method list where they choose
+  Paste or typed fields. Left / Right edit a field, switch a Yes/No answer, or choose a focused button. Home / End,
+  Backspace and Delete edit ordinary fields. Enter advances from a field or question and activates the selected
+  button. PageUp / PageDown scroll the pane; `?` opens full help (in a text field or the paste area it is typed
+  instead).
+- The pairing step first asks how to provide the values. In the masked paste area, bracketed paste is read as one
+  block; Enter adds a newline when typing it line by line. The block is parsed automatically when a line begins with
+  `the address above was recorded`, or you can focus **Read pasted text**. **Clear** wipes it. Parse errors keep the
+  content masked so you can retry or clear it. The code and block are never rendered.
+- The typed fallback has URL, certificate pin and a masked code field. A pasted URL may include the gateway's
+  `participant API:` label and one trailing LF or CRLF; setup trims those before validating. Real interior line breaks
+  are refused without changing the field. The code stays in a wipeable byte buffer and is not passed through field
+  validation. Enter advances through fields; Continue stages them. No Ctrl+D, Ctrl+F or Ctrl+U shortcuts are used.
+- **A plain `http://` address needs an explicit consent.** On the review screen, directly above **Use these
+  values?**, setup shows **Accept plain HTTP for this gateway? (not encrypted)**, which starts at **No** and lists
+  why: the address is `http://`, so nothing is encrypted and anything on the network path can read the pairing code,
+  the credential and every message; choose Yes only on a network you trust, otherwise give the gateway an `https`
+  listener. Continuing with it left at No does not fail the step - the wizard stays on the review with the gateway's
+  explanation and applies nothing. Choosing Yes lets the wizard use the address; the bridge must then run with
+  `--insecure-http`, and the launchd service step is skipped. `setup --insecure-http` is an optional way to accept
+  plain HTTP for the whole run in advance. Leave the certificate pin empty for `http://`: there is no certificate to
+  pin, and a pin typed by mistake is refused.
+
+### Optional: a plain-HTTP participant listener
+
+This is not the primary path, it is **not** recommended, and nothing here has been exercised. It exists because a
+private VM network sometimes has no TLS story at all, and saying "never" left no supported way to do it.
+
+Two different flags are involved, and they are not interchangeable:
+
+- `rtk gateway --listen ... --insecure-http` makes the **host** protocol plain. It does **not** apply to the
+  participant API.
+- `rtk gateway --listen ... --participant-insecure-http` makes the **participant API** plain. Only this one changes
+  what the pairing block contains, and the gateway prints a warning that the credential and every message are readable
+  on the network path.
+
+The sequence:
+
+1. Restart the gateway with `--participant-insecure-http` (the participant listener must be on, as usual). Loopback
+   needs no flag and refuses it; a tailnet or LAN address needs it, plus `--participant-allow-lan` for a LAN address.
+2. On VM-A, pair with the flag that asks for a plain block:
+   `rtk gateway participant pair openrig-main --insecure-http`. The block then carries an `http://` address and **no
+   certificate pin lines**, because there is no certificate to pin.
+3. In the setup wizard, the address stages normally and the review screen asks **Accept plain HTTP for this gateway?
+   (not encrypted)**, which starts at **No** and explains that the pairing code, the credential and every message are
+   readable on the path. Accept it **only** on a network you trust. `certificate_sha256` stays unset.
+4. The bridge then runs with `--insecure-http` in the foreground, and the launchd service step is skipped. `setup
+   --insecure-http` remains an optional way to accept plain HTTP for the whole run in advance.
+- Esc backs out of a pairing subview to the method choice and discards that subview's input; from review it returns
+  to the source without discarding the staged review. Esc at a step's top level opens **Quit setup?**, with **Stay**
+  focused by default. Ctrl+C uses the same safe quit path; if an engine operation is running, choosing Quit waits
+  for it to finish. The final checklist exits with Enter or `q`.
 
 ### When the launchd service step is skipped
 
