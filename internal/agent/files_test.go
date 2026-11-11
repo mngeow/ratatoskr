@@ -34,7 +34,7 @@ func TestClaudeSpecArgv(t *testing.T) {
 		"--session-id", spec.SessionID,
 		"--mcp-config", mcpPath,
 		"--settings", settingsPath,
-		"--allowedTools", "mcp__ratatoskr__ratatoskr_send",
+		"--allowedTools", "mcp__ratatoskr__ratatoskr_send", "mcp__ratatoskr__ratatoskr_discover",
 	}
 	if len(spec.Argv) != len(want) {
 		t.Fatalf("argv has %d elements, want %d: %v", len(spec.Argv), len(want), spec.Argv)
@@ -186,6 +186,7 @@ func TestCodexSpecArgv(t *testing.T) {
 		"-c", `mcp_servers.ratatoskr.url="http://127.0.0.1:4100/mcp"`,
 		"-c", `mcp_servers.ratatoskr.bearer_token_env_var="RATATOSKR_TOKEN"`,
 		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode="approve"`,
+		"-c", `mcp_servers.ratatoskr.tools.ratatoskr_discover.approval_mode="approve"`,
 	}
 	for _, event := range HookEvents {
 		want = append(want, "-c", `hooks.`+event+
@@ -196,7 +197,8 @@ func TestCodexSpecArgv(t *testing.T) {
 	want = append(want,
 		"You are alpha in a Ratatoskr session; your peer is beta."+
 			" Message a peer only with the ratatoskr_send tool from the ratatoskr MCP server;"+
-			" a built-in send_message does not reach peers. Do not start any work or message anyone now."+
+			" a built-in send_message does not reach peers. To see who is on the network, call ratatoskr_discover first."+
+			" Do not start any work or message anyone now."+
 			" Reply with one short line saying you are ready, then wait.")
 
 	if len(spec.Argv) != len(want) {
@@ -318,7 +320,7 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 // every character matters, and it is visible in the process list, so nothing
 // secret may appear in it.
 func TestCodexStartupPrompt(t *testing.T) {
-	const tail = "Message a peer only with the ratatoskr_send tool from the ratatoskr MCP server; a built-in send_message does not reach peers. Do not start any work or message anyone now. Reply with one short line saying you are ready, then wait."
+	const tail = "Message a peer only with the ratatoskr_send tool from the ratatoskr MCP server; a built-in send_message does not reach peers. To see who is on the network, call ratatoskr_discover first. Do not start any work or message anyone now. Reply with one short line saying you are ready, then wait."
 
 	tests := []struct {
 		name  string
@@ -418,8 +420,8 @@ func TestClaudeIgnoresPeers(t *testing.T) {
 			t.Fatalf("Claude's argv carries a startup prompt: %q", arg)
 		}
 	}
-	if last := with.Argv[len(with.Argv)-1]; last != claudeToolName {
-		t.Fatalf("last argv element = %q, want the --allowedTools value %q", last, claudeToolName)
+	if last := with.Argv[len(with.Argv)-1]; last != claudeDiscoverToolName {
+		t.Fatalf("last argv element = %q, want the --allowedTools value %q", last, claudeDiscoverToolName)
 	}
 	if string(mcpWith) != string(mcpWithout) {
 		t.Fatalf("%s changed when peers were set", claudeMCPFileName)

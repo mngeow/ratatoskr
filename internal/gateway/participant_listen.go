@@ -2,8 +2,7 @@ package gateway
 
 // The participant listener: its own address, flag table, transport, endpoint file and http.Server. The
 // participant API (docs/implementation/participant-api-contract.md, section 2) cannot share the host
-// listener, whose transport is fixed by the address class (plain HTTP on a tailnet), because the participant
-// API is HTTPS there by default.
+// listener: its transport is HTTPS by default (D18) while the host listener's is plain by default (D17).
 //
 // This file has no participant route yet; ParticipantHandler answers 404 to everything until P2.
 //
@@ -48,40 +47,31 @@ const DefaultParticipantPort = 7790
 // daemon's --card-listen off.
 const ParticipantListenOff = "off"
 
-// hostAllowLANCountsForDefault is the one switch for the defaulted LAN case (architect ruling 2026-11-08: (a)).
-// true  (a): the host's --allow-lan is the LAN opt-in of the default address, so it is HTTPS; plain still needs
-//
-//	--participant-insecure-http, and the host's --insecure-http is never inherited.
-//
-// false (b): the default stays off on a LAN address unless --participant-allow-lan is given, and a status line
-//
-//	says how to turn it on.
-const hostAllowLANCountsForDefault = true
-
-// ParticipantOptions are the three participant flags of `rtk gateway --listen`. Listen "" means the default
-// address (the host --listen IP, port DefaultParticipantPort); ParticipantListenOff means the participant API
-// is off, and then the gateway's startup path, output and files are exactly as before it existed. The zero
-// value is therefore the DEFAULT, not off: a caller that wants the old behaviour says ParticipantListenOff.
+// ParticipantOptions are the participant flags of `rtk gateway`. Listen "" means the default address (the
+// host --listen IP, port DefaultParticipantPort: 0.0.0.0:7790 with the default host address, so narrowing
+// --listen narrows the participant API with it); ParticipantListenOff means the participant API is off, and
+// then the gateway's startup path, output and files are exactly as before it existed. The zero value is
+// therefore the DEFAULT, not off: a caller that wants the old behaviour says ParticipantListenOff.
 type ParticipantOptions struct {
 	Listen       string // --participant-listen: "", "off" or ADDR
-	AllowLAN     bool   // --participant-allow-lan
-	InsecureHTTP bool   // --participant-insecure-http
+	AllowLAN     bool   // --participant-allow-lan: RETIRED (N4), accepted and ignored; cmd/rtk warns
+	InsecureHTTP bool   // --participant-insecure-http: the plain-HTTP opt-in (D18), kept
 }
+
+// RetiredParticipantAllowLANWarning is printed once on stderr when --participant-allow-lan is given (N4).
+const RetiredParticipantAllowLANWarning = "warning: rtk gateway --participant-allow-lan is retired and has no effect (accepted for one release): any participant address may be named now."
 
 // ResolveParticipantListen turns the host plan and the participant flags into the participant plan. It
 // returns nil when the API is off. defaulted is true when the address was not typed. It touches no file,
 // lock or socket.
 //
 // UNTESTED.
-func ResolveParticipantListen(host ListenPlan, hostAllowLAN bool, options ParticipantOptions) (plan *ListenPlan, defaulted bool, err error) {
+func ResolveParticipantListen(host ListenPlan, options ParticipantOptions) (plan *ListenPlan, defaulted bool, err error) {
 	if options.Listen != "" {
 		plan, err = PlanParticipantListen(options)
 		return plan, false, err
 	}
 	options.Listen = netip.AddrPortFrom(host.Addr.Addr(), DefaultParticipantPort).String()
-	if hostAllowLANCountsForDefault && host.Class == ClassLAN && hostAllowLAN {
-		options.AllowLAN = true
-	}
 	plan, err = PlanParticipantListen(options)
 	if err != nil {
 		return nil, true, fmt.Errorf("%w (the participant listener defaulted to %s; use %s IP:PORT to choose another address, or %s %s to turn it off)",
@@ -90,24 +80,23 @@ func ResolveParticipantListen(host ListenPlan, hostAllowLAN bool, options Partic
 	return plan, true, nil
 }
 
-// PlanParticipantListen applies the participant flag table of contract section 2 to an explicit address, or
-// to ParticipantListenOff. It returns nil when the participant API is off. It touches no file, lock or socket.
+// PlanParticipantListen applies the participant flag table to an explicit address, or to
+// ParticipantListenOff. It returns nil when the participant API is off. It touches no file, lock or socket.
 //
-// The table is its own and is not planListenAs: that table's non-LAN branch forbids both flags and returns
-// plain HTTP, the opposite of the participant default on a tailnet.
+// The transport no longer follows the address class (D18):
 //
-//	off                              both other flags refused
-//	loopback                         both flags refused; plain HTTP
-//	Tailscale                        --participant-allow-lan refused; HTTPS, or plain with --participant-insecure-http
-//	LAN                              --participant-allow-lan required whatever else is set;
-//	                                 HTTPS, or plain with --participant-insecure-http
+//	off                              --participant-insecure-http refused
+//	loopback                         plain HTTP (the traffic never leaves this machine); --participant-insecure-http refused
+//	any other address                HTTPS, or plain with --participant-insecure-http
+//
+// --participant-allow-lan is retired (N4) and ignored here.
 //
 // UNTESTED.
 func PlanParticipantListen(options ParticipantOptions) (*ListenPlan, error) {
 	if options.Listen == ParticipantListenOff {
-		if options.AllowLAN || options.InsecureHTTP {
-			return nil, fmt.Errorf("gateway: %s and %s do not apply with %s %s",
-				FlagParticipantAllowLAN, FlagParticipantInsecureHTTP, FlagParticipantListen, ParticipantListenOff)
+		if options.InsecureHTTP {
+			return nil, fmt.Errorf("gateway: %s does not apply with %s %s",
+				FlagParticipantInsecureHTTP, FlagParticipantListen, ParticipantListenOff)
 		}
 		return nil, nil
 	}
@@ -116,36 +105,16 @@ func PlanParticipantListen(options ParticipantOptions) (*ListenPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	switch class {
-	case ClassLoopback:
-		if options.AllowLAN || options.InsecureHTTP {
+	if class == ClassLoopback {
+		if options.InsecureHTTP {
 			return nil, fmt.Errorf(
-				"%s: %s and %s do not apply to a loopback address, which is plain HTTP because the traffic never leaves this machine: drop the flag",
-				participantSubject, FlagParticipantAllowLAN, FlagParticipantInsecureHTTP)
+				"%s: %s does not apply to a loopback address, which is plain HTTP because the traffic never leaves this machine: drop the flag",
+				participantSubject, FlagParticipantInsecureHTTP)
 		}
 		return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportPlain}, nil
-
-	case ClassTailscale:
-		if options.AllowLAN {
-			return nil, fmt.Errorf(
-				"%s: %s applies only to a LAN address (10.x, 172.16-31.x, 192.168.x or fc00::/7), and %s is %s: drop the flag, or listen on a LAN address",
-				participantSubject, FlagParticipantAllowLAN, options.Listen, class)
-		}
-		if options.InsecureHTTP {
-			return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportPlain}, nil
-		}
-		return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportHTTPS}, nil
 	}
-
-	// LAN.
-	switch {
-	case !options.AllowLAN:
-		return nil, fmt.Errorf(
-			"%s: %s is a LAN address: add %s to listen on it (HTTPS with a pinned certificate; add %s for plain HTTP), or use a Tailscale or loopback address",
-			participantSubject, options.Listen, FlagParticipantAllowLAN, FlagParticipantInsecureHTTP)
-	case options.InsecureHTTP:
-		return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportLANHTTP}, nil
+	if options.InsecureHTTP {
+		return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportPlain}, nil
 	}
 	return &ListenPlan{Addr: addrPort, Class: class, Transport: TransportHTTPS}, nil
 }
@@ -153,12 +122,12 @@ func PlanParticipantListen(options ParticipantOptions) (*ListenPlan, error) {
 // planBoth validates the host plan and the participant plan together, before any file, lock or socket: both
 // must be valid, and they must not name the same bind endpoint. The participant plan is nil when the
 // participant API is off; defaulted says its address was not typed.
-func planBoth(listen string, allowLAN, insecureHTTP bool, participant ParticipantOptions) (host ListenPlan, part *ListenPlan, defaulted bool, err error) {
-	host, err = PlanListen(listen, allowLAN, insecureHTTP)
+func planBoth(listen string, https bool, participant ParticipantOptions) (host ListenPlan, part *ListenPlan, defaulted bool, err error) {
+	host, err = PlanListen(listen, https)
 	if err != nil {
 		return ListenPlan{}, nil, false, err
 	}
-	part, defaulted, err = ResolveParticipantListen(host, allowLAN, participant)
+	part, defaulted, err = ResolveParticipantListen(host, participant)
 	if err != nil {
 		return ListenPlan{}, nil, false, err
 	}
@@ -196,7 +165,7 @@ func SPKIPin(der []byte) (string, error) {
 type ParticipantEndpoint struct {
 	Listen      string `json:"listen"`
 	Scheme      string `json:"scheme"`
-	Class       string `json:"class"` // loopback, tailscale or lan
+	Class       string `json:"class"` // loopback, tailscale, lan, wildcard or public
 	Fingerprint string `json:"fingerprint,omitempty"`
 	SPKIPin     string `json:"spki_pin,omitempty"`
 }
@@ -207,6 +176,10 @@ func classWord(class AddrClass) string {
 		return "loopback"
 	case ClassTailscale:
 		return "tailscale"
+	case ClassWildcard:
+		return "wildcard"
+	case ClassPublic:
+		return "public"
 	}
 	return "lan"
 }
@@ -332,9 +305,9 @@ func validateParticipantEndpoint(endpoint ParticipantEndpoint) error {
 	return nil
 }
 
-// participantStatusLines is what the gateway prints about the participant listener, after the host lines:
-// the listening line, one transport line (for plain HTTP, the warning), and the firewall hint on a LAN.
-// The fingerprint is public; nothing secret appears.
+// participantStatusLines is what the gateway prints about the participant listener, after the host lines: the
+// listening line, one transport line (for plain HTTP, the warning) and the exposure note with the actual
+// port. The fingerprint is public; nothing secret appears.
 func participantStatusLines(plan ListenPlan, addr string, defaulted bool, fingerprint, spkiPin string) []string {
 	lines := []string{fmt.Sprintf("participant API listening on %s", addr)}
 	if defaulted {
@@ -350,10 +323,10 @@ func participantStatusLines(plan ListenPlan, addr string, defaulted bool, finger
 	default:
 		lines = append(lines, ParticipantPlainHTTPWarning)
 	}
-	if plan.Class == ClassLAN {
+	if plan.Class != ClassLoopback {
 		lines = append(lines, fmt.Sprintf(
-			"participant API is reachable by every device on this LAN; if an adapter cannot reach this address, check that this machine's firewall allows incoming TCP on port %d",
-			plan.Addr.Port()))
+			"participant API: reachable by whoever can route to %s; your firewall is the boundary (restrict inbound TCP on port %d to the machines that run adapters)",
+			addr, plan.Addr.Port()))
 	}
 	return lines
 }

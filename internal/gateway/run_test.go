@@ -8,18 +8,41 @@ import (
 	"testing"
 )
 
-// TestStatusLines: the listening line, exactly one transport line, and the firewall
-// hint for both LAN modes only.
+// TestStatusLines: the listening line, exactly one transport line, the dashboard exposure line with NO
+// authentication, and the firewall line, each with the real port (ADR-0009 D16, D17, D19).
 func TestStatusLines(t *testing.T) {
 	tests := []struct {
 		name        string
 		listen      string
-		allowLAN    bool
-		insecure    bool
+		https       bool
 		fingerprint string
 		want        []string
 		absent      []string
 	}{
+		{
+			name:   "default wildcard, plain",
+			listen: DefaultListen,
+			want: []string{
+				"gateway listening on 0.0.0.0:7777 (state in /state/gateway)",
+				"listening on every interface (0.0.0.0), including any public one",
+				PlainHTTPWarning,
+				"dashboard: http://<this machine's address>:7777/ui/ - NO authentication",
+				"restrict inbound TCP on port 7777",
+			},
+			absent: []string{"self-signed", "loopback only"},
+		},
+		{
+			name:        "wildcard over HTTPS",
+			listen:      "0.0.0.0:8443",
+			https:       true,
+			fingerprint: testFingerprint,
+			want: []string{
+				"transport: HTTPS, self-signed certificate, fingerprint " + testFingerprint,
+				"dashboard: https://<this machine's address>:8443/ui/ - NO authentication",
+				"restrict inbound TCP on port 8443",
+			},
+			absent: []string{"WARNING", "loopback only"},
+		},
 		{
 			name:   "loopback",
 			listen: "127.0.0.1:7777",
@@ -27,43 +50,19 @@ func TestStatusLines(t *testing.T) {
 				"gateway listening on 127.0.0.1:7777 (state in /state/gateway)",
 				"transport: plain HTTP; loopback only",
 			},
-			absent: []string{"Tailscale", "reachable by every device", "WARNING"},
+			absent: []string{"every interface", "WARNING"},
 		},
 		{
-			name:   "Tailscale",
-			listen: "100.64.0.1:7777",
-			want: []string{
-				"transport: plain HTTP; encrypted only if this address really is Tailscale",
-			},
-			absent: []string{"loopback only", "reachable by every device", "WARNING"},
-		},
-		{
-			name:        "LAN over HTTPS",
-			listen:      "192.168.1.20:7777",
-			allowLAN:    true,
-			fingerprint: testFingerprint,
-			want: []string{
-				"transport: HTTPS, self-signed certificate, fingerprint " + testFingerprint,
-				"reachable by every device on this LAN; if a runtime cannot reach this address, check that this machine's firewall allows incoming TCP on port 7777",
-			},
-			absent: []string{"WARNING", "loopback only", "Tailscale"},
-		},
-		{
-			name:     "LAN over plain HTTP",
-			listen:   "192.168.1.20:8080",
-			allowLAN: true,
-			insecure: true,
-			want: []string{
-				PlainHTTPWarning,
-				"incoming TCP on port 8080",
-			},
-			absent: []string{"self-signed", "loopback only", "Tailscale"},
+			name:   "an explicit address is not called every interface",
+			listen: "192.168.1.20:8080",
+			want:   []string{PlainHTTPWarning, "restrict inbound TCP on port 8080"},
+			absent: []string{"every interface", "self-signed"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			plan := mustPlan(t, tc.listen, tc.allowLAN, tc.insecure)
+			plan := mustPlan(t, tc.listen, tc.https)
 			lines := statusLines(plan, plan.Addr.String(), "/state/gateway", tc.fingerprint)
 
 			if len(lines) == 0 {
@@ -100,7 +99,7 @@ func TestStatusLines(t *testing.T) {
 
 // TestStatusLinesNeverContainASecret: no credential or key text can appear.
 func TestStatusLinesNeverContainASecret(t *testing.T) {
-	plan := mustPlan(t, "192.168.1.20:7777", true, false)
+	plan := mustPlan(t, "192.168.1.20:7777", true)
 	for _, line := range statusLines(plan, "192.168.1.20:7777", "/state/gateway", testFingerprint) {
 		for _, secret := range []string{"PRIVATE KEY", "Bearer", "credential"} {
 			if strings.Contains(line, secret) {

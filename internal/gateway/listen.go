@@ -1,8 +1,9 @@
 package gateway
 
-// The listen-address check. The gateway has no public mode: it binds a Tailscale
-// address, loopback or - with --allow-lan - a private LAN address, and nothing else,
-// so a mistake here cannot put a Ratatoskr gateway on the open internet.
+// The listen-address check (ADR-0009 D8, D14, D16). The gateway binds 0.0.0.0 by default and accepts
+// any IP literal with an explicit port: the wildcard and public refusals of ADR-0002 are gone, and
+// network firewalling is the exposure boundary, not this check. What stays is the IP-literal parsing:
+// no hostnames, no zones, no IPv4-mapped IPv6, no port 0.
 //
 // UNTESTED. Under GR-3 (docs/design/ground-rules.md) nothing here has been run:
 // only gofmt, go vet and go build have been applied. No address has been parsed
@@ -34,6 +35,10 @@ const (
 	// ClassLAN is a private address that is not Tailscale: 10.0.0.0/8, 172.16.0.0/12,
 	// 192.168.0.0/16 or fc00::/7.
 	ClassLAN
+	// ClassWildcard is the unspecified address (0.0.0.0 or ::): every interface of this machine.
+	ClassWildcard
+	// ClassPublic is any other address, including a public one.
+	ClassPublic
 )
 
 // String names the class for messages.
@@ -45,22 +50,25 @@ func (c AddrClass) String() string {
 		return "Tailscale"
 	case ClassLAN:
 		return "LAN"
+	case ClassWildcard:
+		return "wildcard"
+	case ClassPublic:
+		return "public"
 	}
 	return "unknown"
 }
 
-// Transport is how a gateway and its runtimes talk. It is fixed by the address class
-// and the flags the user typed, on each side separately; it is never learned from the
+// Transport is how a gateway and its runtimes talk. Since ADR-0009 it no longer depends on the address
+// class: it is fixed by the flags the user typed, on each side separately (host and dashboard: plain unless
+// --https; participant API: HTTPS unless --participant-insecure-http). It is never learned from the
 // network, because a network attacker could downgrade that.
 type Transport int
 
 const (
-	// TransportPlain is plain HTTP on a Tailscale or loopback address.
+	// TransportPlain is plain HTTP.
 	TransportPlain Transport = iota + 1
 	// TransportHTTPS is HTTPS with a self-signed certificate that runtimes pin.
 	TransportHTTPS
-	// TransportLANHTTP is plain HTTP on a LAN address, chosen with --insecure-http.
-	TransportLANHTTP
 )
 
 // classOf reports the class of an address that already passed the shared checks.
@@ -79,6 +87,17 @@ func classOf(addr netip.Addr) (AddrClass, bool) {
 	return 0, false
 }
 
+// classifyAny is classOf extended to every address: the wildcard and everything else are classes too.
+func classifyAny(addr netip.Addr) AddrClass {
+	if class, ok := classOf(addr); ok {
+		return class
+	}
+	if addr.IsUnspecified() {
+		return ClassWildcard
+	}
+	return ClassPublic
+}
+
 // ParseAddress validates a gateway address and says which class it is in.
 //
 // It is the one address rule, shared by the gateway's --listen and by the runtime's
@@ -86,9 +105,8 @@ func classOf(addr netip.Addr) (AddrClass, bool) {
 // repair. A hostname fails at the parse, which is the point - resolving a name would
 // make the accepted address depend on DNS.
 //
-// Loopback, Tailscale and LAN addresses are accepted here. Whether a LAN address may
-// be used is the flag tables' decision (PlanListen, and the runtime's), not this one's.
-// Public, link-local and unspecified addresses are refused whatever the flags say.
+// Every IP literal is accepted, the unspecified address and public addresses included (D16): the class
+// says what kind it is, and decides nothing. Hostnames are not accepted.
 //
 // UNTESTED.
 func ParseAddress(value string) (netip.AddrPort, AddrClass, error) {
@@ -125,16 +143,24 @@ func parseAddressAs(subject, value string) (netip.AddrPort, AddrClass, error) {
 	if addrPort.Addr().Is4In6() {
 		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q is an IPv4-mapped IPv6 address; give the IPv4 address itself", subject, value)
 	}
-	if addrPort.Addr().IsUnspecified() {
-		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q is the unspecified address; name the interface address explicitly", subject, value)
-	}
+	return addrPort, classifyAny(addrPort.Addr()), nil
+}
 
-	class, ok := classOf(addrPort.Addr())
-	if !ok {
+// parseAddressStrict is the address rule of ADR-0002 that ADR-0009 D16 lifted for the gateway's own listeners
+// only: loopback, Tailscale and private LAN addresses, and nothing else. A card target is an address the gateway
+// DIALS, so it keeps the refusals of the wildcard and of every public or link-local address.
+func parseAddressStrict(subject, value string) (netip.AddrPort, AddrClass, error) {
+	addrPort, class, err := parseAddressAs(subject, value)
+	if err != nil {
+		return netip.AddrPort{}, 0, err
+	}
+	switch class {
+	case ClassWildcard:
+		return netip.AddrPort{}, 0, fmt.Errorf("%s: %q is the unspecified address; name the interface address explicitly", subject, value)
+	case ClassPublic:
 		return netip.AddrPort{}, 0, fmt.Errorf(
 			"%s: %s is not a loopback, Tailscale or private LAN address: only 127.0.0.0/8 or ::1, 100.64.0.0/10 or fd7a:115c:a1e0::/48, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7 are allowed, and there is no public %s mode",
-			subject, value, subject,
-		)
+			subject, value, subject)
 	}
 	return addrPort, class, nil
 }
@@ -146,62 +172,52 @@ type ListenPlan struct {
 	Transport Transport
 }
 
-// Flag spellings, shared so a message and a table cannot drift apart.
+// Flag spellings, shared so a message and a table cannot drift apart. FlagAllowLAN and FlagInsecureHTTP are
+// RETIRED on `rtk gateway` (D20): accepted, ignored, and warned about for one release (N2).
 const (
+	FlagHTTPS        = "--https"
 	FlagAllowLAN     = "--allow-lan"
 	FlagInsecureHTTP = "--insecure-http"
 )
 
-// PlanListen applies the gateway flag table of the contract's "Direct LAN" section.
-//
-// Every refusal names the flag or the address to use instead, and none touches a file,
-// a lock or a socket: this is the first thing Run does.
+// DefaultListen is the address of `rtk gateway` without --listen (D8): every interface, port 7777, shared
+// by the host protocol and the dashboard.
+const DefaultListen = "0.0.0.0:7777"
+
+// RetiredGatewayFlagWarning is printed once on stderr when `rtk gateway` receives --allow-lan or
+// --insecure-http (N2). It names the breaking case.
+const RetiredGatewayFlagWarning = "warning: rtk gateway --allow-lan and --insecure-http are retired and have no effect (they stay accepted for one release). " +
+	"Plain HTTP is now the default on the host port, and --allow-lan is not needed: any address may be named. " +
+	"BREAKING: a LAN gateway that relied on the old HTTPS default is now plain HTTP, readable by anything on the network path; add --https to keep HTTPS."
+
+// PlanListen turns a --listen value and the --https flag into the host plan: the transport is plain unless
+// https is set, whatever the address (D17, D19). Nothing is checked beyond the address literal. It touches
+// no file, lock or socket: this is the first thing Run does.
 //
 // UNTESTED.
-func PlanListen(value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
-	return planListenAs("gateway", value, allowLAN, insecureHTTP)
+func PlanListen(value string, https bool) (ListenPlan, error) {
+	return planListenAs("gateway", value, https)
 }
 
-// PlanListenFor is PlanListen for another listener: the flag table is the same, the messages name
-// subject instead of "gateway". With subject "gateway" the messages are byte for byte PlanListen's.
+// PlanListenFor is PlanListen for another listener: the messages name subject instead of "gateway". With
+// subject "gateway" the messages are byte for byte PlanListen's.
 //
 // UNTESTED.
-func PlanListenFor(subject, value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
-	return planListenAs(subject, value, allowLAN, insecureHTTP)
+func PlanListenFor(subject, value string, https bool) (ListenPlan, error) {
+	return planListenAs(subject, value, https)
 }
 
-// planListenAs is the one flag table; subject only changes the words.
-func planListenAs(subject, value string, allowLAN, insecureHTTP bool) (ListenPlan, error) {
+// planListenAs is the one plan; subject only changes the words.
+func planListenAs(subject, value string, https bool) (ListenPlan, error) {
 	addrPort, class, err := parseAddressAs(subject, value)
 	if err != nil {
 		return ListenPlan{}, err
 	}
-
-	if class != ClassLAN {
-		if allowLAN || insecureHTTP {
-			return ListenPlan{}, fmt.Errorf(
-				"%s: %s and %s apply only to a LAN address (10.x, 172.16-31.x, 192.168.x or fc00::/7), and %s is %s: drop the flag, or listen on a LAN address",
-				subject, FlagAllowLAN, FlagInsecureHTTP, value, class,
-			)
-		}
-		return ListenPlan{Addr: addrPort, Class: class, Transport: TransportPlain}, nil
+	transport := TransportPlain
+	if https {
+		transport = TransportHTTPS
 	}
-
-	switch {
-	case !allowLAN && insecureHTTP:
-		return ListenPlan{}, fmt.Errorf(
-			"%s: %s also needs %s: plain HTTP on a LAN is allowed only after the LAN listener itself is (use %s for HTTPS, or both for plain HTTP)",
-			subject, FlagInsecureHTTP, FlagAllowLAN, FlagAllowLAN,
-		)
-	case !allowLAN:
-		return ListenPlan{}, fmt.Errorf(
-			"%s: %s is a LAN address: add %s to listen on it (HTTPS with a pinned certificate), or use a Tailscale or loopback address",
-			subject, value, FlagAllowLAN,
-		)
-	case insecureHTTP:
-		return ListenPlan{Addr: addrPort, Class: class, Transport: TransportLANHTTP}, nil
-	}
-	return ListenPlan{Addr: addrPort, Class: class, Transport: TransportHTTPS}, nil
+	return ListenPlan{Addr: addrPort, Class: class, Transport: transport}, nil
 }
 
 // Listen binds one parsed address, and only that one.

@@ -45,11 +45,13 @@ type command struct {
 	enteredViaSSH bool     // kindAttach, --entered-via-ssh: this window runs inside an SSH entry
 	admin         []string // kindGatewayAdmin, the command word first
 
-	// allowLAN and insecureHTTP are the gateway's two opt-ins; fingerprint and
-	// insecureHTTP are the runtime's transport choice. insecureHTTP is shared because a
-	// command is only ever one of the two kinds, and the semantic refusals (which flag
-	// goes with which address) stay in gateway.PlanListen and link.planTransport, so
-	// there is one table per side.
+	// https is `rtk gateway --https` (N1): the host protocol and the dashboard share one listener, HTTPS
+	// with the self-signed identity; without it both are plain HTTP (ADR-0009 D17, D19).
+	//
+	// allowLAN and insecureHTTP of `rtk gateway` are RETIRED (N2): parsed so they can be warned about, then
+	// ignored. On `rtk runtime pair`, insecureHTTP is accepted and has no effect except a warning (N3);
+	// fingerprint still means HTTPS with that pin.
+	https        bool
 	allowLAN     bool
 	insecureHTTP bool
 	fingerprint  string
@@ -70,15 +72,15 @@ type command struct {
 	// checked by gateway.Run, before any state is touched.
 	cardPollInterval time.Duration
 
-	// The participant API's three flags of `rtk gateway --listen`. Empty and false mean it is off.
-	// gateway.RunWith checks them against each other and against --listen before any state is touched.
+	// The participant API's flags of `rtk gateway`. participantAllowLAN is RETIRED (N4): parsed to be warned
+	// about, then ignored. gateway.RunWith checks the rest against --listen before any state is touched.
 	participantListen       string
 	participantAllowLAN     bool
 	participantInsecureHTTP bool
 }
 
 const (
-	gatewayNeedsListen = "rtk: gateway needs --listen ADDR to run (or one of: pair HOST, unpair HOST, hosts, log, show ID)"
+	gatewayNeedsListen = "rtk: gateway could not read its arguments (rtk gateway runs on 0.0.0.0:7777 by default; --listen ADDR overrides it)"
 	runtimePairUsage   = "rtk: runtime pair needs --gateway ADDR and --code CODE"
 )
 
@@ -145,6 +147,7 @@ func parseGateway(args []string) (command, error) {
 	listen := fs.String("listen", "", "")
 	allowLAN := fs.Bool("allow-lan", false, "")
 	insecureHTTP := fs.Bool("insecure-http", false, "")
+	https := fs.Bool("https", false, "")
 	cardPoll := fs.Duration("card-poll-interval", 0, "")
 	participantListen := fs.String("participant-listen", "", "")
 	participantAllowLAN := fs.Bool("participant-allow-lan", false, "")
@@ -152,14 +155,11 @@ func parseGateway(args []string) (command, error) {
 	if err := fs.Parse(args); err != nil {
 		return command{}, fmt.Errorf("%s (%v)", gatewayNeedsListen, err)
 	}
-	if *listen == "" {
-		return command{}, fmt.Errorf("%s", gatewayNeedsListen)
-	}
 	if rest := fs.Args(); len(rest) > 0 {
 		return command{}, fmt.Errorf("rtk: gateway: unexpected argument %q", rest[0])
 	}
 	return command{
-		kind: kindGatewayServe, listen: *listen,
+		kind: kindGatewayServe, listen: *listen, https: *https,
 		allowLAN: *allowLAN, insecureHTTP: *insecureHTTP, cardPollInterval: *cardPoll,
 		participantListen: *participantListen, participantAllowLAN: *participantAllowLAN,
 		participantInsecureHTTP: *participantInsecureHTTP,

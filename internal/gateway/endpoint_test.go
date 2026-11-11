@@ -19,7 +19,7 @@ func endpointDir(t *testing.T) string {
 
 func lanPlan(t *testing.T, transport Transport) ListenPlan {
 	t.Helper()
-	plan, err := PlanListen("192.168.1.20:7777", transport == TransportHTTPS, transport == TransportLANHTTP)
+	plan, err := PlanListen("192.168.1.20:7777", transport == TransportHTTPS)
 	if err != nil {
 		t.Fatalf("PlanListen: %v", err)
 	}
@@ -47,17 +47,17 @@ func TestWriteThenLoadEndpoint(t *testing.T) {
 		},
 		{
 			name:       "plain HTTP on a LAN address",
-			plan:       lanPlan(t, TransportLANHTTP),
+			plan:       lanPlan(t, TransportPlain),
 			wantScheme: schemeHTTP,
 		},
 		{
 			name:       "loopback",
-			plan:       mustPlan(t, "127.0.0.1:7777", false, false),
+			plan:       mustPlan(t, "127.0.0.1:7777", false),
 			wantScheme: schemeHTTP,
 		},
 		{
 			name:       "Tailscale",
-			plan:       mustPlan(t, "100.64.0.1:7777", false, false),
+			plan:       mustPlan(t, "100.64.0.1:7777", false),
 			wantScheme: schemeHTTP,
 		},
 	}
@@ -97,9 +97,9 @@ func TestWriteThenLoadEndpoint(t *testing.T) {
 	}
 }
 
-func mustPlan(t *testing.T, listen string, allowLAN, insecureHTTP bool) ListenPlan {
+func mustPlan(t *testing.T, listen string, https bool) ListenPlan {
 	t.Helper()
-	plan, err := PlanListen(listen, allowLAN, insecureHTTP)
+	plan, err := PlanListen(listen, https)
 	if err != nil {
 		t.Fatalf("PlanListen(%q): %v", listen, err)
 	}
@@ -266,7 +266,7 @@ func TestWriteEndpointIsAtomic(t *testing.T) {
 	if err := WriteEndpoint(dir, lanPlan(t, TransportHTTPS), testFingerprint); err != nil {
 		t.Fatalf("first WriteEndpoint: %v", err)
 	}
-	if err := WriteEndpoint(dir, mustPlan(t, "127.0.0.1:7777", false, false), ""); err != nil {
+	if err := WriteEndpoint(dir, mustPlan(t, "127.0.0.1:7777", false), ""); err != nil {
 		t.Fatalf("second WriteEndpoint: %v", err)
 	}
 

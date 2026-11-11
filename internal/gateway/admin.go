@@ -107,41 +107,53 @@ func runPair(ctx context.Context, store *Store, args []string, out, errOut io.Wr
 	fmt.Fprintln(out, code)
 	fmt.Fprintf(out, "host: %s\n", host)
 	fmt.Fprintln(out, "expires in 10 minutes; single use")
-	fmt.Fprintln(out, readyLine(store.dir, code))
+	line, hints := readyLineAndHints(store.dir, code)
+	fmt.Fprintln(out, line)
+	for _, hint := range hints {
+		fmt.Fprintln(out, hint)
+	}
 	return nil
 }
 
 // readyLine is the command to run on the paired machine.
 //
-// When the gateway recorded its endpoint, the line carries the real address and the
-// transport flag the runtime must type: --fingerprint for HTTPS, --insecure-http for a
-// plain-HTTP LAN gateway, and nothing for Tailscale or loopback. Without a usable
-// endpoint - this gateway process may not be running, or the file may be old - the
-// address stays the literal placeholder ADDR, because guessing would be worse.
+// When the gateway recorded its endpoint, the line carries the address and the transport flag the runtime
+// must type: --fingerprint for HTTPS, nothing for plain HTTP (the default since ADR-0009; --insecure-http is
+// retired). A gateway bound to the wildcard recorded 0.0.0.0, which is never printed as a dial target: the
+// address is a suggested local address of this machine (DialAddresses) or a visible placeholder. Without a
+// usable endpoint - this gateway process may not be running, or the file may be old - the address stays the
+// literal placeholder ADDR, because guessing would be worse.
 //
 // UNTESTED.
 func readyLine(dir, code string) string {
+	line, _ := readyLineAndHints(dir, code)
+	return line
+}
+
+// readyLineAndHints is readyLine plus the advisory lines to print after it.
+func readyLineAndHints(dir, code string) (string, []string) {
 	const prefix = "on that machine: rtk runtime pair --gateway "
 
 	endpoint, ok := LoadEndpoint(dir)
 	if !ok {
-		return prefix + "ADDR --code " + code
+		return prefix + "ADDR --code " + code, nil
 	}
 
+	address, others := DialAddresses(endpoint.Listen)
+	hints := dialHintLines(endpoint.Listen, address, others)
+	if address == "" {
+		address = dialPlaceholder(endpoint.Listen)
+	}
 	// An IPv6 literal has brackets, which zsh (the macOS default) treats as a glob and
 	// refuses with "no matches found", so the address is single-quoted. IPv4 is not.
-	address := endpoint.Listen
 	if strings.Contains(address, "[") {
 		address = "'" + address + "'"
 	}
 	line := prefix + address + " --code " + code
-	switch {
-	case endpoint.Scheme == schemeHTTPS:
+	if endpoint.Scheme == schemeHTTPS {
 		line += " --fingerprint " + endpoint.Fingerprint
-	case endpoint.LAN:
-		line += " --insecure-http"
 	}
-	return line
+	return line, hints
 }
 
 func runUnpair(ctx context.Context, store *Store, args []string, out, errOut io.Writer, now time.Time) error {

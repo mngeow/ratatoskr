@@ -16,12 +16,15 @@ const (
 	// server's tool name by necessity: internal/agent must not import
 	// internal/server, and the two are visible together only to a reader of both.
 	peerToolName = "ratatoskr_send"
+	// discoverToolName is the discovery tool (ADR-0009), duplicated for the same reason.
+	discoverToolName = "ratatoskr_discover"
 
-	codexServerURLKey      = "mcp_servers.ratatoskr.url"
-	codexTokenEnvKey       = "mcp_servers.ratatoskr.bearer_token_env_var"
-	codexApprovalModeKey   = "mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode"
-	codexTokenEnvName      = "RATATOSKR_TOKEN"
-	codexApprovalModeValue = "approve"
+	codexServerURLKey            = "mcp_servers.ratatoskr.url"
+	codexTokenEnvKey             = "mcp_servers.ratatoskr.bearer_token_env_var"
+	codexApprovalModeKey         = "mcp_servers.ratatoskr.tools.ratatoskr_send.approval_mode"
+	codexDiscoverApprovalModeKey = "mcp_servers.ratatoskr.tools.ratatoskr_discover.approval_mode"
+	codexTokenEnvName            = "RATATOSKR_TOKEN"
+	codexApprovalModeValue       = "approve"
 )
 
 // codexSpec builds Codex's launch spec.
@@ -43,6 +46,7 @@ func codexSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Laun
 	addConfig(codexServerURLKey, tomlString("http://"+p.ServerAddr+"/mcp"))
 	addConfig(codexTokenEnvKey, tomlString(codexTokenEnvName))
 	addConfig(codexApprovalModeKey, tomlString(codexApprovalModeValue))
+	addConfig(codexDiscoverApprovalModeKey, tomlString(codexApprovalModeValue))
 
 	for _, event := range HookEvents {
 		command := HookCommand(p.RtkPath, p.DisplayName, event, p.SessionDir)
@@ -66,6 +70,7 @@ func codexSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Laun
 // codexStartupPromptText is the fixed part of the prompt.
 const codexStartupPromptText = "Message a peer only with the " + peerToolName +
 	" tool from the ratatoskr MCP server; a built-in send_message does not reach peers." +
+	" To see who is on the network, call " + discoverToolName + " first." +
 	" Do not start any work or message anyone now. Reply with one short line saying you are ready, then wait."
 
 // codexStartupPrompt builds the first turn Codex is launched with.

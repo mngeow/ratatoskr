@@ -1,0 +1,81 @@
+{{- /* "network" is executed with *dashboard.NetworkPage. */ -}}
+{{define "network" -}}
+<!doctype html>
+<html lang="en">
+<head>{{template "head" .Chrome}}</head>
+<body class="page page-network">
+{{template "chrome" .Chrome}}
+<main>
+  <h1>Network</h1>
+  <p class="sub">The graph and this table refresh every 5 s · snapshot <time id="graph-updated-at">{{.Graph.GeneratedAt}}</time></p>
+
+  {{/* The status strip is its own partial, refreshed by htmx; the first answer arrives on load. */}}
+  <section id="status-strip" class="status" aria-live="polite" aria-label="Gateway status"
+           hx-get="{{.StatusURL}}" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <p class="status-line">reading the gateway status…</p>
+  </section>
+
+  <div class="toolbar" role="group" aria-label="Graph controls">
+    <button type="button" class="btn" data-graph-action="zoom-in" aria-label="Zoom in">+</button>
+    <button type="button" class="btn" data-graph-action="zoom-out" aria-label="Zoom out">−</button>
+    <button type="button" class="btn" data-graph-action="fit">Fit</button>
+    <button type="button" class="btn" data-graph-action="reset">Reset layout</button>
+    <label class="toggle" for="messages-seen">
+      <input type="checkbox" id="messages-seen" data-graph-toggle="seen">
+      <span>Messages seen (24 h)</span>
+    </label>
+    <span class="toggle-note">sends, not deliveries</span>
+  </div>
+
+  <div class="layout">
+    <div class="graph-wrap">
+      <div id="network-graph" class="graph" role="img"
+           data-graph-url="{{.GraphURL}}"
+           data-card-prefix="{{.CardURL}}"
+           aria-label="Graph of the gateway and its hosts. The host table below carries the same information and is the keyboard path."></div>
+      <noscript>
+        <p class="note">The graph needs JavaScript. The host table below lists every host with the same facts and opens the same Agent Card.</p>
+      </noscript>
+      <div id="graph-notes" aria-live="polite">
+        {{if .Graph.Truncated}}<p class="note">The graph was truncated to fit its size bound; the table below is complete.</p>{{end}}
+        {{if .Graph.EdgesPartial}}<p class="note">The messages-seen edges are partial for this snapshot.</p>{{end}}
+      </div>
+      <p id="graph-refresh-status" class="unknown" role="status" aria-live="polite">Loading the network graph…</p>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="conn conn-live"><span class="conn-mark" aria-hidden="true"></span>live</span> solid spoke</li>
+        <li><span class="conn conn-notlive"><span class="conn-mark" aria-hidden="true"></span>not live</span> dashed spoke</li>
+        <li><span class="conn conn-neverseen"><span class="conn-mark" aria-hidden="true"></span>never seen</span> dotted spoke</li>
+        <li>Ring and spoke style are the connection; the chip is the card's freshness; every state also carries its word.</li>
+        <li>Overlay counts are gateway-decided sends, including failures; host-stored is the subset a host saved, not a read receipt.</li>
+      </ul>
+    </div>
+
+    <section id="card-panel" class="card-panel" aria-live="polite" aria-label="Agent Card">
+      <p class="empty">Choose a host in the graph, or a row in the table below, to read its Agent Card.</p>
+    </section>
+  </div>
+
+  <h2>Hosts</h2>
+  <p class="note">The same selection as the graph, without it. Card text is what the host's owner declared; nothing here checks what a session can do.</p>
+  <table class="hosts" id="host-table">
+    <caption>Every paired host, with connection, card freshness and session count as separate facts.</caption>
+    <thead><tr><th scope="col">Host</th><th scope="col">Connection</th><th scope="col">Card</th><th scope="col">Sessions</th><th scope="col"><span class="visually-hidden">Agent Card</span></th></tr></thead>
+    <tbody>
+      {{range .HostRows}}
+      <tr data-host="{{.Name}}">
+        <th scope="row">{{.Name}}</th>
+        <td><span class="conn conn-{{if eq .ConnectionLabel "live"}}live{{else if eq .ConnectionLabel "never seen"}}neverseen{{else}}notlive{{end}}"><span class="conn-mark" aria-hidden="true"></span>{{.ConnectionLabel}}</span></td>
+        <td>{{template "statechip" .CardState}}{{if .CardAge}} <span class="age">{{.CardAge}}</span>{{end}}{{if .CardSource}} <span class="source">{{.CardSource}}</span>{{end}}</td>
+        <td>{{.SessionCount}}</td>
+        <td><a class="host-link" href="{{.CardURL}}" hx-get="{{.CardURL}}" hx-target="#card-panel" hx-swap="innerHTML">Read the Agent Card</a></td>
+      </tr>
+      {{end}}
+      {{if not .HostRows}}<tr class="empty-row"><td colspan="5">No paired hosts are known to this gateway.</td></tr>{{end}}
+    </tbody>
+  </table>
+</main>
+<script src="/ui/static/cytoscape.min.js" defer></script>
+<script src="/ui/static/app.js" defer></script>
+</body>
+</html>
+{{- end}}

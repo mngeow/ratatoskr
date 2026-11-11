@@ -1,0 +1,43 @@
+{{- /* "overview" is executed with *dashboard.OverviewPage. */ -}}
+{{define "overview" -}}
+<!doctype html>
+<html lang="en">
+<head>{{template "head" .Chrome}}</head>
+<body class="page page-overview">
+{{template "chrome" .Chrome}}
+<main>
+  <h1>Overview</h1>
+  <p class="sub">Updated {{.Chrome.GeneratedAt}} · refreshes every 5 s on the Network page</p>
+
+  <ul class="stats" aria-label="Gateway summary">
+    <li class="stat"><span class="stat-value">{{.LiveHostCount}} / {{.HostCount}}</span><span class="stat-label">hosts live</span></li>
+    <li class="stat"><span class="stat-value">{{.FreshCardCount}}</span><span class="stat-label">card fresh, {{.StaleCardCount}} stale, {{.OfflineCardCount}} offline, {{.NoCardCount}} none, {{.RejectedCardCount}} rejected</span></li>
+    <li class="stat"><span class="stat-value">{{.ConnectedSessionCount}}</span><span class="stat-label">sessions connected of {{.SessionCount}}</span></li>
+  </ul>
+
+  <h2>Needs a look</h2>
+  {{if .Attention}}
+  <table class="hosts">
+    <caption>Hosts whose connection or card needs attention. Card freshness and connection are separate facts.</caption>
+    <thead><tr><th scope="col">Host</th><th scope="col">Connection</th><th scope="col">Card</th><th scope="col">Card age</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+    <tbody>
+      {{range .Attention}}
+      <tr>
+        <th scope="row">{{.Name}}</th>
+        <td><span class="conn conn-{{if eq .ConnectionLabel "live"}}live{{else if eq .ConnectionLabel "never seen"}}neverseen{{else}}notlive{{end}}"><span class="conn-mark" aria-hidden="true"></span>{{.ConnectionLabel}}</span></td>
+        <td>{{template "statechip" .CardState}}</td>
+        <td>{{if .CardAge}}{{.CardAge}}{{else}}<span class="unknown">unknown</span>{{end}}</td>
+        <td><a href="{{$.Chrome.NetworkURL}}">Open the Network page</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  {{if eq .HostCount 0}}<p class="empty">No paired hosts are known to this gateway.</p>{{else}}<p class="empty">Every paired host is live with a fresh card.</p>{{end}}
+  {{end}}
+
+  <p class="note">The graph, the full host table and each Agent Card are on the <a href="{{.Chrome.NetworkURL}}">Network page</a>. Card text is what each host's owner wrote: a declaration, not a verification of what any session can do.</p>
+</main>
+</body>
+</html>
+{{- end}}

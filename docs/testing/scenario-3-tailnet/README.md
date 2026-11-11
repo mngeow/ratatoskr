@@ -6,9 +6,9 @@ The same three machines, connected by Tailscale instead of your LAN.
 
 > **Expected results come from reading the code,** and the team hasn't run these steps, so tell the team when something differs. Replace each `<PLACEHOLDER>`.
 
-> **This isn't HTTPS.** `rtk` refuses HTTPS on a Tailscale address: it allows `--allow-lan` and `--fingerprint` on LAN addresses only. These steps use plain HTTP inside Tailscale's WireGuard tunnel, and the gateway says so when it starts. To test HTTPS, use [scenario 2](../scenario-2-lan-http/README.md) with `rtk gateway --listen <GW_LAN_IP>:<GW_PORT> --allow-lan`, and pair with the printed `--fingerprint` line. Adding HTTPS on a tailnet would be a small product change, and is the user's decision.
+> **This isn't HTTPS.** These steps use plain HTTP inside Tailscale's WireGuard tunnel, and the gateway says so when it starts. On this branch (ADR-0009) HTTPS is an opt-in on any address: add `--https` to `rtk gateway`, and pair with the printed `--fingerprint` line.
 
-> **Planned flag change: decided, not built.** On 2026-11-11 the owner decided ([ADR-0009](../../adr/0009-agent-discovery-tool/index.html), D18 to D20) to retire the gateway's `--allow-lan` and `--insecure-http`. Every gateway service will listen on `0.0.0.0` by default; the host port 7777 will be plain HTTP by default, with pinned HTTPS (`--fingerprint` pairing) kept as an opt-in; the participant API on 7790 stays HTTPS by default, with `--participant-insecure-http` as its plain opt-in. **Nothing has changed in `rtk` yet: the commands on this page are correct for the current build and still need those flags.** **Breaking, decided but not built:** every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. Whether the retired flags are then refused or accepted with a warning is not decided.
+> **Changed on this branch (ADR-0009 D14 to D20: implemented, untested).** `rtk gateway` now listens on `0.0.0.0` by default, and port 7777 (the host protocol and the new dashboard at `/ui/`) is **plain HTTP unless `--https`**. The participant API on 7790 stays HTTPS unless `--participant-insecure-http`. The retired flags (`rtk gateway --allow-lan` and `--insecure-http`, `--participant-allow-lan`, and `rtk runtime pair --insecure-http`) are still accepted for one release with a warning, and change nothing. So the commands on this page still work, but **a command that relied on `--allow-lan` alone for HTTPS is now plain HTTP: add `--https`**. Anything that can reach these ports can read them, and the dashboard has no login: firewalling is the exposure boundary.
 
 ## 1. Before you start
 
@@ -121,8 +121,8 @@ rtk gateway --listen <GW_TS_IP>:<GW_PORT> --allow-lan
 
 Expect:
 
-- `--allow-lan and --insecure-http apply only to a LAN address ... and ... is Tailscale`.
-- A runtime is refused the same way: `--fingerprint and --insecure-http apply only to a LAN address`.
+- On this branch (ADR-0009), `--allow-lan` is retired: the gateway starts, prints the retired-flag warning, and ignores it.
+- `rtk runtime pair --insecure-http` is likewise accepted with a warning and changes nothing; `--fingerprint` together with `--insecure-http` is refused as a contradiction.
 
 ## 5. Start the gateway
 

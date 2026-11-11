@@ -18,7 +18,7 @@ const (
 
 	// PlainHTTPWarning is printed by `rtk gateway` and `rtk runtime pair` when a LAN
 	// run is plain HTTP. One constant, so the two cannot drift.
-	PlainHTTPWarning = "WARNING: plain HTTP on the LAN. Anyone who can see or redirect this network traffic can read messages, the pairing code and the credential, and can inject messages into your agents."
+	PlainHTTPWarning = "WARNING: plain HTTP. Anyone who can see or redirect this network traffic can read messages, the pairing code and the credential, and can inject messages into your agents."
 )
 
 // Fingerprint is "sha256:" plus the lowercase hex SHA-256 of a certificate's DER

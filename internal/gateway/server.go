@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mngeow/ratatoskr/internal/gateway/dashboard"
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
@@ -67,6 +68,10 @@ const (
 
 // Options tunes the server. Zero fields take the defaults.
 type Options struct {
+	// DashboardHTTPS says the shared listener is HTTPS (--https), so the dashboard's open-access strip
+	// says so. It changes no behaviour.
+	DashboardHTTPS bool
+
 	Now func() time.Time
 	// NewID mints session ids. The default is 16 random bytes in hex.
 	NewID func() (string, error)
@@ -244,7 +249,48 @@ func (s *Server) Handler() http.Handler {
 	router.Get(protocol.NetworkPath, s.withAuth(s.handleNetwork))
 	router.Get(protocol.GraphPath, s.withAuth(s.handleGraph))
 
-	return s.withVersion(rewriteBareErrors(router))
+	api := s.withVersion(rewriteBareErrors(router))
+	ui := s.dashboardHandler()
+
+	// The dashboard (ADR-0009) lives under /ui/ on this same listener and is dispatched BEFORE the wire
+	// version check, which a browser cannot satisfy. Nothing outside /ui/ changes: every /v1 route is still
+	// behind withVersion and withAuth. "/" (which was a bare 404) redirects to the dashboard.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/"):
+			ui.ServeHTTP(w, r)
+		case r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+			http.Redirect(w, r, "/ui/", http.StatusFound)
+		default:
+			api.ServeHTTP(w, r)
+		}
+	})
+}
+
+// dashboardSource gives the dashboard the snapshots /v1/network and /v1/graph answer, read in-process.
+type dashboardSource struct{ s *Server }
+
+func (d dashboardSource) Snapshot(ctx context.Context) (dashboard.Data, error) {
+	network, err := d.s.compute(ctx)
+	if err != nil {
+		return dashboard.Data{}, err
+	}
+	graph, err := d.s.computeGraph(ctx)
+	if err != nil {
+		return dashboard.Data{}, err
+	}
+	return dashboard.Data{Network: network, Graph: graph, Now: d.s.opts.Now()}, nil
+}
+
+// dashboardHandler is the /ui/ handler; a template that does not parse leaves a 500 page, never a crash.
+func (s *Server) dashboardHandler() http.Handler {
+	h, err := dashboard.NewHandler(dashboardSource{s}, dashboard.Info{HTTPS: s.opts.DashboardHTTPS})
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "the dashboard is not available in this build", http.StatusInternalServerError)
+		})
+	}
+	return h
 }
 
 // pathParam returns one path parameter, unescaped.

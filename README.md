@@ -150,11 +150,11 @@ The agents appear as `claude@local` and `codex@local`. The scenario guides ([one
 
 **Without Tailscale (Direct LAN).** A gateway can listen on a private LAN address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`; never a public address or `0.0.0.0`). That takes an explicit opt-in, and plain HTTP takes a second one:
 
-> **Planned flag change: decided, not built.** On 2026-11-11 the owner decided ([ADR-0009](docs/adr/0009-agent-discovery-tool/index.html), D18 to D20) to retire the gateway's `--allow-lan` and `--insecure-http`. Every gateway service will listen on `0.0.0.0` by default; the host port 7777 will be plain HTTP by default, with pinned HTTPS (`--fingerprint` pairing) kept as an opt-in; the participant API on 7790 stays HTTPS by default, with `--participant-insecure-http` as its plain opt-in. **Nothing has changed in `rtk` yet: the commands on this page are correct for the current build and still need those flags.** **Breaking, decided but not built:** every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. Whether the retired flags are then refused or accepted with a warning is not decided.
+> **Changed on this branch (ADR-0009 D14 to D20: implemented, untested).** `rtk gateway` now listens on `0.0.0.0` by default, and port 7777 (the host protocol and the new dashboard at `/ui/`) is **plain HTTP unless `--https`**. The participant API on 7790 stays HTTPS unless `--participant-insecure-http`. The retired flags (`rtk gateway --allow-lan` and `--insecure-http`, `--participant-allow-lan`, and `rtk runtime pair --insecure-http`) are still accepted for one release with a warning, and change nothing. So the commands on this page still work, but **a command that relied on `--allow-lan` alone for HTTPS is now plain HTTP: add `--https`**. Anything that can reach these ports can read them, and the dashboard has no login: firewalling is the exposure boundary.
 
 | You want | Gateway machine | Each machine with agents |
 | --- | --- | --- |
-| **HTTPS, pinned** (recommended) | `rtk gateway --listen 192.168.50.217:7777 --allow-lan` | the full `rtk runtime pair ... --fingerprint sha256:...` line that `rtk gateway pair` prints |
+| **HTTPS, pinned** (recommended) | `rtk gateway --listen 192.168.50.217:7777 --https` | the full `rtk runtime pair ... --fingerprint sha256:...` line that `rtk gateway pair` prints |
 | **Plain HTTP** | `rtk gateway --listen 192.168.50.217:7777 --allow-lan --insecure-http` | `rtk runtime pair ... --insecure-http` |
 
 Plain HTTP means anyone who can see or redirect the traffic can read every message and the credential, or pose as the gateway. Each machine makes the HTTPS-or-HTTP choice itself when it pairs; nothing falls back from one to the other. Hostnames are not accepted, so give the gateway a fixed address (a DHCP reservation). A laptop on plain HTTP keeps trying to reconnect on other networks and sends its credential to whatever answers, so stop its daemon before you leave. Every device on the LAN can reach the port, and `rtk` configures no firewall. The guides [LAN with plain HTTP](docs/testing/scenario-2-lan-http/README.md) and [tailnet](docs/testing/scenario-3-tailnet/README.md) cover the steps.
@@ -243,9 +243,9 @@ Nothing is resent automatically, and `accepted` means only that the harness took
 | Command | Where |
 | --- | --- |
 | `rtk` | Plain local window, no gateway |
-| `rtk gateway --listen ADDR [--allow-lan [--insecure-http]] [--card-poll-interval 5s] [--participant-listen ADDR\|off [--participant-allow-lan] [--participant-insecure-http]]` | Gateway machine. The participant API is on by default at the `--listen` IP, port 7790 |
+| `rtk gateway [--listen ADDR] [--https] [--card-poll-interval 5s] [--participant-listen ADDR\|off] [--participant-insecure-http]` | Gateway machine. `--listen` defaults to `0.0.0.0:7777` (every interface). Port 7777 carries the host protocol and the read-only dashboard at `/ui/`, plain HTTP with no login unless `--https`. The participant API is on by default at the `--listen` IP, port 7790, HTTPS unless `--participant-insecure-http`. `--allow-lan`, `--insecure-http` and `--participant-allow-lan` are retired (accepted with a warning). Firewalling is the exposure boundary |
 | `rtk gateway pair HOST`, `unpair HOST`, `hosts`, `log`, `show ID`, `card-target set\|show\|clear` | Gateway machine |
-| `rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 \| --insecure-http]` | Each machine with agents |
+| `rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256]` | Each machine with agents. `--fingerprint` means HTTPS with that pin (for a gateway started with `--https`); without it, plain HTTP. `--insecure-http` is retired (accepted with a warning) |
 | `rtk daemon [--foreground] [--card-listen ADDR\|off]`, `status`, `stop`, `network` | Each machine with agents |
 | `rtk attach [--agents claude,codex] [--expect-session ID]` (alias `rtk runtime`) | Each machine with agents |
 

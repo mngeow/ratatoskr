@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mngeow/ratatoskr/internal/discover"
 	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
@@ -29,6 +31,26 @@ const (
 	// recipient's machine stored the message.
 	connectedToolDescription = "Send a message to a peer agent on the ratatoskr network. This is the ratatoskr_send tool of the ratatoskr MCP server; use it, not any built-in messaging tool, to reach a peer. to is the peer's address, name@host (for example codex@ubuntu-b); a bare name means an agent on this machine. Success means the recipient's machine has saved the message, not that it has been read or acted on."
 )
+
+// discoverToolName is the discovery tool (ADR-0009; the name was OPEN there and is decided by lead). It is
+// registered for a connected agent only: a local network has no gateway and no directory to read.
+const (
+	discoverToolName = "ratatoskr_discover"
+
+	// discoverToolDescription is read by the model. It says what the reply is and is not: a directory the
+	// model reads and chooses from, declarations that are not verified, and the exact ids to send to.
+	discoverToolDescription = "List the hosts on the ratatoskr network and the sessions you can contact, then choose a recipient for ratatoskr_send. No arguments. The reply is TOON text: a hosts table (connection, Agent Card freshness, the description the host owner wrote), a skills table (what each host owner DECLARES; nothing verifies that a session can do it), and a sessions table (exact address and session_id, and whether the gateway shows it connected). null means unknown. This is the ratatoskr_discover tool of the ratatoskr MCP server."
+
+	// discoveryUnavailable is the whole error when the directory cannot be read; no internal detail is added.
+	discoveryUnavailable = "discovery_unavailable: this machine's daemon has no network view right now (it may not be connected to a gateway). Try ratatoskr_send with a name@host you already know."
+)
+
+// DiscoverySource gives the discovery tool the two views the daemon already keeps: the network view and the
+// graph view. It reads in-process; the tool adds no request to the gateway.
+type DiscoverySource func(ctx context.Context) (protocol.NetworkView, protocol.GraphView, error)
+
+// discoverArgs is the tool's input: none.
+type discoverArgs struct{}
 
 // sendArgs is the tool's input. The sender is deliberately absent: identity is
 // the request's token, never an argument a model could choose.
@@ -57,7 +79,7 @@ func (m *mcpServer) handler() *mcp.Server { return m.srv }
 // are, and one tool that sends a message as that agent.
 //
 // UNTESTED.
-func newAgentServer(id protocol.AgentID, name, address string, peers []string, connected bool, inbox Inbox) *mcpServer {
+func newAgentServer(id protocol.AgentID, name, address string, peers []string, connected bool, inbox Inbox, discovery func() DiscoverySource) *mcpServer {
 	description := toolDescription
 	instructions := instructionsText(name, peers)
 	if connected {
@@ -75,7 +97,42 @@ func newAgentServer(id protocol.AgentID, name, address string, peers []string, c
 		Description: description,
 	}, sendMessageTool(id, connected, inbox))
 
+	if connected {
+		mcp.AddTool(srv, &mcp.Tool{
+			Name:        discoverToolName,
+			Description: discoverToolDescription,
+		}, discoverTool(id, discovery))
+	}
+
 	return &mcpServer{agent: id, srv: srv}
+}
+
+// discoverTool is the discovery tool: read the daemon's two views, join them, and return the directory as
+// TOON text (D1: TOON appears only here). The gateway does no search or ranking; the model chooses. Like
+// ratatoskr_send it refuses unless the request's token is this server's agent. The reply is plain text, with
+// no structured output, so the model sees exactly what discover.Render produced.
+//
+// UNTESTED.
+func discoverTool(id protocol.AgentID, discovery func() DiscoverySource) mcp.ToolHandlerFor[discoverArgs, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, _ discoverArgs) (*mcp.CallToolResult, any, error) {
+		from, ok := agentFromContext(ctx)
+		if !ok || from != id {
+			return nil, nil, errors.New(internalErrorName)
+		}
+		var source DiscoverySource
+		if discovery != nil {
+			source = discovery()
+		}
+		if source == nil {
+			return nil, nil, errors.New(discoveryUnavailable)
+		}
+		network, graph, err := source(ctx)
+		if err != nil {
+			return nil, nil, errors.New(discoveryUnavailable)
+		}
+		text := discover.Render(discover.FromViews(network, graph, time.Now()), discover.FormatTOON)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+	}
 }
 
 // instructionsText is the local-mode instructions, kept as one name so the
@@ -191,7 +248,7 @@ func connectedInstructions(address string, peers []string) string {
 	}
 
 	return fmt.Sprintf(
-		"You are %s on a ratatoskr network that can span machines. Your peers at launch: %s. Peers can change; if a name is not found, the tool answers with the agents that exist. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?), where to is name@host, for example codex@ubuntu-b; a bare name means an agent on this machine. Other messaging tools, including any built-in send_message, do not reach your peers. A successful result means the recipient's machine has saved the message, not that it has been read or acted on. Your normal replies are not sent to peers.",
+		"You are %s on a ratatoskr network that can span machines. Your peers at launch: %s. Peers can change; if a name is not found, the tool answers with the agents that exist. To find out who exists, call ratatoskr_discover (no arguments) before you send: it lists the hosts, what each host owner says they offer (declared, not verified) and the exact sessions you can reach. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?), where to is name@host, for example codex@ubuntu-b; a bare name means an agent on this machine. Other messaging tools, including any built-in send_message, do not reach your peers. A successful result means the recipient's machine has saved the message, not that it has been read or acted on. Your normal replies are not sent to peers.",
 		address, joined,
 	)
 }
