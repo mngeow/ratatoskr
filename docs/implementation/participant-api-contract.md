@@ -29,6 +29,8 @@ The user's decision 3 reads "HTTPS by default; plain HTTP only as an explicit op
 
 Because the existing listener has one transport per address (the host protocol stays plain on a tailnet and must stay unchanged), the participant API cannot share it and be HTTPS. It therefore has **its own listener**, started by the same `rtk gateway --listen` process:
 
+> **ADR-0009 D18 (decided 2026-11-11, not built):** the participant API on 7790 keeps HTTPS as the default and `--participant-insecure-http` as its plain-HTTP opt-in; that flag is **not** retired. The host flags `--allow-lan` and `--insecure-http` that this contract compares against are retired (D20). `--participant-allow-lan` is undecided (ADR-0009 N4).
+
 | Flag | Meaning |
 | --- | --- |
 | `--participant-listen ADDR` | Serve the participant API on ADDR (IP literal with an explicit port, the same parsing as `--listen`; hostnames, port 0, the unspecified address and public addresses are refused). **Without this flag the participant API is served at the default address** (rule below); `--participant-listen off` disables it. The host listener never serves `/participant/*`: it refuses it, with `400 version_mismatch` when the request lacks the host protocol header and `404 not_found` when it has it, because the untouched host `Handler` runs `withVersion` before routing |

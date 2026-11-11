@@ -368,6 +368,74 @@ html:not(.js) .anim svg, html:not(.js) .anim .ctl2, html:not(.js) .anim .scenes 
 .cmp td:first-child { white-space: nowrap; }
 pre.wire { background: var(--term); color: var(--term-ink); padding: 10px 14px; border-radius: 8px; overflow: auto; font: .8rem/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 pre.wire .c { color: #a6a28c; }
+/* ---- ADR-0009 revision 2026-11-11: dashboard mock-ups (static; synthetic data) ---- */
+.dm { --d-bg:#FAF6EE; --d-surface:#F5F0E6; --d-ink:#2A2420; --d-muted:#6B5F55; --d-faint:#9A8C80; --d-line:#E3D9C9; --d-brand:#C96442; --d-brand-soft:#F6E2D8; --d-deep:#B4552F; --d-deep-soft:#F7E3D8; --d-live:#3F6A5E; --d-live-soft:#E1EDE8; --d-stale:#8A6A2F; --d-stale-soft:#F4EAD4; --d-off-soft:#E3D9C9; --d-bad:#B24A3D; --d-bad-soft:#F6E1DD; --d-slate:#5B7083; --d-slate-soft:#E4EAF0; --d-plum:#6E5A7A; --d-plum-soft:#EDE6F0; background:var(--d-bg); color:var(--d-ink); border:1px solid var(--line); border-radius:12px; overflow:hidden; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color-scheme: light; margin:12px 0; }
+.dm * { box-sizing:border-box; }
+.dm .bar { background:var(--d-surface); color:var(--d-ink); border-bottom:1px solid var(--d-line); display:flex; align-items:center; gap:4px; padding:0 14px; min-height:48px; flex-wrap:wrap; }
+.dm .brand { font-weight:700; letter-spacing:.02em; margin-right:14px; display:flex; align-items:center; gap:8px; }
+.dm .brand i { width:18px; height:18px; border-radius:5px; background:var(--d-brand); display:inline-block; }
+.dm .bar a { color:var(--d-muted); text-decoration:none; padding:14px 10px; font-size:.9rem; border-bottom:3px solid transparent; }
+.dm .bar a.on { color:var(--d-ink); font-weight:700; border-bottom-color:var(--d-brand); }
+.dm .bar .sp { flex:1; }
+.dm .chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:2px 10px; font-size:.78rem; font-weight:600; border:1px solid transparent; white-space:nowrap; }
+.dm .chip::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
+.dm .c-live { color:#3F6A5E; background:var(--d-live-soft); }
+.dm .c-stale { color:#8A6A2F; background:var(--d-stale-soft); }
+.dm .c-stale::before { border-radius:2px; }
+.dm .c-off { color:#6B5F55; background:var(--d-off-soft); }
+.dm .c-off::before { background:transparent; border:2px solid currentColor; }
+.dm .c-bad { color:#B24A3D; background:var(--d-bad-soft); }
+.dm .c-none { color:#6B5F55; background:var(--d-bg); border:1px dashed var(--d-faint); }
+.dm .c-none::before { background:transparent; border:1px dotted currentColor; }
+.dm .barchip { background:var(--d-bg); color:var(--d-deep); border-color:var(--d-line); }
+.dm .page { padding:16px 18px 18px; }
+.dm .ph { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+.dm .ph h4 { margin:0; font-size:1.15rem; }
+.dm .ph span { color:var(--d-muted); font-size:.82rem; }
+.dm .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+.dm .btn { background:var(--d-surface); border:1px solid var(--d-line); border-radius:8px; padding:4px 10px; font-size:.82rem; color:var(--d-ink); }
+.dm .btn.on { background:var(--d-slate-soft); border-color:var(--d-slate); color:var(--d-ink); }
+.dm .grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:14px; }
+.dm .panel { background:var(--d-surface); border:1px solid var(--d-line); border-radius:10px; padding:12px 14px; min-width:0; }
+.dm .panel h5 { margin:0 0 6px; font-size:.95rem; }
+.dm .gp { padding:6px; }
+.dm svg { width:100%; height:auto; display:block; }
+.dm .kv { display:grid; grid-template-columns:110px 1fr; gap:4px 10px; font-size:.84rem; margin:6px 0; }
+.dm .kv dt { color:var(--d-muted); }
+.dm .kv dd { margin:0; overflow-wrap:anywhere; }
+.dm .lab { font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--d-muted); margin:10px 0 3px; }
+.dm .skill { display:inline-block; background:var(--d-stale-soft); color:#8A6A2F; border-radius:6px; padding:1px 8px; font-size:.78rem; margin:0 4px 4px 0; }
+.dm .src { color:var(--d-muted); font-size:.74rem; font-style:italic; display:block; margin-top:2px; white-space:normal; }
+.dm table { width:100%; font-size:.8rem; background:transparent; }
+.dm th, .dm td { padding:4px 6px; border-bottom:1px solid var(--d-line); border-top:0; border-left:0; border-right:0; text-align:left; background:transparent; }
+.dm th { color:var(--d-muted); font-weight:600; }
+.dm .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+.dm .stat b { display:block; font-size:1.5rem; line-height:1.1; }
+.dm .stat span { color:var(--d-muted); font-size:.78rem; }
+.dm .synth { background:var(--d-plum-soft); color:var(--d-plum); border:1px dashed var(--d-plum); border-radius:6px; padding:3px 8px; font-size:.74rem; display:inline-block; margin:0 0 8px; }
+.dm .legend { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:.76rem; color:var(--d-muted); padding:6px 4px 0; }
+.dm .keys { font-size:.76rem; color:var(--d-muted); padding:6px 4px 0; }
+.dm kbd { border:1px solid var(--d-line); border-bottom-width:2px; border-radius:4px; padding:0 5px; background:var(--d-surface); font:inherit; font-size:.74rem; color:var(--d-ink); }
+.dm .node text { font:600 12px system-ui,sans-serif; fill:#2A2420; }
+.dm .node .sub { font:11px system-ui,sans-serif; fill:#6B5F55; }
+.dm .sheet { border-radius:14px 14px 0 0; border:1px solid var(--d-line); background:var(--d-surface); padding:10px 12px; margin-top:8px; }
+.dm .exposure { background:var(--d-brand-soft); border:1px dashed var(--d-deep); border-radius:6px; padding:5px 10px; font-size:.78rem; margin:0 0 8px; color:var(--d-ink); }
+.dm .exposure b { color:var(--d-deep); }
+.dm .proposed { display:inline-block; background:var(--d-plum-soft); color:var(--d-plum); border:1px solid var(--d-plum); border-radius:999px; padding:0 8px; font-size:.7rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; margin-left:6px; vertical-align:middle; }
+.dm-narrow { max-width:380px; }
+.dm-narrow .grid { grid-template-columns:1fr; }
+.dm-narrow .stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.dm-narrow .bar { gap:0; }
+.dm-narrow .bar a { padding:10px 7px; font-size:.8rem; }
+.dm-note { font-size:.84rem; color:var(--muted); margin:4px 0 14px; }
+.flowbox { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin:12px 0; }
+.flowbox > div { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:.9rem; }
+.flowbox > div b { display:block; margin-bottom:3px; }
+.flowbox .arrow { background:none; border:none; display:flex; align-items:center; justify-content:center; font-size:1.4rem; color:var(--wire); padding:0; }
+.palette { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 12px; }
+.palette span { border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:.8rem; display:inline-flex; gap:8px; align-items:center; background:var(--surface); }
+.palette i { width:18px; height:18px; border-radius:5px; display:inline-block; border:1px solid rgba(0,0,0,.15); }
+@media (max-width: 780px) { .dm:not(.dm-narrow) .grid { grid-template-columns:1fr; } .dm:not(.dm-narrow) .stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>
 </head>
 <body>
@@ -376,10 +444,16 @@ pre.wire .c { color: #a6a28c; }
 
 <header class="top">
   <p class="kicker">ARCHITECTURE DECISION RECORD 0009</p>
-  <h1>Agent discovery: a compact list the model reads and chooses from</h1>
+  <h1>Agent discovery for models, and a gateway dashboard for people</h1>
   <p class="prose">A proposal for one tool, here called <code>ratatoskr_discover</code>, that returns every paired host's card, its description and capabilities, its host name, and the sessions you can contact right now, in one compact list. <b>The model decides whom to contact.</b> The gateway is a directory, not a search engine. <b>This is a proposal only. No code was written, nothing was run, and the page has not been opened in a browser.</b></p>
+  <p class="prose"><b>Third revision, 2026-11-11 (later still).</b> The owner decided: <b>no TLS in v1, plain HTTP</b>; viewers may see <b>exact session ids and all Agent Card details</b>; the v1 dashboard is <b>read-only</b> (D11 to D13). <b>Consequence, in plain words:</b> dashboard data, including host and session details, travels in cleartext and can be observed or modified by anyone able to intercept the connection. Future TLS is deferred. These three answers did not by themselves settle the bind questions; the fourth revision below does.</p>
+  <p class="prose"><b>Sixth revision, 2026-11-11 (latest).</b> The owner accepted the recommendations on transport and legacy flags (D18 to D20, <span class="tag t-user">USER</span>). <b>The participant API on 7790</b> keeps HTTPS as the default, with plain HTTP as an explicit opt-in through <code>--participant-insecure-http</code>. <b>The host protocol on the shared 7777</b> is plain HTTP by default, together with the dashboard, and <b>HTTPS with fingerprint pairing is preserved as an opt-in</b>. <b><code>rtk gateway --allow-lan</code> and <code>rtk gateway --insecure-http</code> are retired.</b> <b>Breaking, decided but not built:</b> every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. No blocking decision remains; the non-blocking open items are N1 to N4 (<a href="#sec">section 13</a>).</p>
+  <p class="prose"><b>Fifth revision, 2026-11-11 (latest).</b> The owner decided that <b>the shared port 7777 is plain HTTP for both the dashboard and the host protocol</b> (T2, D17). <b>Consequence:</b> host credentials (the bearer on every host request) and message bodies on that listener are cleartext on every reachable interface and can be read or injected; network firewalling is the boundary. <b>Still open:</b> the transport of the separate participant API on 7790 (T1), and what happens to today's HTTPS host mode, <code>--fingerprint</code> pairing and the <code>--allow-lan</code> and <code>--insecure-http</code> flags (T3).</p>
+  <p class="prose"><b>Fourth revision, 2026-11-11 (latest).</b> The owner decided: <b>all gateway services (dashboard, host protocol, participant API) default to binding <code>0.0.0.0</code></b>, a default changeable by command-line arguments (X1), and the <b>dashboard shares port 7777</b> with namespaced routes (X2). <b>Consequence:</b> the host protocol, which carries host credentials, and the participant API now default to every interface too, including any public one. <b>New open items:</b> what transport each service uses under a wildcard bind (T1), and the tension that a shared 7777 couples the dashboard's transport to the host protocol's (T2). <b>X3 is decided in the same revision</b>: the refusals of the wildcard and of explicit public bind addresses are removed for all three listeners, and explicit public IPs may be given on the command line. <b>Consequence:</b> network firewalling becomes the exposure boundary; the command-line override is not protection.</p>
+  <p class="prose"><b>Second revision, 2026-11-11 (later).</b> The owner decided: the dashboard is <b>open to anyone who has the link, with no authentication in v1</b>; the gateway binds <b><code>0.0.0.0</code> by default</b> (every interface), default port 7777 and changeable by a command-line argument; <b>Cytoscape.js</b> draws the graph; and the mock-ups use the cream, warm palette of the explainer video (D7 to D10, <a href="#scope2">section 7</a>). <b>Consequence, in plain words:</b> anyone who can reach the exposed listener and obtain its URL can see the graph, every Agent Card and the other dashboard data. The URL is not a secret and not authentication. Details and the questions this leaves open are in <a href="#sec">section 13</a>.</p>
+  <p class="prose"><b>Revised 2026-11-11 (<a href="#scope2">section 7</a>).</b> The owner decided that TOON is used <b>only</b> in the model-facing reply of this tool (<a href="#toon">section 8</a>), and that the gateway hosts an <b>HTMX web dashboard</b> with a navigation bar and a Network page whose graph opens a host's Agent Card (<a href="#dash">sections 9 to 13</a>, with static mock-ups in <a href="#mock">section 12</a>). The two surfaces are kept apart: models see TOON, people see HTML, and the gateway's JSON APIs and stored cards do not change.</p>
   <dl class="meta">
-    <div><dt>Status</dt><dd><b>Proposed 2026-11-08; revised 2026-11-08 so it no longer depends on A2A (deferred).</b> The user chose the shape: a compact list of all Agent Cards, descriptions, capabilities and hostnames, returned by a tool, with the model selecting <span class="tag t-user">USER</span>. The tool name, limits and wiring are <span class="tag t-arch">PROPOSAL</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code.</dd></div>
+    <div><dt>Status</dt><dd><b>Proposed 2026-11-08; revised 2026-11-08 so it no longer depends on A2A (deferred); revised 2026-11-11 with the owner's decisions on TOON (model-facing output only) and a proposed HTMX gateway dashboard (sections 7 to 14).</b> The user chose the shape: a compact list of all Agent Cards, descriptions, capabilities and hostnames, returned by a tool, with the model selecting <span class="tag t-user">USER</span>. The tool name, limits and wiring are <span class="tag t-arch">PROPOSAL</span> or <span class="tag t-unv">OPEN</span>. Nothing here authorises code. <b>Revised 2026-11-11</b> with the owner's TOON boundary and HTMX dashboard decisions (<span class="tag t-user">USER</span>). <b>Revised again 2026-11-11</b> with open access and no authentication in v1, a <code>0.0.0.0</code> default bind, Cytoscape.js and the cream palette (D7 to D10, <span class="tag t-user">USER</span>). <b>Revised a sixth time 2026-11-11</b> with the owner's accepted transport and legacy-flag recommendations (D18 to D20, <span class="tag t-user">USER</span>); the HTTPS opt-in's flag name, the reject-or-warn treatment of the retired flags, <code>rtk runtime pair --insecure-http</code> and <code>--participant-allow-lan</code> are <span class="tag t-unv">OPEN</span> and non-blocking (N1 to N4). <b>Revised a fifth time 2026-11-11</b> with the owner's answer that the shared port 7777 is plain HTTP for the dashboard and the host protocol (T2, D17, <span class="tag t-user">USER</span>); the participant API's transport (T1) and the fate of the HTTPS host mode (T3) are <span class="tag t-unv">OPEN</span>. <b>Revised a fourth time 2026-11-11</b> with the owner's answers that every gateway service defaults to <code>0.0.0.0</code> (X1), that the dashboard shares port 7777 under namespaced routes (X2), and that the wildcard and public-address refusals are removed for all gateway listeners (X3) (<span class="tag t-user">USER</span>). The transport of the participant API (T1) and the fate of the HTTPS host mode (T3) are <span class="tag t-unv">OPEN</span>. <b>Revised a third time 2026-11-11</b> with the owner's answers: <b>no TLS in v1 (plain HTTP)</b>, viewers may see exact session ids and all Agent Card details, and the v1 dashboard is read-only (D11 to D13, <span class="tag t-user">USER</span>). Routes, pages and the Tabler shell are <span class="tag t-arch">PROPOSAL</span>; the opt-in flag name and the treatment of the retired and related flags (N1 to N4), browser protections, XSS, firewalling guidance and future authentication are <span class="tag t-unv">OPEN</span> (section 13).</dd></div>
     <div><dt>Depends on</dt><dd><a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> (host cards, already written in the tree). Sending to the chosen session works today with the custom send tool, and this record does not depend on any other protocol (the A2A design of <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> is deferred; see the <a href="../deferred/0006-a2a-deferral/index.html">deferral record</a>). The operator could be listed later (<a href="../0008-openrig-operator-integration/index.html">ADR-0008</a>) if that record is ever built.</dd></div>
     <div><dt>Sources</dt><dd>Ratatoskr source at the working tree, read: <a class="src" href="../../../internal/protocol/network.go"><code>internal/protocol/network.go</code></a> (<code>GET /v1/network</code>, hosts and sessions), <a class="src" href="../../../internal/protocol/graph.go"><code>internal/protocol/graph.go</code></a> (<code>GET /v1/graph</code>, host cards), <a class="src" href="../../../internal/server/mcp.go"><code>internal/server/mcp.go</code></a> (the existing send tool).</dd></div>
     <div><dt>Tests</dt><dd><b>Nothing was run</b> (<a href="../../design/ground-rules.md">GR-3</a>). The list below is a mock-up, not output.</dd></div>
@@ -387,7 +461,7 @@ pre.wire .c { color: #a6a28c; }
 </header>
 
 <nav class="prose small" aria-label="Sections"><b>Sections:</b>
-  <a href="#summary">1. Short answer</a> · <a href="#list">2. The list</a> · <a href="#diagram">3. Discover, choose, send</a> · <a href="#not">4. What it does not do</a> · <a href="#order">5. Order of work</a> · <a href="#decisions">6. Choices and gaps</a>
+  <a href="#summary">1. Short answer</a> · <a href="#list">2. The list</a> · <a href="#diagram">3. Discover, choose, send</a> · <a href="#not">4. What it does not do</a> · <a href="#order">5. Order of work</a> · <a href="#decisions">6. Choices and gaps</a> · <a href="#scope2">7. Revision 2026-11-11</a> · <a href="#toon">8. TOON</a> · <a href="#dash">9. Dashboard</a> · <a href="#pages">10. Pages</a> · <a href="#libs">11. Libraries</a> · <a href="#mock">12. Mock-ups</a> · <a href="#sec">13. Security</a> · <a href="#decisions2">14. Decisions</a>
 </nav>
 
 <p class="prose small"><b>Labels.</b>
@@ -458,8 +532,413 @@ host vmc    100.64.0.11  no card         (no description)                declare
   <li><b>Unverified:</b> that the two existing routes can be joined without a new gateway route; the join may belong in the gateway or in the daemon.</li>
 </ul>
 
+<h2 id="scope2">7. Revision of 2026-11-11: two surfaces, one source of data</h2>
+<div class="note">
+  <p><b>The owner has added decisions and widened the scope.</b> This record now covers <b>two separate surfaces</b>, built on the same gateway data: the <b>model-facing discovery tool</b> (sections 1 to 6, and section 8 for its format) and a <b>human-facing gateway dashboard</b> (sections 9 to 13). Nothing here is built. No code, no test and no app run was done for this revision. <span class="tag t-unv">UNVERIFIED</span></p>
+</div>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Decision recorded 2026-11-11 (the owner's words, relayed by the operator)</th><th>Status</th></tr>
+  <tr><td>D1</td><td><b>TOON is only for the model-facing response of the discovery tool.</b> Gateway APIs and persisted Agent Cards keep their existing JSON and canonical formats. Conversion happens at the model/tool presentation boundary only.</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D2</td><td>The gateway hosts an <b>HTMX-based web dashboard</b>.</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D3</td><td>The dashboard has a <b>navigation bar</b> for multiple pages.</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D4</td><td>A <b>Network page</b> with a Neo4j-like interactive graph of connected hosts. <b>Clicking a host shows that host's Agent Card</b> in a neatly formatted detail view.</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D5</td><td>The owner expects a <b>polished web-page UI</b>, not a rough utility screen, and wants <b>UI mock-ups in this record</b>.</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D6</td><td>The owner chose the TOON <em>boundary</em>. <b>No savings percentage was chosen</b>: it has to be measured (section 8).</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D7</td><td><b>Dashboard access is open to anyone who has the link. There is no authentication in v1; authentication is deferred.</b> Consequence: anyone who can reach the exposed gateway dashboard listener and obtain its URL can view the graph, the Agent Card details and the other dashboard data. The URL is not strong authentication (section 13).</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D8</td><td><b>The gateway binds to <code>0.0.0.0</code> by default</b>, which listens on all interfaces, with a default port that can be changed by a command-line argument. The default port stays <b>7777</b>, the documented convention (section 13 says what the source does today).</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D9</td><td><b>Cytoscape.js is selected</b> for the interactive graph. vis-network and Sigma.js are not chosen and are no longer fallbacks (section 11).</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D10</td><td><b>Every dashboard mock-up uses a cream background and the warm palette of the Ratatoskr explainer video</b> (section 12).</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D11</td><td><b>No TLS for v1; the dashboard stays plain HTTP</b> (answers S3). Consequence: dashboard data, including host and session details, travels in cleartext and can be observed or modified by parties able to intercept the connection. Future TLS remains deferred.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D12</td><td><b>Dashboard viewers may see exact session ids and all Agent Card details</b> (answers S8).</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D13</td><td><b>The v1 dashboard is read-only</b> (answers S4): no message sending, host revocation or other state-changing controls in v1.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D14</td><td><b>All gateway services (the dashboard, the host protocol and the participant API) default to binding <code>0.0.0.0</code></b> (answers X1). It is a default and can be changed through command-line arguments. The participant API keeps its default port 7790 unless the owner says otherwise.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D15</td><td><b>The dashboard shares port 7777</b> with the host protocol (answers X2). Its routes are namespaced so they do not clash with existing gateway routes.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D16</td><td><b>The existing refusals of the unspecified (wildcard) address and of public bind addresses are removed for all gateway service listeners</b> (host protocol, participant API, dashboard) (answers X3). <code>0.0.0.0</code> stays the default (D8, D14), and command-line address and port overrides may name <b>explicit public IPs</b>. <b>Network firewalling becomes the exposure boundary.</b> The command-line override provides no protection of its own.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D17</td><td><b>The shared port 7777 uses plain HTTP for both the dashboard and the host protocol</b> (answers T2). <b>Host credentials and messages on that listener are cleartext. Network firewalling is the boundary.</b> The <code>0.0.0.0</code> default and the command-line overrides (D8, D14, D16) are unchanged. The participant API on 7790 is not covered.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D18</td><td><b>Participant API on port 7790: HTTPS remains the default; plain HTTP remains an explicit opt-in through the existing participant-specific flag <code>--participant-insecure-http</code></b> (answers T1; the flag name is <code>FlagParticipantInsecureHTTP</code> in <code>internal/gateway/participant_listen.go</code>). That flag is <b>not</b> retired. <span class="tag t-code">CODE</span></td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D19</td><td><b>Host protocol on the shared port 7777: plain HTTP is the default, together with the dashboard; HTTPS plus fingerprint pairing (<code>rtk runtime pair --fingerprint</code>) is preserved as an opt-in mode</b> (answers T3). When the HTTPS opt-in is on, the shared 7777 listener is HTTPS, so <b>the dashboard is served over HTTPS with the self-signed certificate</b> and browsers warn; that is the opt-in's consequence, and plain stays the default. The opt-in's flag name is not decided (N1).</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>D20</td><td><b>The now-redundant <code>rtk gateway --allow-lan</code> and <code>rtk gateway --insecure-http</code> are retired.</b> Docs, guides and scenarios are updated, and the compatibility or breaking behaviour is marked. Not retired: the participant plain-HTTP opt-in (D18).</td><td><span class="tag t-user">USER</span> decided, not built</td></tr>
+</table></div>
+
+<figure class="anim" style="padding:12px 14px">
+<figcaption class="t">Diagram. Two surfaces, one data source (static; boxes are real Ratatoskr parts, the arrows are the proposed reads)</figcaption>
+<div class="flowbox" role="group" aria-label="Two surfaces over one data source">
+  <div><b>Gateway data <span class="tag t-code">CODE</span></b>Hosts, sessions and liveness (<code>/v1/network</code>); cards and their freshness (<code>/v1/graph</code>). JSON, with the cards persisted in the gateway database. <b>Unchanged.</b></div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div><b>Model-facing <span class="tag t-arch">PROPOSAL</span></b>The <code>ratatoskr_discover</code> tool formats the same facts as <b>TOON</b> for a model to read. The only place TOON appears.</div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div><b>Session (a model)</b>Reads the list, picks a session, sends a normal message.</div>
+</div>
+<div class="flowbox" role="group" aria-label="Human-facing surface">
+  <div><b>Gateway data <span class="tag t-code">CODE</span></b>The same snapshots, read inside the gateway process (section 9).</div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div><b>Dashboard <span class="tag t-arch">PROPOSAL</span></b>Server-rendered HTML pages, htmx partials, and a graph JSON for the browser. <b>No TOON.</b></div>
+  <div class="arrow" aria-hidden="true">&rarr;</div>
+  <div><b>A person in a browser</b>Navigates, watches the Network graph, opens a host's Agent Card.</div>
+</div>
+</figure>
+<p class="prose">The two surfaces share <em>facts</em>, not code paths or formats: the model-facing tool never sees HTML, and the dashboard never sees TOON. The earlier plain-text mock in section 2 was only an illustration; with D1 the model-facing format is TOON, and section 8 shows what that looks like.</p>
+
+<h2 id="toon">8. TOON at the model-facing boundary only</h2>
+<p class="prose"><b>What the owner chose</b> (D1, <span class="tag t-user">USER</span>): TOON appears <em>only</em> in the discovery tool's reply to a model. The gateway's JSON APIs, the stored Agent Cards and the canonical card form do not change. The conversion is a presentation step at the very end of the tool, so removing it later means changing one function.</p>
+<p class="prose"><b>What TOON is, from its own specification</b> (fetched 2026-11-11): <a class="src ext" href="https://github.com/toon-format/spec/blob/main/SPEC.md">toon-format/spec SPEC.md</a> states <i>Version 4.4, Date 2026-10-08, Status: Working Draft</i>, and says that the document "may be updated, replaced, or obsoleted". It describes TOON as "designed primarily for LLM prompts and contexts where every token costs". A uniform array becomes a table with a declared length and field list, then one row per line (spec example: <code>users[2]{id,name,role}:</code>). Strings are unquoted unless they are empty, look like a number, are <code>true</code>, <code>false</code> or <code>null</code>, have leading or trailing spaces, or contain a delimiter, colon, quote, backslash, bracket, brace or control character. Null is the literal <code>null</code>. <span class="tag t-code">SOURCE</span> (external; not read in full: the spec sections after the string rules were not read)</p>
+
+<h3>The same synthetic facts, two ways</h3>
+<p class="prose small muted">Synthetic data: invented hosts, not output from any gateway. The field names follow the real wire types (<code>NetworkHost.connection.live</code>, <code>GraphCard.state</code>, <code>NetworkSession.session_id</code>); the TOON layout is a <span class="tag t-arch">PROPOSAL</span>.</p>
+<pre class="wire" tabindex="0" aria-label="Minified JSON form"><span class="c">// minified JSON, the form the gateway APIs keep (shown wrapped for reading)</span>
+{"hosts":[{"host":"mac","connection":"live","card":"fresh","card_age_s":4,"description":"Ratatoskr daemon on my Mac.","skills":["code-review"]},
+{"host":"vmb","connection":"live","card":"stale","card_age_s":251,"description":"Ubuntu build box, GPU.","skills":[]},
+{"host":"vmc","connection":"not_live","card":"offline","card_age_s":null,"description":"Spare VM: powered off.","skills":[]}],
+"sessions":[{"address":"claude@mac","host":"mac","session_id":"ses_c1a4e0","status":"connected"},
+{"address":"codex@mac","host":"mac","session_id":"ses_b208f5","status":"connected"},
+{"address":"codex@vmb","host":"vmb","session_id":"ses_9d31a7","status":"connected"}]}</pre>
+<pre class="wire" tabindex="0" aria-label="TOON form"><span class="c"># TOON, the form only the model-facing tool returns (proposal)</span>
+hosts[3]{host,connection,card,card_age_s,description}:
+  mac,live,fresh,4,Ratatoskr daemon on my Mac.
+  vmb,live,stale,251,"Ubuntu build box, GPU."
+  vmc,not_live,offline,null,Spare VM: powered off.
+skills[1]{host,id,name}:
+  mac,code-review,Code review
+sessions[3]{address,host,session_id,status}:
+  claude@mac,mac,ses_c1a4e0,connected
+  codex@mac,mac,ses_b208f5,connected
+  codex@vmb,vmb,ses_9d31a7,connected</pre>
+<p class="prose">Two details the example already shows. A host's declared skills are a <em>nested</em> list, and a TOON table row holds only single values, so the skills move to a second table keyed by host (a layout choice that must be tested, not assumed). A description that contains a comma has to be quoted, and a description containing a colon would too (the spec's rule; <span class="tag t-unv">UNVERIFIED</span> that an encoder applies it to every host-written string, which is untrusted text).</p>
+
+<h3>Measure before adopting</h3>
+<div class="note"><p><b>The owner chose the boundary, not a number.</b> No token saving is claimed here. Before this is adopted the team measures, and reports, at least:</p>
+<ol>
+  <li><b>Token counts</b> of the actual discovery payload in TOON against <b>minified JSON</b> (and against the plain list of section 2), with the tokenizers of the models that will read it, at representative sizes: for example 3, 10, 30 and 100 hosts, with one to four sessions each. A table of three rows may not save anything; a table of a hundred may.</li>
+  <li><b>Correct reading of status.</b> A model must still tell <code>live</code>, <code>stale</code>, <code>offline</code>, <code>none</code> and unknown apart, and must not read <code>null</code> as "online" or "none". Ask it questions with known answers (which sessions are connected? which card is stale? does vmc have a card?) over the TOON and the JSON forms and compare.</li>
+  <li><b>Exact session ids.</b> The id in the reply must be byte-for-byte the gateway's id, never shortened, and a model copying it into a send must produce the same string. Test for confusion between similar ids and names.</li>
+  <li><b>Hostile text.</b> A card description or skill name is written by a host owner. Test values with commas, colons, quotes, newlines, leading <code>-</code> or <code>#</code>, the word <code>null</code>, and text that tries to look like TOON rows or instructions. The result must decode to the same strings, and must not let a description add or alter a row.</li>
+  <li><b>The encoder.</b> Which implementation, and whether a small in-house encoder pinned to a spec version is safer than a library, is <span class="tag t-unv">OPEN</span>. Because the spec is a <b>working draft</b> that "may be updated, replaced, or obsoleted", pin the version it encodes to, keep the encoder behind one function, and keep golden tests on the exact output.</li>
+</ol></div>
+<p class="prose"><b>Fallback.</b> If the measurements do not show a worthwhile saving, or a model misreads a status, the same boundary function returns compact JSON or the plain list instead, and nothing else changes. <span class="tag t-arch">PROPOSAL</span></p>
+
+<h2 id="dash">9. The gateway dashboard: what it reads, and who does what</h2>
+<p class="prose">The owner asked for an HTMX web dashboard hosted by the gateway (D2). This section says where its data comes from, which part does which job, and what is only a proposal.</p>
+
+<h3>The data it would show (all existing, read in the source)</h3>
+<p class="prose">Every field name below is a real field in <a class="src" href="../../../internal/protocol/network.go"><code>internal/protocol/network.go</code></a> or <a class="src" href="../../../internal/protocol/graph.go"><code>internal/protocol/graph.go</code></a>; the card fields are in <a class="src" href="../../../internal/protocol/card.go"><code>internal/protocol/card.go</code></a>. <span class="tag t-code">CODE</span> Four facts that the page must keep apart:</p>
+<div class="table-wrap"><table>
+  <tr><th>Fact</th><th>Real field and words</th><th>What it answers</th><th>Where it comes from</th></tr>
+  <tr><td><b>Host reachability</b></td><td><code>connection.live</code> (true/false), <code>heartbeat_age_ms</code>; live means the stream is open <em>and</em> the heartbeat is fresh (<code>HostLive</code>, a 15-second window)</td><td>Is the host connected to the gateway right now?</td><td>The gateway's own stream and heartbeat</td></tr>
+  <tr><td><b>Card freshness</b></td><td><code>card.state</code>: <code>fresh</code> (good poll within 2 intervals), <code>stale</code> (older; last good card kept), <code>offline</code> (no good poll for max(15 min, 4 intervals)), <code>none</code> (never stored), <code>rejected</code> (latest answer refused); plus <code>age_ms</code>, <code>last_ok_at</code>, <code>restored</code></td><td>How recently did the gateway fetch the host's card?</td><td>The gateway's poll of the host card listener (<code>card-target</code>); the interval defaults to 5 s</td></tr>
+  <tr><td><b>Card declaration</b></td><td><code>card.card</code>: <code>name</code>, <code>description</code>, <code>skills[]</code> (<code>id</code>, <code>name</code>, <code>description</code>, <code>tags</code>), <code>capabilities</code>, <code>supportedInterfaces</code>, <code>version</code>; <code>card.source</code></td><td>What the host's owner <em>says</em> it offers</td><td>The owner's <code>card.yaml</code> on the host. <b>Declared, never verified.</b></td></tr>
+  <tr><td><b>Session connectivity</b></td><td><code>sessions[].directory.registered</code>, <code>directory.live</code>; <code>reported.state</code> (<code>starting</code>, <code>idle</code>, <code>busy</code>, <code>needs_you</code>, <code>unknown</code>, <code>exited</code>), <code>reported.stale</code>; the exact <code>session_id</code></td><td>Which sessions exist on that host, and are they reachable?</td><td>The directory and the host's reports (<code>report_status</code>: <code>none</code>, <code>fresh</code>, <code>stale</code>)</td></tr>
+</table></div>
+<p class="prose small muted">The existing contracts: <a href="../../implementation/network-api-contract.md">network-api-contract.md</a> and <a href="../../implementation/host-cards-contract.md">host-cards-contract.md</a>; the earlier decisions are <a href="../0004-network-tab/index.html">ADR-0004</a> and <a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a>.</p>
+
+<h3>Hub and spoke, honestly</h3>
+<ul class="prose">
+  <li><b>The gateway is the hub.</b> Hosts connect to the gateway; they do not connect to one another. The graph draws <b>one spoke from each host to the gateway</b>, styled from <code>connection.live</code>: solid when live, dashed when not live. A host the gateway has never heard from is drawn dotted. No host-to-host line is drawn for connectivity, because none exists. <span class="tag t-arch">PROPOSAL</span></li>
+  <li><b>A difference from the TUI Graph tab, stated.</b> In the source, <code>/v1/graph</code> carries only one kind of edge, <code>messages_seen</code>: a rolling 24-hour count of sends between a pair of hosts, computed from the message ledger, and never "delivered" (<code>GraphEdge</code>, <code>edges_partial</code>). It is real data, but it is <em>history</em>, not connectivity. The web view therefore shows the spokes as the graph, and offers <code>messages_seen</code> only as an <b>optional overlay, off by default, labelled "messages seen in 24 h (sends, not deliveries)"</b>. Whether the web view should match the TUI by showing it by default is <span class="tag t-unv">OPEN</span>. I did not read the TUI's render code, only the data and ADR-0005.</li>
+  <li><b>Card declaration is never shown as verified.</b> The card panel labels the text "declared by the host owner" and shows the card's age and source beside it. The page never writes "can do" or "supports". <span class="tag t-arch">PROPOSAL</span></li>
+  <li><b>Participants are not hosts.</b> External participants (ADR-0007) have no card and are not in <code>/v1/graph</code>. Whether they appear as a separate node kind is <span class="tag t-unv">OPEN</span>; nothing here draws one.</li>
+</ul>
+
+<h3>Who does what: htmx, the graph library, and the gateway</h3>
+<div class="table-wrap"><table>
+  <tr><th>Part</th><th>Job</th><th>Does not do</th></tr>
+  <tr><td><b>Gateway (Go)</b></td><td>Builds the same snapshot it already builds (<code>computeGraph</code>, <code>buildSnapshot</code>) and renders HTML pages, HTML partials and one JSON document for the graph. Escapes all card text.</td><td>Does not serve TOON. Does not change the APIs, the database or the card format.</td></tr>
+  <tr><td><b>htmx</b> <span class="tag t-arch">PROPOSAL</span></td><td>Server-HTML updates: navigation between pages, filter chips, the status strip, and the <b>card panel</b>, which is a server-rendered partial swapped into the page when a host is selected. A polling trigger can refresh the status strip.</td><td>Draws no graph and holds no graph state. Its docs describe swapping server-returned HTML into the DOM; they give no guidance on canvas graphs.</td></tr>
+  <tr><td><b>Graph library: Cytoscape.js</b> (section 11) <span class="tag t-user">USER</span></td><td>Client-side rendering and interaction of the host graph: layout, zoom, pan, fit, hover and selection. When a node is selected it asks htmx for that host's card partial.</td><td>Holds no data of its own beyond the graph document the gateway sent. Does not render the card.</td></tr>
+</table></div>
+
+<h3>Proposed routes and refresh (all <span class="tag t-arch">PROPOSAL</span>; none exists)</h3>
+<div class="table-wrap"><table>
+  <tr><th>Route</th><th>Returns</th></tr>
+  <tr><td><code>GET /ui/</code></td><td>Overview page (full HTML, with the navigation bar).</td></tr>
+  <tr><td><code>GET /ui/network</code></td><td>Network page shell: graph area, toolbar, empty card panel, and an accessible host list.</td></tr>
+  <tr><td><code>GET /ui/network/graph.json</code></td><td>The graph document: gateway node, host nodes (<code>name</code>, <code>connection.live</code>, <code>card.state</code>, ages), one spoke per host, and optionally the <code>messages_seen</code> edges.</td></tr>
+  <tr><td><code>GET /ui/hosts/{name}/card</code></td><td>The Agent Card detail partial (HTML) for one host.</td></tr>
+  <tr><td><code>GET /ui/network/status</code></td><td>The status strip partial, polled by htmx.</td></tr>
+</table></div>
+<ul class="prose">
+  <li><b>Refresh interval.</b> Polling the status strip and the graph document every 5 seconds would match the card poll default; it is a proposal with no measurement. The gateway already parks long polls and ticks for <code>/v1/network</code> and <code>/v1/graph</code>, so reuse of that mechanism, or a push channel, is <span class="tag t-unv">OPEN</span>.</li>
+  <li><b>Read-only in v1.</b> Every route above is a GET. No message sending, host revocation, card-target editing or other state-changing control exists in v1 (D13). <span class="tag t-user">USER</span></li>
+  <li><b>Same data, no second source.</b> The pages are rendered from the snapshot the gateway already builds, not from a copy, so the dashboard and <code>/v1/graph</code> cannot disagree about a host. Whether the render reads the snapshot in-process (proposed) or calls its own HTTP API is <span class="tag t-unv">OPEN</span>.</li>
+</ul>
+
+<h2 id="pages">10. Pages and navigation</h2>
+<p class="prose">The owner asked for a navigation bar over several pages (D3) and a Network page (D4). The other pages are options, not decisions.</p>
+<div class="table-wrap"><table>
+  <tr><th>Option</th><th>Navigation bar</th><th>Fits when</th><th>Cost</th></tr>
+  <tr><td><b>A. Two pages</b> <span class="tag t-arch">PROPOSAL</span> for the first build</td><td>Overview &middot; Network</td><td>The first release must be small. Overview is a one-screen summary; Network is the graph and the Agent Card.</td><td>Least work. Hosts and sessions are reachable only through the graph and the Overview tables.</td></tr>
+  <tr><td><b>B. Four pages</b></td><td>Overview &middot; Network &middot; Hosts &middot; Sessions</td><td>People want a sortable table of every host and every session next to the graph.</td><td>Two more pages to keep consistent with the same data; the tables double as the accessible form of the graph.</td></tr>
+  <tr><td><b>C. Five pages</b></td><td>B, plus Participants</td><td>The operator wants to see external participants (ADR-0007) such as the OpenRig bridge, with their liveness.</td><td>Needs the decision whether participants are shown at all (section 9).</td></tr>
+</table></div>
+<p class="prose">Whatever the option, the <b>Network</b> page is the one the owner described, and the <b>Hosts</b> table (when it exists) is also the <b>keyboard and screen-reader path</b> to the same host selection, because a canvas graph is not accessible by itself (section 11).</p>
+
+<h2 id="libs">11. Libraries: official sources, and the chosen graph library</h2>
+<p class="prose">All pages were fetched on <b>2026-11-11</b>. They describe what each library can do, not whether it is right for this product. <b>The owner selected Cytoscape.js for the interactive graph (D9, <span class="tag t-user">USER</span>).</b> htmx and the Tabler shell are still proposals. Nothing has been added to the repository.</p>
+<div class="table-wrap"><table>
+  <tr><th>Library (source, fetched 2026-11-11)</th><th>What the official page says</th><th>Costs and gaps</th><th>For this product</th></tr>
+  <tr><td><b>htmx</b><br><a href="https://htmx.org/docs/">htmx.org/docs</a></td><td>Dependency-free browser library; attributes issue requests and swap server HTML into the page; the docs example uses 2.0.11 and say "the latest version of htmx is 2.x"; triggers include load, revealed and intersect. It advises semantic HTML and a clearly visible focus state.</td><td>Licence, bundle size and release date not stated on that page. It does not draw graphs. Keyboard and touch behaviour not stated.</td><td><b>Use</b> for navigation, filters, status and the card panel (D2).</td></tr>
+  <tr><td><b>Tabler</b><br><a href="https://docs.tabler.io/ui">docs.tabler.io/ui</a><br><a href="https://tabler.io/admin-template">tabler.io/admin-template</a></td><td>Responsive interface components on Bootstrap for admin panels and dashboards. The template page lists version 1.7.3, "MIT (source code), with an optional paid Pro package", Bootstrap 5, dark mode via <code>data-bs-theme</code>, several layouts, and an accessibility claim ("keyboard-friendly markup", a marketing statement, not a measurement).</td><td>The UI docs page returned very little text. Bundle size not stated. It brings Bootstrap's CSS and JS; whether only the stylesheet is used is a choice. Charts in its demo use another library.</td><td><b>Good candidate for the shell</b>: navigation bar, cards, tables, badges, forms. Verify what it adds to the binary.</td></tr>
+  <tr><td><b>Cytoscape.js</b><br><a href="https://js.cytoscape.org/">js.cytoscape.org</a><br><a href="https://github.com/cytoscape/cytoscape.js">GitHub</a></td><td>"A fully featured graph library written in pure JS"; MIT, "no external dependencies", "highly optimised"; "builtin support for standard gestures on both desktop and touch" (pinch-to-zoom, box selection, panning); canvas required; layouts and a CSS-like style system. Releases list begins at 3.35.</td><td>Page text I could read says nothing on keyboard navigation or screen readers (only modifier keys for multi-select). Largest graph size not stated. Bundle size not stated. About two thirds of the docs page was not read.</td><td><b>Chosen</b> <span class="tag t-user">USER</span> (decided 2026-11-11). Fits a graph of tens of hosts with clickable nodes.</td></tr>
+  <tr><td><b>Sigma.js</b><br><a href="https://www.sigmajs.org/concepts/rendering/">rendering</a><br><a href="https://www.sigmajs.org/how-to/interactivity/interactions-events/">interactions</a></td><td>"Sigma.js uses WebGL to render graphs efficiently." Site shows v4.0.6. Events include <code>clickNode</code>, <code>enterNode</code> and <code>leaveNode</code>; pan, zoom and pinch are built in; edge events are off by default for performance. A summary of the rendering page mentions tens of thousands of nodes.</td><td>Licence and bundle size not stated on those pages; keyboard and accessibility not stated. It renders only the graph: labels, panels and layout are more work. Much of the detail came from a model summary of the page, not verbatim text.</td><td><b>Not chosen.</b> Kept in this table as the record of the comparison.</td></tr>
+  <tr><td><b>vis-network</b><br><a href="https://github.com/visjs/vis-network">GitHub</a></td><td>"Network uses HTML canvas for rendering." "works smooth on any modern browser for up to a few thousand nodes and edges"; clustering for larger sets; "Apache-2.0, MIT licenses found".</td><td>Version, bundle size, keyboard and accessibility not stated. Its automatic physics layout moves nodes; a stable hub-and-spoke picture needs fixed positions or a tuned layout.</td><td><b>Not chosen.</b> Kept in this table as the record of the comparison; it is no longer a fallback.</td></tr>
+</table></div>
+
+<div class="note"><p><b>Combination.</b> <b>htmx</b> for the server-rendered parts <span class="tag t-user">USER</span> (D2), <b>Cytoscape.js</b> for the graph <span class="tag t-user">USER</span> (D9), and a <b>Tabler</b>-based shell for the polished look <span class="tag t-arch">PROPOSAL</span>, re-themed in the cream palette. A graph of tens of nodes is far inside what Cytoscape handles. It has a direct styling model for status rings, dashed spokes and touch gestures. There is no graph-library fallback to decide: if Cytoscape later proves unfit, that is a new decision.</p>
+<p><b>Cost not yet measured:</b> the size of Tabler's CSS and JS and of Cytoscape.js as shipped, whether the assets are embedded in the gateway binary or fetched from a CDN (an external dependency that would need the browser to reach the internet; not proposed), and their licences in the exact versions chosen. Official pages state capabilities; none was tested here. <span class="tag t-unv">UNVERIFIED</span></p>
+<p><b>Accessibility is a design requirement, not a library feature.</b> The Cytoscape text I read describes pointer gestures only. A canvas has no focusable nodes, so the Network page pairs the graph with a plain list of hosts that selects the same card through the same htmx request, with visible focus (htmx's own guidance) and keyboard keys for fit and zoom. Whether Cytoscape can also expose its nodes to the keyboard is <span class="tag t-unv">UNVERIFIED</span>.</p></div>
+
+<h2 id="mock">12. Mock-ups and a proposed visual system</h2>
+<p class="prose"><b>Every host, session, id, age and description below is synthetic.</b> Colours follow the cream palette of the explainer video (decision D10, <a href="#palette">palette below</a>); the strip at the top of each page repeats the open-access consequence (D7, D8) in the mock-up copy. These are static HTML and CSS pictures of a proposal, not screenshots of anything that exists. The graph here is an inline picture; in the product it would be drawn by the graph library, and the card panel would be the htmx partial.</p>
+
+<h3>Network page, desktop</h3>
+<div class="dm" role="group" aria-label="Mock-up: Network page, desktop">
+  <div class="bar"><span class="brand"><i></i>Ratatoskr</span><a href="#mock">Overview</a><a class="on" href="#mock" aria-current="page">Network</a><a href="#mock">Hosts</a><a href="#mock">Sessions</a><span class="sp"></span><span class="chip barchip">3 of 4 hosts live</span></div>
+  <div class="page">
+    <div class="exposure"><b>Open access, no login, no TLS (v1).</b> Anyone who can reach <code>http://…:7777</code> (listening on every interface, shared with the host protocol) and open this URL can see this page, and it travels in cleartext. The URL is not a password. Read-only.</div>
+    <span class="synth">Synthetic data. Not from a real gateway.</span><span class="proposed">proposed</span>
+    <div class="ph"><h4>Network</h4><span>Updated 5 s ago · refreshes every 5 s (proposal)</span></div>
+    <div class="tools">
+      <span class="btn" aria-label="Zoom in">+</span><span class="btn" aria-label="Zoom out">&minus;</span><span class="btn">Fit</span><span class="btn">Reset layout</span>
+      <span class="btn on">Live</span><span class="btn on">Stale</span><span class="btn on">Offline</span><span class="btn">Messages seen (24 h)</span>
+    </div>
+    <div class="grid">
+      <div class="panel gp">
+<svg viewBox="0 0 640 380" role="group" aria-label="Network graph, synthetic: the gateway in the centre with one spoke to each of four hosts">
+  <title>Synthetic network graph: gateway hub with four host spokes</title>
+  <g stroke-linecap="round" fill="none">
+    <line x1="320" y1="190" x2="120" y2="90" stroke="#3F6A5E" stroke-width="3"/>
+    <line x1="320" y1="190" x2="520" y2="90" stroke="#3F6A5E" stroke-width="3"/>
+    <line x1="320" y1="190" x2="120" y2="300" stroke="#6B5F55" stroke-width="2.5" stroke-dasharray="8 6"/>
+    <line x1="320" y1="190" x2="520" y2="300" stroke="#9A8C80" stroke-width="2.5" stroke-dasharray="2 6"/>
+  </g>
+  <g>
+    <circle cx="320" cy="190" r="38" fill="#B4552F"/>
+    <text x="320" y="186" text-anchor="middle" font-size="13" font-weight="700" fill="#FAF6EE" font-family="system-ui,sans-serif">Gateway</text>
+    <text x="320" y="202" text-anchor="middle" font-size="10.5" fill="#F7E3D8" font-family="system-ui,sans-serif">the hub</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host mac. Connection live. Card fresh, 4 seconds old.">
+    <title>mac: live; card fresh 4 s</title>
+    <rect x="45" y="63" width="150" height="54" rx="10" fill="#FAF6EE" stroke="#3F6A5E" stroke-width="2.5"/>
+    <text x="120" y="86" text-anchor="middle">mac</text>
+    <text x="120" y="104" text-anchor="middle" class="sub">live · card fresh 4 s</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmb, selected. Connection live. Card stale, 4 minutes old. Press Enter to show its Agent Card.">
+    <title>vmb: live; card stale 4 m (selected)</title>
+    <rect x="441" y="59" width="158" height="62" rx="11" fill="#E4EAF0" stroke="#5B7083" stroke-width="3.5"/>
+    <rect x="437" y="55" width="166" height="70" rx="14" fill="none" stroke="#5B7083" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="520" y="86" text-anchor="middle">vmb</text>
+    <text x="520" y="104" text-anchor="middle" class="sub">live · card stale 4 m</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmc. Not connected. Card offline.">
+    <title>vmc: not live; card offline</title>
+    <rect x="45" y="273" width="150" height="54" rx="10" fill="#F5F0E6" stroke="#6B5F55" stroke-width="2.5" stroke-dasharray="7 4"/>
+    <text x="120" y="296" text-anchor="middle">vmc</text>
+    <text x="120" y="314" text-anchor="middle" class="sub">not live · card offline</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmd. Never heard from. No card.">
+    <title>vmd: never seen; no card</title>
+    <rect x="445" y="273" width="150" height="54" rx="10" fill="#FAF6EE" stroke="#9A8C80" stroke-width="2.5" stroke-dasharray="2 5"/>
+    <text x="520" y="296" text-anchor="middle">vmd</text>
+    <text x="520" y="314" text-anchor="middle" class="sub">never seen · no card</text>
+  </g>
+</svg>
+
+        <div class="legend"><span>Spoke: solid = host live</span><span>dashed = not live</span><span>dotted = never seen</span><span>Card age shown on each host</span></div>
+        <div class="keys"><kbd>Tab</kbd> move between hosts &nbsp; <kbd>Enter</kbd> open card &nbsp; <kbd>+</kbd> <kbd>&minus;</kbd> zoom &nbsp; <kbd>0</kbd> fit &nbsp; arrows pan &nbsp; <b>The host list below does the same without the graph.</b></div>
+      </div>
+      <div class="panel" aria-label="Agent Card panel">
+        <h5>Agent Card &middot; vmb</h5>
+        <p style="margin:0 0 6px"><span class="chip c-live">Connection: live</span> <span class="chip c-stale">Card: stale</span></p>
+        <dl class="kv">
+          <dt>Heartbeat</dt><dd>5 s ago<span class="src">source: gateway stream</span></dd>
+          <dt>Card fetched</dt><dd>4 m ago (last good poll)<span class="src">source: gateway poll of the host's card listener</span></dd>
+          <dt>Card version</dt><dd>1.0 &middot; revision 7f3a (synthetic)</dd>
+        </dl>
+        <div class="lab">Description <span style="text-transform:none;font-weight:400">(declared by the host owner)</span></div>
+        <p style="margin:0">Ubuntu build box with a GPU. Runs builds and long tests.</p>
+        <div class="lab">Declared skills <span style="text-transform:none;font-weight:400">(not verified)</span></div>
+        <div><span class="skill">code-review</span><span class="skill">gpu-build</span></div>
+        <div class="lab">Sessions on this host</div>
+        <table><tr><th>Address</th><th>Id</th><th>State</th></tr>
+          <tr><td>codex@vmb</td><td>ses_9d31a7</td><td><span class="chip c-live">connected</span> idle</td></tr></table>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px"><h5>Hosts (the same selection, without the graph)</h5>
+      <table><tr><th>Host</th><th>Connection</th><th>Card</th><th>Sessions</th></tr>
+        <tr><td>mac</td><td><span class="chip c-live">live</span></td><td><span class="chip c-live">fresh</span> 4 s</td><td>2</td></tr>
+        <tr><td><b>vmb</b> (selected)</td><td><span class="chip c-live">live</span></td><td><span class="chip c-stale">stale</span> 4 m</td><td>1</td></tr>
+        <tr><td>vmc</td><td><span class="chip c-off">not live</span></td><td><span class="chip c-off">offline</span></td><td>unknown</td></tr>
+        <tr><td>vmd</td><td><span class="chip c-none">never seen</span></td><td><span class="chip c-none">none</span></td><td>unknown</td></tr></table>
+    </div>
+  </div>
+</div>
+<p class="dm-note">Reading it (cream, warm palette; <a href="#palette">section 12, visual system</a>): the <b>ring</b> on a host is its connection to the gateway (solid, dashed, dotted); the <b>chip</b> is the card's freshness; the card text is labelled as declared; every state also has a word, so colour is never the only signal. The card panel is what a click, or <kbd>Enter</kbd> on a focused host, would request.</p>
+
+<h3>Overview page, desktop</h3>
+<div class="dm" role="group" aria-label="Mock-up: Overview page, desktop">
+  <div class="bar"><span class="brand"><i></i>Ratatoskr</span><a class="on" href="#mock" aria-current="page">Overview</a><a href="#mock">Network</a><a href="#mock">Hosts</a><a href="#mock">Sessions</a><span class="sp"></span><span class="chip barchip">Gateway up 3 d 4 h</span></div>
+  <div class="page">
+    <div class="exposure"><b>Open access, no login, no TLS (v1).</b> Anyone who can reach <code>http://…:7777</code> (listening on every interface, shared with the host protocol) and open this URL can see this page, and it travels in cleartext. The URL is not a password. Read-only.</div>
+    <span class="synth">Synthetic data. Not from a real gateway.</span><span class="proposed">proposed</span>
+    <div class="ph"><h4>Overview</h4><span>Updated 5 s ago</span></div>
+    <div class="stats">
+      <div class="panel stat"><b>3 / 4</b><span>hosts live</span></div>
+      <div class="panel stat"><b>1</b><span>card fresh, 1 stale, 1 offline, 1 none</span></div>
+      <div class="panel stat"><b>3</b><span>sessions connected</span></div>
+      <div class="panel stat"><b>unknown</b><span>on 2 hosts that are not live</span></div>
+    </div>
+    <div class="panel"><h5>Needs a look</h5>
+      <table><tr><th>Host</th><th>What</th><th>Since</th></tr>
+        <tr><td>vmb</td><td><span class="chip c-stale">card stale</span> last good poll 4 m ago</td><td>14:05</td></tr>
+        <tr><td>vmc</td><td><span class="chip c-off">not live</span> <span class="chip c-off">card offline</span></td><td>13:51</td></tr>
+        <tr><td>vmd</td><td><span class="chip c-none">never seen</span> paired, no card</td><td>n/a</td></tr></table></div>
+  </div>
+</div>
+
+<h3>Narrow layout (phone width)</h3>
+<div class="dm dm-narrow" role="group" aria-label="Mock-up: Network page, narrow">
+  <div class="bar"><span class="brand"><i></i>Ratatoskr</span><a href="#mock">Overview</a><a class="on" href="#mock" aria-current="page">Network</a><a href="#mock">Hosts</a></div>
+  <div class="page">
+    <div class="exposure"><b>Open access, plain HTTP.</b> Anyone who can reach this address can see this page. Read-only.</div>
+    <span class="synth">Synthetic data.</span><span class="proposed">proposed</span>
+    <div class="ph"><h4>Network</h4></div>
+    <div class="tools"><span class="btn">+</span><span class="btn">&minus;</span><span class="btn">Fit</span><span class="btn on">All states</span></div>
+    <div class="panel gp">
+<svg viewBox="0 0 640 380" role="group" aria-label="Network graph, synthetic: the gateway in the centre with one spoke to each of four hosts">
+  <title>Synthetic network graph: gateway hub with four host spokes</title>
+  <g stroke-linecap="round" fill="none">
+    <line x1="320" y1="190" x2="120" y2="90" stroke="#3F6A5E" stroke-width="3"/>
+    <line x1="320" y1="190" x2="520" y2="90" stroke="#3F6A5E" stroke-width="3"/>
+    <line x1="320" y1="190" x2="120" y2="300" stroke="#6B5F55" stroke-width="2.5" stroke-dasharray="8 6"/>
+    <line x1="320" y1="190" x2="520" y2="300" stroke="#9A8C80" stroke-width="2.5" stroke-dasharray="2 6"/>
+  </g>
+  <g>
+    <circle cx="320" cy="190" r="38" fill="#B4552F"/>
+    <text x="320" y="186" text-anchor="middle" font-size="13" font-weight="700" fill="#FAF6EE" font-family="system-ui,sans-serif">Gateway</text>
+    <text x="320" y="202" text-anchor="middle" font-size="10.5" fill="#F7E3D8" font-family="system-ui,sans-serif">the hub</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host mac. Connection live. Card fresh, 4 seconds old.">
+    <title>mac: live; card fresh 4 s</title>
+    <rect x="45" y="63" width="150" height="54" rx="10" fill="#FAF6EE" stroke="#3F6A5E" stroke-width="2.5"/>
+    <text x="120" y="86" text-anchor="middle">mac</text>
+    <text x="120" y="104" text-anchor="middle" class="sub">live · card fresh 4 s</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmb, selected. Connection live. Card stale, 4 minutes old. Press Enter to show its Agent Card.">
+    <title>vmb: live; card stale 4 m (selected)</title>
+    <rect x="441" y="59" width="158" height="62" rx="11" fill="#E4EAF0" stroke="#5B7083" stroke-width="3.5"/>
+    <rect x="437" y="55" width="166" height="70" rx="14" fill="none" stroke="#5B7083" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="520" y="86" text-anchor="middle">vmb</text>
+    <text x="520" y="104" text-anchor="middle" class="sub">live · card stale 4 m</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmc. Not connected. Card offline.">
+    <title>vmc: not live; card offline</title>
+    <rect x="45" y="273" width="150" height="54" rx="10" fill="#F5F0E6" stroke="#6B5F55" stroke-width="2.5" stroke-dasharray="7 4"/>
+    <text x="120" y="296" text-anchor="middle">vmc</text>
+    <text x="120" y="314" text-anchor="middle" class="sub">not live · card offline</text>
+  </g>
+  <g class="node" tabindex="0" role="button" aria-label="Host vmd. Never heard from. No card.">
+    <title>vmd: never seen; no card</title>
+    <rect x="445" y="273" width="150" height="54" rx="10" fill="#FAF6EE" stroke="#9A8C80" stroke-width="2.5" stroke-dasharray="2 5"/>
+    <text x="520" y="296" text-anchor="middle">vmd</text>
+    <text x="520" y="314" text-anchor="middle" class="sub">never seen · no card</text>
+  </g>
+</svg>
+
+    </div>
+    <div class="sheet"><h5 style="margin:0 0 4px">vmb <span class="chip c-live">live</span> <span class="chip c-stale">card stale</span></h5>
+      <p style="margin:0;font-size:.84rem">Ubuntu build box with a GPU. <span class="src" style="display:inline">declared by the host owner</span></p>
+      <p style="margin:6px 0 0;font-size:.8rem;color:var(--d-muted)">Drag the sheet up for skills and sessions. The Hosts page lists the same hosts as a table.</p></div>
+  </div>
+</div>
+<p class="dm-note">At phone width the card becomes a bottom sheet under the graph, the navigation bar scrolls or collapses, and the Hosts page is the main way to pick a host.</p>
+
+<h3 id="palette">Visual system: the cream, warm palette <span class="tag t-user">USER</span></h3>
+<p class="prose">Decision D10: every dashboard mock-up uses a cream background and the warm palette of the Ratatoskr explainer video. The values are those of <code>creamTheme</code> in <code>~/Projects/remotion-agents/src/shared/theme.tsx</code> (read 2026-11-11). The roles and zone mapping follow that brief: <b>gateway clay, model and session side ochre, dashboard and browser slate, hosts sage, plum for proposed-only chips</b>. Which role each colour plays on the page is a <span class="tag t-arch">PROPOSAL</span>; the colours themselves are the owner's choice.</p>
+<div class="palette" aria-label="Cream palette">
+  <span><i style="background:#FAF6EE"></i>Canvas #FAF6EE</span><span><i style="background:#F5F0E6"></i>Raised #F5F0E6 (panels, bar)</span><span><i style="background:#2A2420"></i>Ink #2A2420</span><span><i style="background:#6B5F55"></i>Muted ink #6B5F55</span><span><i style="background:#9A8C80"></i>Faint ink #9A8C80</span><span><i style="background:#E3D9C9"></i>Rule #E3D9C9</span>
+  <span><i style="background:#C96442"></i>Clay #C96442 (gateway; soft #F6E2D8)</span><span><i style="background:#B4552F"></i>Deep clay #B4552F (hub node; soft #F7E3D8)</span><span><i style="background:#8A6A2F"></i>Ochre #8A6A2F (model and session side: skills, stale; soft #F4EAD4)</span><span><i style="background:#5B7083"></i>Slate #5B7083 (dashboard and browser: selection, toolbar; soft #E4EAF0)</span><span><i style="background:#3F6A5E"></i>Sage #3F6A5E (hosts: live; soft #E1EDE8)</span><span><i style="background:#6E5A7A"></i>Plum #6E5A7A (proposed-only chips; soft #EDE6F0)</span><span><i style="background:#B24A3D"></i>Refused #B24A3D (rejected)</span><span><i style="background:#2B2622"></i>Dark code panel #2B2622 (not used in these mock-ups)</span>
+</div>
+<ul class="prose">
+  <li><b>Status is shape, line style and word, then colour.</b> Live: solid ring and a filled dot. Stale: a square marker. Offline or not live: a dashed ring and a hollow dot. Never seen or no card: a dotted ring. Every state also carries its word. The theme file says each hue keeps more than 4.5:1 contrast on cream at label size; <b>I did not measure contrast</b>, and chip text on its soft tint was not checked either. <span class="tag t-unv">UNVERIFIED</span></li>
+  <li><b>Two tints are mine, not the theme's:</b> the soft tint behind a rejected chip (#F6E1DD) and the soft tint behind an offline chip (the rule colour #E3D9C9). The theme has no soft tint for those two roles.</li>
+  <li><b>The rest of this page keeps the house Monokai style.</b> Only the mock-up frames are cream, so a reader can tell the proposed product look from the record around it. The cream frames do not follow the page's light or dark theme.</li>
+  <li><b>Type and spacing.</b> The system font stack (no web fonts to fetch), 14 px base in the dashboard, 16 px in this record, an 8 px spacing step, 10 px card radius, a 48 px navigation bar. Monospace for ids, addresses and routes. The navigation bar is the raised cream with a clay underline on the current page, not a dark bar.</li>
+  <li><b>Tabler.</b> The shell is still the proposal of section 11, now to be re-themed in these colours; how much of Tabler's variables carry over was not checked. <span class="tag t-unv">UNVERIFIED</span> A dark theme is <span class="tag t-unv">OPEN</span> (the theme file has a dark panel colour set, not a dark page).</li>
+  <li><b>Motion.</b> No animation is needed; zoom and pan are the library's. Reduced-motion is respected by not adding any.</li>
+</ul>
+
+<h2 id="sec">13. Security and open questions for the dashboard</h2>
+<div class="note" role="note"><p><b>Open access, stated plainly.</b> Decision D7 is that the dashboard needs no login in v1. <b>Anyone who can reach the gateway's dashboard listener and obtain its URL can view the Network graph, every Agent Card, host names, session ids and the other dashboard data.</b> The URL is an address. It is not a secret, it is not authentication, and nothing may describe or rely on it as access control. Authentication is deferred. Decision D8 makes the default bind address <code>0.0.0.0</code>, which listens on <b>every interface</b> of the machine: loopback, the LAN, Tailscale and <b>any public interface the machine has</b>. Together, with the defaults as decided, anything that can route to the gateway machine's port can read the dashboard.</p>
+<p><b>No encryption either (D11).</b> The owner chose no TLS for v1: the dashboard is plain HTTP. So on top of open access and an every-interface bind, <b>dashboard data, including host names, session ids and Agent Card text, travels in cleartext. Anyone on the network path can read it, and can also alter what a viewer sees</b> (for example a forged card or status). Future TLS is deferred.</p>
+<p><b>What a viewer sees (D12).</b> Exact session ids and all Agent Card details, to anyone who reaches the page.</p>
+<p><b>The v1 dashboard is read-only (D13).</b> Every route is a GET; there is no message sending, host revocation or other state-changing control. That follows the owner's decision, and it matters more here because the page is open and unencrypted. Any later control needs authentication, CSRF protection and its own decision.</p>
+<p><b>Every gateway service, not only the dashboard (D14).</b> The owner decided that the dashboard, the host protocol and the participant API all default to <code>0.0.0.0</code>. <b>A wildcard bind includes any public interface the machine has</b>, so by default the host protocol (which carries host credentials and messages) and the participant API (adapter credentials) are reachable from wherever the machine is reachable, not only the read-only page. Each can be changed with command-line arguments. The participant API keeps port 7790 (<code>DefaultParticipantPort</code>) unless the owner says otherwise. <span class="tag t-code">CODE</span></p>
+<p><b>The dashboard shares 7777 (D15).</b> It is served by the same listener as the host protocol, under namespaced routes. Existing gateway routes are all under <code>/v1/</code> (<code>/v1/pair</code>, <code>connect</code>, <code>sessions</code>, <code>heartbeat</code>, <code>stream</code>, <code>messages</code>, <code>report</code>, <code>network</code>, <code>graph</code>), and the participant API is a separate listener under <code>/participant/v1</code>; the proposed <code>/ui/*</code> names do not clash. The owner decided only that routes are namespaced; the exact names stay <span class="tag t-arch">PROPOSAL</span>. <span class="tag t-code">CODE</span></p>
+<p><b>The refusals are removed (D16).</b> Today <code>internal/gateway/listen.go</code> refuses the unspecified address (line 128, "is the unspecified address; name the interface address explicitly") and any address that is not loopback, Tailscale or private LAN (line 135, "no public mode"); ADR-0002 chose that on purpose. <span class="tag t-code">CODE</span> The owner decided to remove both refusals for all three gateway listeners, keep <code>0.0.0.0</code> as the default, and allow command-line overrides that name explicit public IPs. <b>The security consequence, stated plainly:</b> with no TLS (D11) and an open dashboard (D7), <b>any interface that can be reached can expose the dashboard, Agent Card and session data in cleartext</b>; and if the host protocol and participant listeners are reachable, <b>host credentials, participant credentials and messages are exposed too</b>. <b>Network firewalling is now the exposure boundary.</b> Choosing an address on the command line does not protect anything: an explicit public IP is as exposed as the wildcard. How the refusals are removed in code is an implementation matter for a later, authorised task.</p>
+<p><b>The shared 7777 is plain HTTP (D17).</b> The owner decided that port 7777 is plain HTTP for both the dashboard and the host protocol. So <b>host credentials (the bearer sent on every host request) and message bodies on that listener are cleartext on every reachable interface, and can be read or injected by anyone on the path.</b> Network firewalling is the boundary; neither the address chosen on the command line nor the open page protects them. The participant API on 7790 is a separate listener and is <b>not</b> covered by this decision (T1).</p>
+<p><b>Final transport rules (D18, D19, D20), decided and not built.</b> Participant API on 7790: HTTPS by default, plain only with <code>--participant-insecure-http</code>. Host protocol and dashboard on 7777: plain HTTP by default, HTTPS plus fingerprint pairing as an opt-in. <b>A default changes:</b> today a LAN address without <code>--insecure-http</code> is HTTPS (<code>TransportHTTPS</code>); under D19 a gateway on any address serves plain HTTP unless the HTTPS opt-in is chosen, so <b>an owner who relied on the old LAN default silently moves from HTTPS to cleartext</b> on upgrade. Existing LAN-HTTPS pairings (scenario 2's HTTPS variant) keep working only if the opt-in is chosen. Firewalling remains the boundary for everything on 7777. <span class="tag t-code">CODE</span></p></div>
+
+<h3>What the source does today, and what D8 changes</h3>
+<ul class="prose">
+  <li><b>Today <code>rtk gateway --listen</code> has no default address.</b> It needs an explicit <code>IP:port</code>, and it refuses the unspecified address (<code>internal/gateway/listen.go</code>: "is the unspecified address; name the interface address explicitly"). <span class="tag t-code">CODE</span></li>
+  <li><b>It also refuses every address that is not loopback, Tailscale or a private LAN range</b>, with the words "there is no public mode" in the same file. <a href="../0002-cross-machine-messaging/index.html">ADR-0002</a> chose that on purpose (loopback, Tailscale or private LAN only). <span class="tag t-code">CODE</span></li>
+  <li><b>Port 7777</b> is the documented convention (README, ADR-0002 and the scenarios, and the tests). No default port constant exists in the source I read. <span class="tag t-code">CODE</span> D8 records 7777 as the default, overridable on the command line.</li>
+  <li><b>So D8, D14 and D16 reverse today's rule</b>, for all three listeners. The owner decided it; the refusals above are to be removed in a later, authorised build. The transport rules are decided (D17 to D20); only the naming and compatibility items N1 to N4 below remain.</li>
+</ul>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>The bind and transport questions: decided (X1 to X3, T1 to T3) and open, non-blocking (N1 to N4)</th><th>Why it matters</th><th>Status</th></tr>
+  <tr><td>X1</td><td><b>Does the <code>0.0.0.0</code> default cover only a dashboard listener, or the host protocol and the participant API as well?</b></td><td>Decided: all three (D14). A default, changeable by command-line arguments. Participant API port stays 7790.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>X2</td><td><b>Is the dashboard a separate listener, or does it share port 7777?</b></td><td>Decided: it shares 7777, with namespaced routes (D15). The consequence is T2 below.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>X3</td><td><b>Are the existing refusals lifted, and for which listeners?</b> Two separate refusals in <code>internal/gateway/listen.go</code>: (a) the <b>wildcard</b> refusal (line 128); (b) the <b>explicit public address</b> refusal ("no public mode", line 135). <span class="tag t-code">CODE</span></td><td>Decided: both are removed for all gateway service listeners (host protocol, participant API, dashboard); <code>0.0.0.0</code> remains the default; overrides may name explicit public IPs (D16). Firewalling is the exposure boundary; the override is not protection.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>T1</td><td><b>Participant API on 7790: which transport?</b></td><td>Decided: HTTPS by default, plain HTTP only as an explicit opt-in through <code>--participant-insecure-http</code>, which is kept (D18).</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>T2</td><td><b>The dashboard shares 7777, so its transport is the host protocol's.</b></td><td>Decided: plain HTTP for both (D17). When the HTTPS opt-in is on (D19), the dashboard is served over HTTPS with the self-signed certificate and browsers warn.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>T3</td><td><b>What happens to today's HTTPS host mode?</b></td><td>Decided: preserved as an opt-in with <code>--fingerprint</code> pairing; plain HTTP is the default on 7777; <code>rtk gateway --allow-lan</code> and <code>--insecure-http</code> are retired (D19, D20). <span class="tag t-code">CODE</span></td><td><span class="tag t-user">USER</span> decided, not built</td></tr>
+  <tr><td>N1</td><td><b>What is the flag name of the HTTPS host opt-in?</b></td><td>Naming only. No name is chosen. <span class="tag t-arch">PROPOSAL</span> to decide it with the code; none is proposed here.</td><td><span class="tag t-unv">OPEN</span> non-blocking</td></tr>
+  <tr><td>N2</td><td><b>Are the retired <code>rtk gateway --allow-lan</code> and <code>--insecure-http</code> rejected, or accepted and ignored with a warning for one release?</b></td><td>Either way every existing command line or script that passes them is affected. The lead recommends accept, ignore and warn for one release. <span class="tag t-arch">PROPOSAL</span></td><td><span class="tag t-unv">OPEN</span> non-blocking</td></tr>
+  <tr><td>N3</td><td><b><code>rtk runtime pair --insecure-http</code></b> (a host pairs to a plain-HTTP host listener)</td><td>Probably redundant once plain HTTP is the default, but the owner did not name it.</td><td><span class="tag t-unv">OPEN</span> non-blocking</td></tr>
+  <tr><td>N4</td><td><b><code>--participant-allow-lan</code></b></td><td>Arguably redundant after D16 lifts the address refusals, but the owner did not retire it.</td><td><span class="tag t-unv">OPEN</span> non-blocking</td></tr>
+  <tr><td colspan="4"><b>Flags that share the name <code>--insecure-http</code> and are kept:</b> <code>rtk gateway participant pair ID --insecure-http</code> (asks for the plain participant block; part of the D18 opt-in) and <code>ratatoskr-openrig setup/pair/serve --insecure-http</code> (the bridge accepts an http participant URL). <b>Retired:</b> only <code>rtk gateway --allow-lan</code> and <code>rtk gateway --insecure-http</code>.</td></tr>
+  </table></div>
+
+<h3>The remaining security items</h3>
+<div class="note"><p><b>No existing listener authenticates a person.</b> The participant API's credential is for adapters and its listener is separate. The host API (<code>/v1/network</code>, <code>/v1/graph</code>) is behind <code>withAuth</code>, which checks a <em>host</em> credential, not a person. The host card listener (<code>rtk daemon --card-listen</code>, port 7778 by default) is plain HTTP and readable by anyone who can reach it, and it runs on daemons, not on the gateway. <span class="tag t-code">CODE</span> D7 accepts that for the dashboard in v1.</p></div>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Question</th><th>What is known</th><th>Status</th></tr>
+  <tr><td>S1</td><td><b>Who may open it, and how do they prove it?</b></td><td>Decided for v1: anyone with the link, no proof (D7). What remains open is the later design: a single owner password or token, a tie to the existing pairing, or a reverse proxy in front.</td><td><span class="tag t-user">USER</span> v1; later authentication <span class="tag t-unv">OPEN</span> (deferred)</td></tr>
+  <tr><td>S2</td><td><b>Bind address and port.</b></td><td>Decided: every gateway service defaults to <code>0.0.0.0</code> (D8, D14); the dashboard and host protocol share port 7777, plain HTTP by default (D15, D17, D19); the participant API keeps 7790, HTTPS by default (D18); all changeable by command-line arguments, including explicit public IPs (D16). Firewalling is the exposure boundary.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>S3</td><td><b>TLS for browsers.</b></td><td>Decided for v1: none, plain HTTP (D11). The gateway's self-signed certificate is pinned by adapters and a browser cannot pin it, which was the reason the question was hard. Consequence: with a <code>0.0.0.0</code> default, the page and its cards cross every network the machine is on in cleartext, readable and alterable by parties able to intercept. Future TLS (an owner-supplied certificate, or a proxy that terminates TLS) remains deferred.</td><td><span class="tag t-user">USER</span> decided for v1; future TLS deferred</td></tr>
+  <tr><td>S4</td><td><b>Read-only now, controls later.</b></td><td>Decided: the v1 dashboard is read-only (D13), with no message sending, host revocation or other state-changing control. A future control needs authentication, CSRF protection, a confirmation step and its own decision.</td><td><span class="tag t-user">USER</span> decided for v1; controls deferred</td></tr>
+  <tr><td>S5</td><td><b>XSS from card text.</b></td><td>A card's description, skill names and tags are written by a host owner and shown to anyone who opens the page. They are untrusted input, and with plain HTTP a party on the path can also inject text. The server must escape them in every context (an HTML template that escapes by default), and the page should carry a strict content security policy with no inline script. Whether htmx's own settings add anything beyond that is not examined.</td><td><span class="tag t-unv">OPEN</span> design, <span class="tag t-unv">UNVERIFIED</span></td></tr>
+  <tr><td>S6</td><td><b>Browser-level attacks.</b></td><td>DNS rebinding lets a malicious web page, open in an owner's browser, read a service that browser can reach but the attacker cannot, unless the <code>Host</code> header is checked. Clickjacking needs a frame policy; a no-cache policy keeps data out of shared caches. Open access does not remove these, and plain HTTP (D11) makes them matter more, not less.</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>S7</td><td><b>Assets and dependencies.</b></td><td>The libraries of section 11 must be served by the gateway itself, pinned to exact versions with their licences recorded, not loaded from a CDN. Embedding them grows the binary by an amount not yet measured.</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>S8</td><td><b>What a viewer may see.</b></td><td>Decided: viewers may see exact session ids and all Agent Card details (D12). Participants and sessions are also visible to every session through discovery (decision 4 of section 6). With open access and plain HTTP the viewer, and anyone on the path, may be anyone on the network.</td><td><span class="tag t-user">USER</span> decided</td></tr>
+  <tr><td>S9</td><td><b>Firewalling and exposure advice for owners.</b></td><td>Now the exposure boundary (D16), not an extra. What the documentation tells an owner to do (bind to a specific address, close the port on public interfaces, a firewall in front) is not written and not examined on any real machine. The command-line address is not protection.</td><td><span class="tag t-unv">OPEN</span> guidance to write; the boundary itself is <span class="tag t-user">USER</span></td></tr>
+</table></div>
+
+<h2 id="decisions2">14. Decisions after the revision</h2>
+<div class="table-wrap"><table>
+  <tr><th>#</th><th>Item</th><th>Status</th></tr>
+  <tr><td>D1</td><td>TOON only at the model-facing boundary; JSON everywhere else</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D2&ndash;D5</td><td>HTMX dashboard hosted by the gateway; navigation bar; Network page with an interactive graph and an Agent Card detail on click; a polished UI with mock-ups in this record</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>D7&ndash;D20</td><td>Open access and no authentication in v1; every gateway service defaults to <code>0.0.0.0</code>, and the dashboard shares 7777; <code>0.0.0.0</code> default bind with port 7777 changeable by argument; Cytoscape.js selected; cream, warm palette for the mock-ups; no TLS in v1; exact session ids and all card details visible; read-only v1</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>R1</td><td>TOON savings and correct reading</td><td><span class="tag t-unv">OPEN</span> measure first (section 8); no number chosen</td></tr>
+  <tr><td>R2</td><td>TOON encoder: library or in-house, and the pinned spec version</td><td><span class="tag t-unv">OPEN</span> (the spec is a working draft)</td></tr>
+  <tr><td>R3</td><td>How a host's skills are laid out in TOON (a second table)</td><td><span class="tag t-arch">PROPOSAL</span></td></tr>
+  <tr><td>R4</td><td>Graph library: Cytoscape.js (closed, see D9; vis-network and Sigma.js not chosen). The Tabler shell, re-themed in the cream palette, stays a proposal</td><td><span class="tag t-user">USER</span> graph library; <span class="tag t-arch">PROPOSAL</span> shell</td></tr>
+  <tr><td>R5</td><td>Hub-and-spoke graph from <code>connection.live</code>; <code>messages_seen</code> as an optional overlay (off by default); whether to match the TUI by default</td><td><span class="tag t-arch">PROPOSAL</span> / <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>R6</td><td>Pages: two first (Overview, Network), then Hosts and Sessions; Participants only if shown at all</td><td><span class="tag t-arch">PROPOSAL</span> / <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>R7</td><td>Routes, refresh interval, in-process rendering</td><td><span class="tag t-arch">PROPOSAL</span> / <span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>R8</td><td>Open access in v1, no authentication (closed, see D7); <code>0.0.0.0</code> default bind and port 7777 (closed, see D8). </td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>R8c</td><td>No TLS in v1, plain HTTP (D11); exact session ids and all card details visible (D12); read-only v1 (D13). Closed for v1; future TLS and any future controls deferred</td><td><span class="tag t-user">USER</span></td></tr>
+  <tr><td>R8a</td><td>X1 to X3 and T1 to T3 closed (D14 to D20). Open and non-blocking: N1 (HTTPS opt-in flag name), N2 (reject or warn for the retired flags), N3 (<code>rtk runtime pair --insecure-http</code>), N4 (<code>--participant-allow-lan</code>)</td><td><span class="tag t-unv">OPEN</span> non-blocking</td></tr>
+  <tr><td>R8b</td><td>Firewalling advice, DNS rebinding and clickjacking, XSS and content security policy, assets (S5 to S7, S9); later authentication, TLS and any future control with CSRF (S1, S3, S4, deferred)</td><td><span class="tag t-unv">OPEN</span></td></tr>
+  <tr><td>R9</td><td>Build any of it</td><td><span class="tag t-user">USER</span> no build authorised; GR-3 labels stay</td></tr>
+</table></div>
+
 <h2 id="sources">Sources</h2>
 <ul class="prose small">
+  <li><b>Research for the 2026-11-11 revision</b> (official pages, all fetched 2026-11-11; they describe capabilities, not fitness for this product): <a href="https://htmx.org/docs/">htmx docs</a>; <a href="https://docs.tabler.io/ui">Tabler UI docs</a> and <a href="https://tabler.io/admin-template">Tabler admin template</a>; <a href="https://github.com/cytoscape/cytoscape.js">Cytoscape.js repository</a> and <a href="https://js.cytoscape.org/">documentation</a>; Sigma.js <a href="https://www.sigmajs.org/how-to/interactivity/interactions-events/">interactions and events</a> and <a href="https://www.sigmajs.org/concepts/rendering/">rendering</a>; <a href="https://github.com/visjs/vis-network">vis-network</a>; the <a href="https://github.com/toon-format/spec/blob/main/SPEC.md">TOON specification</a> (version 4.4, dated 2026-10-08, status Working Draft).</li>
+  <li><b>Listener rule and palette (second revision):</b> <code>internal/gateway/listen.go</code> (refusals of the unspecified and public addresses, read 2026-11-11); <code>creamTheme</code> in <code>~/Projects/remotion-agents/src/shared/theme.tsx</code> (palette values, read 2026-11-11), outside this repository.</li>
+  <li><b>Source files read for the dashboard data:</b> <a class="src" href="../../../internal/protocol/network.go"><code>internal/protocol/network.go</code></a>, <a class="src" href="../../../internal/protocol/graph.go"><code>internal/protocol/graph.go</code></a>, <a class="src" href="../../../internal/protocol/card.go"><code>internal/protocol/card.go</code></a>, <code>internal/gateway/graph.go</code>, <code>internal/gateway/network.go</code>, <code>internal/gateway/liveness.go</code>, <code>internal/gateway/server.go</code> (route auth), <code>cmd/rtk/main.go</code> (card listener flags); and the contracts <a href="../../implementation/network-api-contract.md">network-api-contract.md</a> and <a href="../../implementation/host-cards-contract.md">host-cards-contract.md</a> (headings and the ADRs, not read line by line).</li>
   <li><a href="../0005-host-agent-cards-and-graph/index.html">ADR-0005</a> host cards and the graph; <a href="../0006-a2a-routing-and-identity/index.html">ADR-0006</a> A2A (deferred, with its <a href="../deferred/0006-a2a-deferral/index.html">record</a>); <a href="../0008-openrig-operator-integration/index.html">ADR-0008</a> the operator; <a href="../0004-network-tab/index.html">ADR-0004</a> the network API.</li>
   <li><b>The request:</b> the user's words as relayed by the operator on 2026-11-08 (split into three records).</li>
 </ul>

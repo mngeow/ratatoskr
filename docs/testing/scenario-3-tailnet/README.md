@@ -8,6 +8,8 @@ The same three machines, connected by Tailscale instead of your LAN.
 
 > **This isn't HTTPS.** `rtk` refuses HTTPS on a Tailscale address: it allows `--allow-lan` and `--fingerprint` on LAN addresses only. These steps use plain HTTP inside Tailscale's WireGuard tunnel, and the gateway says so when it starts. To test HTTPS, use [scenario 2](../scenario-2-lan-http/README.md) with `rtk gateway --listen <GW_LAN_IP>:<GW_PORT> --allow-lan`, and pair with the printed `--fingerprint` line. Adding HTTPS on a tailnet would be a small product change, and is the user's decision.
 
+> **Planned flag change: decided, not built.** On 2026-11-11 the owner decided ([ADR-0009](../../adr/0009-agent-discovery-tool/index.html), D18 to D20) to retire the gateway's `--allow-lan` and `--insecure-http`. Every gateway service will listen on `0.0.0.0` by default; the host port 7777 will be plain HTTP by default, with pinned HTTPS (`--fingerprint` pairing) kept as an opt-in; the participant API on 7790 stays HTTPS by default, with `--participant-insecure-http` as its plain opt-in. **Nothing has changed in `rtk` yet: the commands on this page are correct for the current build and still need those flags.** **Breaking, decided but not built:** every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. Whether the retired flags are then refused or accepted with a warning is not decided.
+
 ## 1. Before you start
 
 Check these, on all three machines.

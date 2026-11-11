@@ -30,6 +30,8 @@ connection does not change that. An unencrypted participant listener is an **opt
 for a trusted private network - how to ask for it, and what it costs, is under
 [Optional: a plain-HTTP participant listener](#optional-a-plain-http-participant-listener).
 
+> **Planned flag change: decided, not built.** On 2026-11-11 the owner decided ([ADR-0009](../../adr/0009-agent-discovery-tool/index.html), D18 to D20) to retire the gateway's `--allow-lan` and `--insecure-http`. Every gateway service will listen on `0.0.0.0` by default; the host port 7777 will be plain HTTP by default, with pinned HTTPS (`--fingerprint` pairing) kept as an opt-in; the participant API on 7790 stays HTTPS by default, with `--participant-insecure-http` as its plain opt-in. **Nothing has changed in `rtk` yet: the commands on this page are correct for the current build and still need those flags.** **Breaking, decided but not built:** every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. Whether the retired flags are then refused or accepted with a warning is not decided.
+
 ## 1. Start or reuse the gateway and VM-B Claude
 
 On VM-A, reuse the existing gateway where possible. If it needs starting, use the same state directory as scenarios 2

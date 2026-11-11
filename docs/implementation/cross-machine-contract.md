@@ -4,6 +4,8 @@ Owner: architect. Design source: [ADR-0002](../adr/0002-cross-machine-messaging/
 
 This is the contract the current code was built to, at commit `12417f5`. **The user reports successful testing by hand on 2026-11-06:** "Ok, I tested the cross-machine functionality of ratatoskr and it all works as expected." The report doesn't confirm a setup, transport or failure case, and the team hasn't run anything. Engineers own the code structure. If something here is wrong or doesn't fit the code, raise it through lead to architect instead of quietly diverging.
 
+> **Superseded in part by [ADR-0009](../adr/0009-agent-discovery-tool/index.html#sec) D16 and D18 to D20 (decided 2026-11-11, not built).** `rtk gateway --allow-lan` and `rtk gateway --insecure-http` are retired; the wildcard and public-address refusals are removed; plain HTTP is the default on the shared port 7777, with HTTPS plus `--fingerprint` pairing kept as an opt-in. This contract still describes the code as built until that change lands. `rtk runtime pair --insecure-http` is undecided (ADR-0009 N3).
+
 ## Rules
 
 - **GR-3 stands:** `gofmt`, `go vet`, `go build` and static checks are allowed. Write tests, but don't run them. Don't run `rtk`, harnesses, probes or SSH sessions.

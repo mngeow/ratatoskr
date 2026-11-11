@@ -150,6 +150,8 @@ The agents appear as `claude@local` and `codex@local`. The scenario guides ([one
 
 **Without Tailscale (Direct LAN).** A gateway can listen on a private LAN address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`; never a public address or `0.0.0.0`). That takes an explicit opt-in, and plain HTTP takes a second one:
 
+> **Planned flag change: decided, not built.** On 2026-11-11 the owner decided ([ADR-0009](docs/adr/0009-agent-discovery-tool/index.html), D18 to D20) to retire the gateway's `--allow-lan` and `--insecure-http`. Every gateway service will listen on `0.0.0.0` by default; the host port 7777 will be plain HTTP by default, with pinned HTTPS (`--fingerprint` pairing) kept as an opt-in; the participant API on 7790 stays HTTPS by default, with `--participant-insecure-http` as its plain opt-in. **Nothing has changed in `rtk` yet: the commands on this page are correct for the current build and still need those flags.** **Breaking, decided but not built:** every existing command line or script that passes either flag changes behaviour, and a LAN gateway that relied on the old HTTPS default becomes plain HTTP unless the HTTPS opt-in is chosen. Whether the retired flags are then refused or accepted with a warning is not decided.
+
 | You want | Gateway machine | Each machine with agents |
 | --- | --- | --- |
 | **HTTPS, pinned** (recommended) | `rtk gateway --listen 192.168.50.217:7777 --allow-lan` | the full `rtk runtime pair ... --fingerprint sha256:...` line that `rtk gateway pair` prints |
@@ -308,7 +310,7 @@ These are decision records, not features. None is implemented, and none authoris
 | --- | --- |
 | [ADR-0007](docs/adr/0007-adapter-integration-contract/index.html) | A language-neutral contract so outside harnesses and orchestrators (OpenRig, Pi, custom) join through adapters in any language; the user approved a separate HTTP+JSON participant API on the gateway with a long-poll inbox; being built on branch `feat/adapter-integration`, never run |
 | [ADR-0008](docs/adr/0008-openrig-operator-integration/index.html) | Only the main OpenRig operator on the network, through a Go bridge (sidecar plus thin client under the OS service manager) that is a client of the ADR-0007 participant API; inbound by `rig send`, no allow-list in v1 (user choices 2026-11-09); the outbound mechanism is still open. Source-grounded against OpenRig 0.7.7, nothing built or run |
-| [ADR-0009](docs/adr/0009-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search |
+| [ADR-0009](docs/adr/0009-agent-discovery-tool/index.html) | A `ratatoskr_discover` tool returning a compact list of host cards and contactable sessions, for the model to choose from; the gateway does no search. Also proposes an HTMX gateway dashboard: read-only, open to anyone with the link, no authentication and no TLS in v1; every gateway service defaults to 0.0.0.0 and the shared port 7777 is plain HTTP, so firewalling is the exposure boundary |
 
 **Deferred:** [A2A](docs/adr/deferred/0006-a2a-deferral/index.html) (ADR-0006) is set aside for now because its task semantics do not fit the current need for direct peer messaging. The proposal and a never-run implementation branch, `feat/a2a-participants`, are kept; see the [deferred ADRs](docs/adr/deferred/index.html).
 

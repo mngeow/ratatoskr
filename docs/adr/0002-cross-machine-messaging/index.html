@@ -860,6 +860,7 @@ rtk runtime    # intended form: harnesses, PTYs, gate, delivery</pre>
 </div>
 
 <h3 id="direct-lan">Direct LAN: two opt-ins, added 2026-11-06</h3>
+<div class="note"><p><b>Superseded by <a href="../0009-agent-discovery-tool/index.html#sec">ADR-0009 D18 to D20</a> (decided 2026-11-11, not built).</b> The gateway flags <code>--allow-lan</code> and <code>--insecure-http</code> in this table are to be retired: plain HTTP becomes the default on the shared 7777, and HTTPS with fingerprint pairing stays as an opt-in whose flag name is not yet chosen. The address refusals above are also removed (D16). What is written here describes the code as built; it is not the future behaviour.</p></div>
 <p class="prose"><span class="tag t-user">USER</span> "Ok please add the opt-in option, add an additional opt-in to use only in http". Everything above assumes Tailscale carries the traffic and encrypts it. On a LAN nothing does that for you, so <b>allowing a LAN listener and giving up encryption are separate choices.</b> The user's report of 2026-11-06 doesn't say whether either LAN mode was used, so this section isn't confirmed separately.</p>
 <div class="table-wrap"><table>
   <tr><th>Gateway command</th><th>Runtime pairs with</th><th>Transport</th></tr>
