@@ -22,6 +22,14 @@ func TestParseAddressAccepts(t *testing.T) {
 		{"10.0.0.1:7777", ClassLAN},
 		{"172.16.0.1:7777", ClassLAN},
 		{"[fc00::1]:7777", ClassLAN},
+		// ADR-0009 D16: the wildcard and public addresses are accepted, and only classified.
+		{"0.0.0.0:7777", ClassWildcard},
+		{"[::]:7777", ClassWildcard},
+		{"8.8.8.8:7777", ClassPublic},
+		{"[2001:4860:4860::8888]:7777", ClassPublic},
+		{"100.128.0.1:7777", ClassPublic},
+		{"172.32.0.1:7777", ClassPublic},
+		{"169.254.1.1:7777", ClassPublic},
 	}
 
 	for _, tc := range tests {
@@ -40,7 +48,7 @@ func TestParseAddressAccepts(t *testing.T) {
 	}
 }
 
-// TestParseAddressRefuses: whatever the flags say, these are never usable.
+// TestParseAddressRefuses: these are never usable (the IP-literal parsing stays; the class refusals are gone).
 func TestParseAddressRefuses(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -50,18 +58,10 @@ func TestParseAddressRefuses(t *testing.T) {
 		{name: "localhost", value: "localhost:7777"},
 		{name: "no port", value: "100.64.0.1"},
 		{name: "port zero", value: "100.64.0.1:0"},
-		{name: "unspecified v4", value: "0.0.0.0:7777"},
-		{name: "unspecified v6", value: "[::]:7777"},
 		{name: "mapped v4", value: "[::ffff:100.64.0.1]:7777"},
 		{name: "mapped loopback", value: "[::ffff:127.0.0.1]:7777"},
 		{name: "mapped lan", value: "[::ffff:192.168.1.5]:7777"},
 		{name: "zone", value: "[fe80::1%en0]:7777"},
-		{name: "link-local v4", value: "169.254.1.1:7777"},
-		{name: "link-local v6", value: "[fe80::1]:7777"},
-		{name: "outside the tailscale range", value: "100.128.0.1:7777"},
-		{name: "just outside 172.16/12", value: "172.32.0.1:7777"},
-		{name: "public", value: "8.8.8.8:7777"},
-		{name: "public v6", value: "[2001:4860:4860::8888]:7777"},
 		{name: "empty port", value: ":7777"},
 		{name: "empty", value: ""},
 		{name: "leading space", value: " 127.0.0.1:7777"},
@@ -101,51 +101,37 @@ func TestTailscaleIsCheckedBeforePrivate(t *testing.T) {
 	}
 }
 
-// TestPlanListenTable is the gateway flag table of the contract's "Direct LAN" section.
+// TestPlanListenTable: the transport is plain unless --https, whatever the address (D17, D19).
 func TestPlanListenTable(t *testing.T) {
 	tests := []struct {
-		name         string
-		listen       string
-		allowLAN     bool
-		insecureHTTP bool
-		want         Transport
-		refusal      string // a phrase the refusal must contain; empty means accepted
+		name   string
+		listen string
+		https  bool
+		want   Transport
+		class  AddrClass
 	}{
-		{name: "Tailscale plain", listen: "100.64.0.1:7777", want: TransportPlain},
-		{name: "loopback plain", listen: "127.0.0.1:7777", want: TransportPlain},
-		{name: "Tailscale v6 plain", listen: "[fd7a:115c:a1e0::1]:7777", want: TransportPlain},
-		{name: "Tailscale with allow-lan", listen: "100.64.0.1:7777", allowLAN: true, refusal: "apply only to a LAN address"},
-		{name: "loopback with insecure-http", listen: "127.0.0.1:7777", insecureHTTP: true, refusal: "apply only to a LAN address"},
-		{name: "Tailscale with both", listen: "100.64.0.1:7777", allowLAN: true, insecureHTTP: true, refusal: "apply only to a LAN address"},
-		{name: "LAN with no flag", listen: "192.168.1.5:7777", refusal: FlagAllowLAN},
-		{name: "LAN with insecure-http alone", listen: "192.168.1.5:7777", insecureHTTP: true, refusal: "also needs " + FlagAllowLAN},
-		{name: "LAN with allow-lan is HTTPS", listen: "192.168.1.5:7777", allowLAN: true, want: TransportHTTPS},
-		{name: "LAN with both is plain HTTP", listen: "192.168.1.5:7777", allowLAN: true, insecureHTTP: true, want: TransportLANHTTP},
-		{name: "LAN v6 with allow-lan", listen: "[fc00::1]:7777", allowLAN: true, want: TransportHTTPS},
-		{name: "public with every flag", listen: "8.8.8.8:7777", allowLAN: true, insecureHTTP: true, refusal: "not a loopback"},
-		{name: "unspecified with every flag", listen: "0.0.0.0:7777", allowLAN: true, insecureHTTP: true, refusal: "unspecified"},
-		{name: "link-local with every flag", listen: "169.254.1.1:7777", allowLAN: true, insecureHTTP: true, refusal: "not a loopback"},
+		{name: "default address plain", listen: DefaultListen, want: TransportPlain, class: ClassWildcard},
+		{name: "wildcard https", listen: DefaultListen, https: true, want: TransportHTTPS, class: ClassWildcard},
+		{name: "Tailscale plain", listen: "100.64.0.1:7777", want: TransportPlain, class: ClassTailscale},
+		{name: "Tailscale https", listen: "100.64.0.1:7777", https: true, want: TransportHTTPS, class: ClassTailscale},
+		{name: "loopback plain", listen: "127.0.0.1:7777", want: TransportPlain, class: ClassLoopback},
+		{name: "LAN is plain now", listen: "192.168.1.5:7777", want: TransportPlain, class: ClassLAN},
+		{name: "LAN https", listen: "192.168.1.5:7777", https: true, want: TransportHTTPS, class: ClassLAN},
+		{name: "explicit public plain", listen: "8.8.8.8:7777", want: TransportPlain, class: ClassPublic},
 	}
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := PlanListen(tc.listen, tc.allowLAN, tc.insecureHTTP)
-			if tc.refusal != "" {
-				if err == nil {
-					t.Fatalf("PlanListen accepted %q (%v, %v)", tc.listen, tc.allowLAN, tc.insecureHTTP)
-				}
-				if !strings.Contains(err.Error(), tc.refusal) {
-					t.Fatalf("refusal %q does not contain %q", err, tc.refusal)
-				}
-				return
-			}
+			plan, err := PlanListen(tc.listen, tc.https)
 			if err != nil {
 				t.Fatalf("PlanListen: %v", err)
 			}
-			if plan.Transport != tc.want {
-				t.Fatalf("transport = %d, want %d", plan.Transport, tc.want)
+			if plan.Transport != tc.want || plan.Class != tc.class {
+				t.Fatalf("plan = transport %d class %s, want %d %s", plan.Transport, plan.Class, tc.want, tc.class)
 			}
 		})
+	}
+	if _, err := PlanListen("hostname:7777", false); err == nil || !strings.Contains(err.Error(), "IP literal") {
+		t.Fatalf("a hostname must still be refused: %v", err)
 	}
 }
 

@@ -1,0 +1,48 @@
+{{- /*
+  Shared pieces of the dashboard pages. Every named template here is executed by handler.go through
+  html/template, so all of it is escaped in context. No inline style or script anywhere: the CSP is
+  default-src 'self', and styling lives in static/app.css while behaviour lives in static/app.js.
+
+  The four facts stay separate everywhere: connection, card freshness, the card declaration, and the
+  sessions. Nothing here merges them into one status, invents a value the gateway does not have, or
+  offers an action that changes anything.
+*/ -}}
+
+{{- define "head" -}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+{{/* htmx configuration: no injected stylesheet, no eval, same-origin requests only. The handler also
+     sends a Content-Security-Policy header; this only configures htmx itself. */}}
+<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"selfRequestsOnly":true}'>
+<title>{{.Title}} · Ratatoskr dashboard</title>
+<link rel="stylesheet" href="/ui/static/app.css">
+<script src="/ui/static/htmx.min.js" defer></script>
+{{- end -}}
+
+{{- define "chrome" -}}
+<header class="bar">
+  <p class="brand">Ratatoskr</p>
+  <nav class="nav" aria-label="Dashboard pages">
+    <a href="{{.DashboardURL}}"{{if eq .CurrentPage "overview"}} aria-current="page"{{end}}>Overview</a>
+    <a href="{{.NetworkURL}}"{{if eq .CurrentPage "network"}} aria-current="page"{{end}}>Network</a>
+  </nav>
+</header>
+{{/* Open access is stated on every page, in the gateway's own words for the transport it really uses. */}}
+<p class="strip" role="note">{{.OpenAccessText}}</p>
+{{- end -}}
+
+{{- define "status" -}}
+{{- /* The strip the Network page refreshes with htmx every five seconds. */ -}}
+<p class="status-line">
+  <span class="status-item"><span class="status-value">{{.HostCount}}</span> hosts, <span class="status-value">{{.LiveHostCount}}</span> live</span>
+  <span class="status-item">card <span class="status-value">{{.CardFreshCount}}</span> fresh, <span class="status-value">{{.CardStaleCount}}</span> stale, <span class="status-value">{{.CardOfflineCount}}</span> offline, <span class="status-value">{{.CardNoneCount}}</span> none, <span class="status-value">{{.CardRejectedCount}}</span> rejected</span>
+  <span class="status-item">gateway {{.GatewayState}}</span>
+  <span class="status-item">as of {{.GeneratedAt}}</span>
+</p>
+{{- end -}}
+
+{{- define "statechip" -}}
+{{- /* One card-freshness word with a marker shape, so state is never colour alone. */ -}}
+<span class="chip chip-{{.}}"><span class="chip-mark" aria-hidden="true"></span>{{.}}</span>
+{{- end -}}

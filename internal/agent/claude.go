@@ -24,6 +24,9 @@ const (
 	// is intended: the server is ratatoskr and the tool is now ratatoskr_send,
 	// so a harness with its own send_message cannot be mistaken for ours.
 	claudeToolName = "mcp__ratatoskr__ratatoskr_send"
+	// claudeDiscoverToolName is the discovery tool (ADR-0009). It is allowed beside the send tool; a local
+	// network does not register it, so allowing a tool that does not exist there is harmless.
+	claudeDiscoverToolName = "mcp__ratatoskr__ratatoskr_discover"
 )
 
 // claudeMCPFile is the --mcp-config document: one HTTP MCP server, authenticated
@@ -96,7 +99,7 @@ func claudeSpec(p Params, binary string, spec protocol.LaunchSpec) (protocol.Lau
 		"--session-id", sessionID,
 		"--mcp-config", mcpPath,
 		"--settings", settingsPath,
-		"--allowedTools", claudeToolName,
+		"--allowedTools", claudeToolName, claudeDiscoverToolName,
 	}
 	return spec, nil
 }

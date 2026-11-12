@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mngeow/ratatoskr/internal/protocol"
 )
 
 // These tests are written but UNRUN: GR-3 forbids running them.
@@ -213,7 +215,7 @@ func TestToolHandlerRejectsAForeignContext(t *testing.T) {
 
 	// Building the server proves the registration side is wired, and the tool is
 	// the same handler it registers.
-	if built := newAgentServer("alpha", "alpha", "", []string{"beta"}, false, inbox); built.handler() == nil {
+	if built := newAgentServer("alpha", "alpha", "", []string{"beta"}, false, inbox, nil); built.handler() == nil {
 		t.Fatal("newAgentServer built no MCP server")
 	}
 	tool := sendMessageTool("alpha", false, inbox)
@@ -285,7 +287,7 @@ func (*plainTestError) Error() string { return "boom" }
 
 func TestConnectedInstructions(t *testing.T) {
 	got := connectedInstructions("claude@mac", []string{"codex@ubuntu-b"})
-	want := "You are claude@mac on a ratatoskr network that can span machines. Your peers at launch: codex@ubuntu-b. Peers can change; if a name is not found, the tool answers with the agents that exist. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?), where to is name@host, for example codex@ubuntu-b; a bare name means an agent on this machine. Other messaging tools, including any built-in send_message, do not reach your peers. A successful result means the recipient's machine has saved the message, not that it has been read or acted on. Your normal replies are not sent to peers."
+	want := "You are claude@mac on a ratatoskr network that can span machines. Your peers at launch: codex@ubuntu-b. Peers can change; if a name is not found, the tool answers with the agents that exist. To find out who exists, call ratatoskr_discover (no arguments) before you send: it lists the hosts, what each host owner says they offer (declared, not verified) and the exact sessions you can reach. To message a peer, use the ratatoskr_send tool from the ratatoskr MCP server: ratatoskr_send(to, body, reply_to?), where to is name@host, for example codex@ubuntu-b; a bare name means an agent on this machine. Other messaging tools, including any built-in send_message, do not reach your peers. A successful result means the recipient's machine has saved the message, not that it has been read or acted on. Your normal replies are not sent to peers."
 	if got != want {
 		t.Fatalf("connectedInstructions =\n%q\nwant\n%q", got, want)
 	}
@@ -480,5 +482,33 @@ func TestSessionGoneFromARefusalDoesNotClaimThereIsNoSession(t *testing.T) {
 	wrapped := connectedFailureText(fmt.Errorf("outer: %w", &connectedTestError{reason: "destination_unreachable"}))
 	if !strings.Contains(wrapped, "not delivered") {
 		t.Fatalf("a wrapped error was not read: %q", wrapped)
+	}
+}
+
+// TestDiscoverToolIsConnectedOnlyAndRefusesAnotherAgent: the discovery tool exists for a connected agent only,
+// answers with the TOON text of the daemon's views, and (like the send tool) refuses a request whose token is
+// not this server's agent.
+func TestDiscoverToolIsConnectedOnlyAndRefusesAnotherAgent(t *testing.T) {
+	source := func() DiscoverySource {
+		return func(context.Context) (protocol.NetworkView, protocol.GraphView, error) {
+			return protocol.NetworkView{Gateway: protocol.NetworkGatewayView{State: "connected"}}, protocol.GraphView{}, nil
+		}
+	}
+	handler := discoverTool("alpha", source)
+
+	if _, _, err := handler(context.Background(), nil, discoverArgs{}); err == nil || err.Error() != internalErrorName {
+		t.Fatalf("a request with no agent in its context: %v", err)
+	}
+	ctx := withAgent(context.Background(), "alpha")
+	result, _, err := handler(ctx, nil, discoverArgs{})
+	if err != nil || result == nil || len(result.Content) != 1 {
+		t.Fatalf("%v %+v", err, result)
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || !strings.Contains(text.Text, "gateway: connected") || !strings.Contains(text.Text, "hosts: []") {
+		t.Fatalf("reply = %+v", result.Content[0])
+	}
+	if _, _, err := discoverTool("alpha", nil)(ctx, nil, discoverArgs{}); err == nil || !strings.HasPrefix(err.Error(), "discovery_unavailable") {
+		t.Fatalf("no source: %v", err)
 	}
 }

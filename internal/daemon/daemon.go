@@ -265,6 +265,24 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	})
 	windowHub.graph = graph
 
+	// The discovery tool (ADR-0009) reads the same two views a window does. The fetch loops run only while a
+	// consumer is registered, so a tool call registers one for its own duration and waits, bounded, for a
+	// fetch to finish: a model never gets a snapshot older than the call unless the gateway cannot answer.
+	srv.SetDiscovery(func(ctx context.Context) (protocol.NetworkView, protocol.GraphView, error) {
+		releaseNetwork, releaseGraph := network.acquire(), graph.acquire()
+		defer releaseNetwork()
+		defer releaseGraph()
+		var graphView protocol.GraphView
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			graphView, _ = graph.answer(ctx, wire.GraphRequest{FirstWaitMS: wire.MaxGraphFirstMS})
+		}()
+		networkView, _ := network.answer(ctx, wire.NetworkRequest{FirstWaitMS: wire.MaxNetworkFirstMS})
+		<-done
+		return networkView, graphView, nil
+	})
+
 	// The host card: the owner's card.yaml in the daemon directory and the card served from it. Drafting
 	// is the only operation, and only a window on the Unix socket can start one; the card listener can
 	// only read what the service serves.

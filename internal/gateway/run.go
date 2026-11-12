@@ -28,8 +28,8 @@ const (
 // behaviour; `rtk gateway` goes through RunWith).
 //
 // UNTESTED.
-func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, cardPoll time.Duration, status io.Writer) error {
-	return RunWith(ctx, stateDir, listen, allowLAN, insecureHTTP, ParticipantOptions{Listen: ParticipantListenOff}, cardPoll, status)
+func Run(ctx context.Context, stateDir, listen string, https bool, cardPoll time.Duration, status io.Writer) error {
+	return RunWith(ctx, stateDir, listen, https, ParticipantOptions{Listen: ParticipantListenOff}, cardPoll, status)
 }
 
 // RunWith serves one gateway until ctx ends, and a second listener for the participant API when
@@ -46,8 +46,11 @@ func Run(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bo
 // With the participant API off this is the single-listener startup it always was.
 //
 // UNTESTED.
-func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTTP bool, participant ParticipantOptions, cardPoll time.Duration, status io.Writer) error {
-	plan, participantPlan, participantDefaulted, err := planBoth(listen, allowLAN, insecureHTTP, participant)
+func RunWith(ctx context.Context, stateDir, listen string, https bool, participant ParticipantOptions, cardPoll time.Duration, status io.Writer) error {
+	if listen == "" {
+		listen = DefaultListen
+	}
+	plan, participantPlan, participantDefaulted, err := planBoth(listen, https, participant)
 	if err != nil {
 		return err
 	}
@@ -135,7 +138,7 @@ func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTT
 		}
 	}
 
-	srv := NewServer(store, Options{})
+	srv := NewServer(store, Options{DashboardHTTPS: plan.Transport == TransportHTTPS})
 	if participantPlan != nil {
 		srv.EnableParticipantServer()
 	}
@@ -230,33 +233,29 @@ func RunWith(ctx context.Context, stateDir, listen string, allowLAN, insecureHTT
 	}
 }
 
-// statusLines is what a gateway prints once it is serving: the listening line, exactly
-// one transport line, and - for both LAN modes - the firewall hint.
+// statusLines is what a gateway prints once it is serving: the listening line, the transport, the
+// dashboard's exposure and the firewall boundary, each with the ACTUAL address and port (D16, D17, D19).
+// Nothing secret appears; the fingerprint is public.
 //
 // UNTESTED.
 func statusLines(plan ListenPlan, addr, dir, fingerprint string) []string {
-	lines := []string{
-		fmt.Sprintf("gateway listening on %s (state in %s)", addr, dir),
+	lines := []string{fmt.Sprintf("gateway listening on %s (state in %s)", addr, dir)}
+	if plan.Class == ClassWildcard {
+		lines = append(lines, fmt.Sprintf("listening on every interface (%s), including any public one", plan.Addr.Addr()))
 	}
-
-	switch plan.Transport {
-	case TransportHTTPS:
-		lines = append(lines, "transport: HTTPS, self-signed certificate, fingerprint "+fingerprint)
-	case TransportLANHTTP:
+	if plan.Transport == TransportHTTPS {
+		lines = append(lines, "transport: HTTPS, self-signed certificate, fingerprint "+fingerprint+" (runtimes pair with --fingerprint; browsers warn about the certificate)")
+	} else if plan.Class == ClassLoopback {
+		lines = append(lines, "transport: plain HTTP; loopback only")
+	} else {
 		lines = append(lines, PlainHTTPWarning)
-	default:
-		if plan.Class == ClassTailscale {
-			lines = append(lines, "transport: plain HTTP; encrypted only if this address really is Tailscale")
-		} else {
-			lines = append(lines, "transport: plain HTTP; loopback only")
-		}
 	}
-
-	if plan.Class == ClassLAN {
-		lines = append(lines, fmt.Sprintf(
-			"reachable by every device on this LAN; if a runtime cannot reach this address, check that this machine's firewall allows incoming TCP on port %d",
-			plan.Addr.Port(),
-		))
+	scheme := "http"
+	if plan.Transport == TransportHTTPS {
+		scheme = "https"
 	}
+	lines = append(lines,
+		fmt.Sprintf("dashboard: %s://<this machine's address>:%d/ui/ - NO authentication: anyone who can reach this port can read it (hosts, session ids, Agent Cards); read-only", scheme, plan.Addr.Port()),
+		fmt.Sprintf("rtk does not configure a firewall: restrict inbound TCP on port %d to the machines you trust; --listen IP:PORT narrows the bind", plan.Addr.Port()))
 	return lines
 }

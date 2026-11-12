@@ -118,7 +118,6 @@ func TestParseCommandErrors(t *testing.T) {
 	}{
 		{name: "unknown argument", args: []string{"explode"}, want: `rtk: unknown argument "explode"`},
 		{name: "hook is not parsed here", args: []string{"hook"}, want: `rtk: unknown argument "hook"`},
-		{name: "gateway with nothing", args: []string{"gateway"}, want: gatewayNeedsListen},
 		{name: "gateway listen without a value", args: []string{"gateway", "--listen"}, want: gatewayNeedsListen},
 		{name: "gateway unknown flag", args: []string{"gateway", "--local"}, want: gatewayNeedsListen},
 		{name: "gateway extra argument", args: []string{"gateway", "--listen", "127.0.0.1:7777", "extra"}, want: "rtk: gateway: unexpected argument"},
@@ -264,14 +263,19 @@ func TestParseCommandLANFlags(t *testing.T) {
 		})
 	}
 
-	// An opt-in without --listen is still the "needs --listen" usage error.
-	for _, args := range [][]string{
-		{"gateway", "--allow-lan"},
-		{"gateway", "--insecure-http"},
-		{"gateway", "--allow-lan", "--insecure-http"},
+	// ADR-0009: --listen is optional (the gateway defaults to 0.0.0.0:7777), and the retired flags still parse.
+	for args, want := range map[string]command{
+		"gateway":                               {kind: kindGatewayServe},
+		"gateway --https":                       {kind: kindGatewayServe, https: true},
+		"gateway --allow-lan":                   {kind: kindGatewayServe, allowLAN: true},
+		"gateway --insecure-http":               {kind: kindGatewayServe, insecureHTTP: true},
+		"gateway --allow-lan --insecure-http":   {kind: kindGatewayServe, allowLAN: true, insecureHTTP: true},
+		"gateway --listen 0.0.0.0:7777 --https": {kind: kindGatewayServe, listen: "0.0.0.0:7777", https: true},
 	} {
-		if _, err := parseCommand(args); err == nil || !strings.HasPrefix(err.Error(), gatewayNeedsListen) {
-			t.Fatalf("parseCommand(%q) = %v, want the needs-listen error", args, err)
+		got, err := parseCommand(strings.Fields(args))
+		if err != nil || got.kind != want.kind || got.listen != want.listen || got.https != want.https ||
+			got.allowLAN != want.allowLAN || got.insecureHTTP != want.insecureHTTP {
+			t.Fatalf("parseCommand(%q) = %+v, %v, want %+v", args, got, err, want)
 		}
 	}
 }
@@ -279,8 +283,8 @@ func TestParseCommandLANFlags(t *testing.T) {
 // TestUsageListsTheTransportForms pins the two lines the new flags appear in.
 func TestUsageListsTheTransportForms(t *testing.T) {
 	for _, form := range []string{
-		"rtk gateway --listen ADDR [--allow-lan [--insecure-http]]",
-		"rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]",
+		"rtk gateway [--listen ADDR] [--https]",
+		"rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256]",
 		// The old forms must still be readable, since they still work.
 		"rtk gateway pair HOST",
 		"rtk runtime [--agents claude,codex]",

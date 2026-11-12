@@ -97,31 +97,20 @@ type Target struct {
 	InsecureHTTP bool
 }
 
-// planTransport applies the runtime flag table of the contract's "Direct LAN" section.
+// planTransport decides the runtime's transport (ADR-0009 D17, D19, N3). It no longer depends on the
+// address class: a --fingerprint means HTTPS with that pin, and everything else is plain HTTP.
 //
-// The address is checked first with the shared rule, so a hostname or a public address
-// is refused for being an address at all; only then do the flags matter. A Tailscale or
-// loopback address stays plain HTTP and accepts no flag. A LAN address must choose, and
-// the refusal shows both forms so the user does not have to look anything up.
+// The address is checked first with the shared rule (an IP literal with a port; hostnames are refused).
+// --insecure-http is retired: it is accepted and changes nothing, except that together with --fingerprint
+// it is a contradiction, which is refused. A pairing saved by an earlier build with the flag stays valid.
 //
 // UNTESTED.
 func planTransport(target Target) (gateway.Transport, error) {
-	_, class, err := gateway.ParseAddress(target.Gateway)
-	if err != nil {
+	if _, _, err := gateway.ParseAddress(target.Gateway); err != nil {
 		return 0, fmt.Errorf("link: the gateway address is not usable: %w", err)
 	}
 
 	choseFingerprint := target.Fingerprint != ""
-	if class != gateway.ClassLAN {
-		if choseFingerprint || target.InsecureHTTP {
-			return gateway.Transport(0), fmt.Errorf(
-				"link: --fingerprint and %s apply only to a LAN address, and the gateway address is a %s address: drop the flag, or pair with a LAN address",
-				gateway.FlagInsecureHTTP, class,
-			)
-		}
-		return gateway.TransportPlain, nil
-	}
-
 	switch {
 	case choseFingerprint && target.InsecureHTTP:
 		return gateway.Transport(0), errors.New(chooseTransportText)
@@ -130,14 +119,20 @@ func planTransport(target Target) (gateway.Transport, error) {
 			return gateway.Transport(0), fmt.Errorf("link: the fingerprint is not usable: %w", err)
 		}
 		return gateway.TransportHTTPS, nil
-	case target.InsecureHTTP:
-		return gateway.TransportLANHTTP, nil
 	}
-	return gateway.Transport(0), errors.New(chooseTransportText)
+	return gateway.TransportPlain, nil
 }
 
-// chooseTransportText is the one wording for "a LAN gateway needs a decision".
-const chooseTransportText = "link: a LAN gateway needs a transport choice: add --fingerprint SHA256 for HTTPS, or --insecure-http for plain HTTP (rtk runtime pair --gateway ADDR --code CODE --fingerprint sha256:... | rtk runtime pair --gateway ADDR --code CODE --insecure-http); re-pair to change it"
+// plainOnOpenNetwork is true for a plain-HTTP pairing to an address that is not loopback and not Tailscale:
+// the case the "plain HTTP" label and the warning are for. It is recorded in Pairing.InsecureHTTP, which no
+// longer records a typed flag.
+func plainOnOpenNetwork(target Target) bool {
+	_, class, err := gateway.ParseAddress(target.Gateway)
+	return err == nil && target.Fingerprint == "" && class != gateway.ClassLoopback && class != gateway.ClassTailscale
+}
+
+// chooseTransportText is the one wording for a contradictory transport choice.
+const chooseTransportText = "link: --fingerprint means HTTPS and --insecure-http (retired) means plain HTTP: give only --fingerprint SHA256, or neither for plain HTTP"
 
 // validatePairing checks a pairing before it is saved, loaded or used.
 //
@@ -400,7 +395,7 @@ func pair(ctx context.Context, target Target, code string, transport http.RoundT
 			Host:         paired.Host,
 			Credential:   paired.Credential,
 			Fingerprint:  target.Fingerprint,
-			InsecureHTTP: target.InsecureHTTP,
+			InsecureHTTP: plainOnOpenNetwork(target),
 		}
 		// A hostile or broken gateway must not be able to make us save junk.
 		if err := validatePairing(result); err != nil {
@@ -440,7 +435,7 @@ func RunPair(ctx context.Context, stateDir string, target Target, code string, o
 // without a network.
 func runPair(ctx context.Context, stateDir string, target Target, code string, out io.Writer, transport http.RoundTripper) error {
 	// Same writer, before the exchange: the warning must not depend on success.
-	if target.InsecureHTTP {
+	if plainOnOpenNetwork(target) {
 		if _, err := fmt.Fprintln(out, gateway.PlainHTTPWarning); err != nil {
 			return fmt.Errorf("link: write pairing warning: %w", err)
 		}

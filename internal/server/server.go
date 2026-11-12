@@ -74,6 +74,10 @@ type Server struct {
 
 	addr string
 
+	// discovery is the daemon's directory source (SetDiscovery), read on every discover call because the
+	// daemon builds its network and graph services after this server exists.
+	discovery DiscoverySource
+
 	shutdownOnce sync.Once
 	shutdownErr  error
 }
@@ -120,6 +124,22 @@ func New(in Inbox, opts Options) (*Server, error) {
 		ReadHeaderTimeout: opts.ReadHeaderTimeout,
 	}
 	return s, nil
+}
+
+// SetDiscovery gives the discovery tool its source. Until it is called the tool answers that discovery is
+// unavailable. Safe to call while serving.
+//
+// UNTESTED.
+func (s *Server) SetDiscovery(source DiscoverySource) {
+	s.mu.Lock()
+	s.discovery = source
+	s.mu.Unlock()
+}
+
+func (s *Server) discoverySource() DiscoverySource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.discovery
 }
 
 // Addr is the address the server is listening on, as "127.0.0.1:<port>".
@@ -169,7 +189,7 @@ func (s *Server) addAgent(id protocol.AgentID, name, address string, peers []str
 	entry := &agentEntry{
 		id:   id,
 		name: name,
-		srv:  newAgentServer(id, name, address, peers, connected, s.inbox),
+		srv:  newAgentServer(id, name, address, peers, connected, s.inbox, s.discoverySource),
 	}
 
 	s.mu.Lock()

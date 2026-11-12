@@ -150,10 +150,7 @@ func validateEndpoint(endpoint Endpoint) error {
 		if _, err := ParseFingerprint(endpoint.Fingerprint); err != nil {
 			return err
 		}
-		// HTTPS exists only on a LAN address.
-		if !endpoint.LAN {
-			return errors.New("gateway: an HTTPS endpoint must be on a LAN address")
-		}
+		// HTTPS (the --https opt-in) is allowed on any address since ADR-0009.
 	default:
 		return fmt.Errorf("gateway: scheme %q is neither %s nor %s", endpoint.Scheme, schemeHTTP, schemeHTTPS)
 	}

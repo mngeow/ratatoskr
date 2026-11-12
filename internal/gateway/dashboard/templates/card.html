@@ -1,0 +1,122 @@
+{{- /*
+  "card" is executed with *dashboard.CardPartial. It is the panel the Network page swaps in, and the body
+  of the 404 for a host that is not paired (Error set, HostName echoed). Card text is the host owner's
+  declaration: it is labelled as such and never presented as verified.
+*/ -}}
+{{define "card" -}}
+<article class="card" aria-labelledby="card-title">
+  <h2 id="card-title">Agent Card · {{.HostName}}</h2>
+
+  {{if .Error}}
+  <p class="error" role="alert">{{.Error}}</p>
+  {{else}}
+
+  <dl class="card-facts">
+    <dt>Connection</dt>
+    <dd>
+      <span class="conn conn-{{if .ConnectionLive}}live{{else if .HeartbeatAge}}notlive{{else}}neverseen{{end}}"><span class="conn-mark" aria-hidden="true"></span>{{if .ConnectionLive}}live{{else if .HeartbeatAge}}not live{{else}}never seen{{end}}</span>
+      {{if .HeartbeatAge}}<span class="age">heartbeat {{.HeartbeatAge}} ago</span>{{else}}<span class="unknown">heartbeat unknown</span>{{end}}
+      {{if .ConnectionSource}}<span class="source">{{.ConnectionSource}}</span>{{end}}
+    </dd>
+
+    <dt>Card freshness</dt>
+    <dd>
+      {{template "statechip" .CardState}}
+      {{if .CardAge}}<span class="age">{{.CardAge}}</span>{{else}}<span class="unknown">age unknown</span>{{end}}
+      {{if .CardFetchedAt}}<span class="age">last good poll {{.CardFetchedAt}}</span>{{else}}<span class="unknown">no good poll recorded</span>{{end}}
+      {{if .CardSource}}<span class="source">{{.CardSource}}</span>{{end}}
+    </dd>
+
+    {{if .CardRevision}}<dt>Card revision</dt><dd>{{.CardRevision}}</dd>{{end}}
+    {{if .CardVersion}}<dt>Card version</dt><dd>{{.CardVersion}}</dd>{{end}}
+    {{if .CardOmitted}}<dt>Card body</dt><dd class="unknown">left out of this snapshot to fit the size bound; the freshness above still holds</dd>{{end}}
+  </dl>
+
+  {{if .Card}}
+  <h3>Description <span class="declared">declared by the host owner</span></h3>
+  {{if .Card.Description}}<p>{{.Card.Description}}</p>{{else}}<p class="unknown">the card carries no description</p>{{end}}
+  {{if .Card.Name}}<p class="note">The card names itself <q>{{.Card.Name}}</q>.</p>{{end}}
+
+  <h3>Declared skills <span class="declared">declared, not verified</span></h3>
+  {{if .Card.Skills}}
+  <ul class="skills">
+    {{range .Card.Skills}}
+    <li>
+      <p class="skill-name">{{.Name}}</p>
+      <p class="skill-id">id <code>{{.ID}}</code></p>
+      {{if .Description}}<p>{{.Description}}</p>{{end}}
+      {{if .Tags}}<p class="tags">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</p>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="unknown">the card declares no skills</p>
+  {{end}}
+
+  <h3>Modes <span class="declared">declared</span></h3>
+  <p>Input: {{if .Card.DefaultInputModes}}{{range .Card.DefaultInputModes}}<span class="tag">{{.}}</span>{{end}}{{else}}<span class="unknown">unknown</span>{{end}}</p>
+  <p>Output: {{if .Card.DefaultOutputModes}}{{range .Card.DefaultOutputModes}}<span class="tag">{{.}}</span>{{end}}{{else}}<span class="unknown">unknown</span>{{end}}</p>
+
+  {{if .Card.SupportedInterfaces}}
+  <h3>Interfaces <span class="declared">declared</span></h3>
+  <ul class="interfaces">
+    {{range .Card.SupportedInterfaces}}
+    <li>{{if .URL}}<code>{{.URL}}</code>{{else}}<span class="unknown">no address declared</span>{{end}} · {{.ProtocolBinding}}{{if .ProtocolVersion}} {{.ProtocolVersion}}{{end}}</li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  <h3>Capabilities <span class="declared">declared</span></h3>
+  <ul class="caps">
+    <li>streaming: {{if .Card.Capabilities.Streaming}}declared{{else}}not declared{{end}}</li>
+    <li>push notifications: {{if .Card.Capabilities.PushNotifications}}declared{{else}}not declared{{end}}</li>
+    <li>extended card: {{if .Card.Capabilities.ExtendedAgentCard}}declared{{else}}not declared{{end}}</li>
+  </ul>
+
+  {{if .Card.Capabilities.Extensions}}
+  <h3>Extensions <span class="declared">declared</span></h3>
+  <ul class="extensions">
+    {{range .Card.Capabilities.Extensions}}
+    <li>
+      <p><code>{{.URI}}</code>{{if .Required}} <span class="tag">required</span>{{else}} <span class="tag">optional</span>{{end}}</p>
+      {{if .Description}}<p>{{.Description}}</p>{{end}}
+      {{if .Params.Skills}}
+      <p class="note">Skill evidence published in this card; file presence is not proof of ability.</p>
+      <ul>
+        {{range $id, $evidence := .Params.Skills}}
+        <li><code>{{$id}}</code>{{if $evidence.Harness}} · {{$evidence.Harness}}{{end}}{{if $evidence.HarnessVersion}} {{$evidence.HarnessVersion}}{{end}}{{if $evidence.Scope}} · {{$evidence.Scope}}{{end}}{{if $evidence.SHA256}} · sha256 {{$evidence.SHA256}}{{end}}{{if $evidence.ScannedAt}} · scanned {{$evidence.ScannedAt}}{{end}}</li>
+        {{end}}
+      </ul>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{else}}
+  <p class="unknown">The gateway holds no card body for this host.</p>
+  {{end}}
+
+  <h3>Sessions on this host</h3>
+  {{if .Sessions}}
+  <table class="sessions">
+    <caption>Exact session ids, as the gateway's directory reports them.</caption>
+    <thead><tr><th scope="col">Address</th><th scope="col">Id</th><th scope="col">Reported state</th><th scope="col">Directory</th></tr></thead>
+    <tbody>
+      {{range .Sessions}}
+      <tr>
+        <th scope="row">{{.Address}}</th>
+        <td><code>{{.SessionID}}</code></td>
+        <td>{{if .State}}{{.State}}{{else}}<span class="unknown">unknown</span>{{end}}{{if .Input}} · {{.Input}}{{end}}</td>
+        <td>{{if .DirectoryLiveKnown}}{{if .DirectoryLive}}live{{else}}not live{{end}}{{else}}<span class="unknown">unknown</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="unknown">No session of this host is in the gateway's directory.</p>
+  {{end}}
+
+  <p class="note">Everything above is what the gateway holds: the card is the owner's declaration and nothing here verifies that a session can do any of it.</p>
+  {{end}}
+</article>
+{{- end}}

@@ -347,14 +347,14 @@ func TestPlanTransport(t *testing.T) {
 			want:   gateway.TransportPlain,
 		},
 		{
-			name:   "loopback with a fingerprint is refused",
-			target: Target{Gateway: "127.0.0.1:7777", Fingerprint: fingerprint},
-			isErr:  true,
+			name:   "LAN, no flag, is plain now (D19)",
+			target: Target{Gateway: "192.168.1.20:7777"},
+			want:   gateway.TransportPlain,
 		},
 		{
-			name:   "tailscale with insecure-http is refused",
-			target: Target{Gateway: "100.64.0.1:7777", InsecureHTTP: true},
-			isErr:  true,
+			name:   "any address with a fingerprint is https",
+			target: Target{Gateway: "100.64.0.1:7777", Fingerprint: fingerprint},
+			want:   gateway.TransportHTTPS,
 		},
 		{
 			name:   "LAN with a fingerprint is https",
@@ -362,39 +362,39 @@ func TestPlanTransport(t *testing.T) {
 			want:   gateway.TransportHTTPS,
 		},
 		{
-			name:   "LAN with insecure-http is plain",
+			name:   "the retired --insecure-http alone changes nothing (N3)",
 			target: Target{Gateway: "192.168.1.20:7777", InsecureHTTP: true},
-			want:   gateway.TransportLANHTTP,
+			want:   gateway.TransportPlain,
 		},
 		{
-			name:   "LAN with neither must choose",
-			target: Target{Gateway: "192.168.1.20:7777"},
-			isErr:  true,
+			name:   "the retired --insecure-http on tailscale is accepted",
+			target: Target{Gateway: "100.64.0.1:7777", InsecureHTTP: true},
+			want:   gateway.TransportPlain,
 		},
 		{
-			name:   "LAN with both must choose",
+			name:   "a fingerprint with --insecure-http is a contradiction",
 			target: Target{Gateway: "192.168.1.20:7777", Fingerprint: fingerprint, InsecureHTTP: true},
 			isErr:  true,
 		},
 		{
-			name:   "LAN with a malformed fingerprint is refused",
+			name:   "a malformed fingerprint is refused",
 			target: Target{Gateway: "192.168.1.20:7777", Fingerprint: "sha256:abc"},
 			isErr:  true,
 		},
 		{
 			name:   "a hostname is not an address",
-			target: Target{Gateway: "gateway.local:7777", InsecureHTTP: true},
+			target: Target{Gateway: "gateway.local:7777"},
 			isErr:  true,
 		},
 		{
-			name:   "a public address is refused",
-			target: Target{Gateway: "8.8.8.8:7777", InsecureHTTP: true},
-			isErr:  true,
+			name:   "a public address is accepted now (D16)",
+			target: Target{Gateway: "8.8.8.8:7777"},
+			want:   gateway.TransportPlain,
 		},
 		{
 			name:   "an IPv6 LAN address works",
-			target: Target{Gateway: "[fd00::1]:7777", InsecureHTTP: true},
-			want:   gateway.TransportLANHTTP,
+			target: Target{Gateway: "[fd00::1]:7777"},
+			want:   gateway.TransportPlain,
 		},
 	}
 
@@ -425,35 +425,17 @@ func TestPlanTransport(t *testing.T) {
 	}
 }
 
-// TestPlanTransportMessages: the two refusals a user can meet, in their own words.
+// TestPlanTransportMessages: the one refusal a user can meet, in its own words.
 func TestPlanTransportMessages(t *testing.T) {
-	t.Run("a non-LAN address names the flag and the class", func(t *testing.T) {
-		_, err := planTransport(Target{Gateway: "100.64.0.1:7777", Fingerprint: "sha256:" + strings.Repeat("a", 64)})
-		if err == nil {
-			t.Fatal("planTransport accepted a flagged Tailscale address")
+	_, err := planTransport(Target{Gateway: "192.168.1.20:7777", Fingerprint: "sha256:" + strings.Repeat("a", 64), InsecureHTTP: true})
+	if err == nil {
+		t.Fatal("planTransport accepted a contradictory choice")
+	}
+	for _, part := range []string{"--fingerprint", "--insecure-http", "retired", "plain HTTP"} {
+		if !strings.Contains(err.Error(), part) {
+			t.Fatalf("error = %q, want %q", err, part)
 		}
-		for _, part := range []string{"--fingerprint", "--insecure-http", "Tailscale", "apply only to a LAN address"} {
-			if !strings.Contains(err.Error(), part) {
-				t.Fatalf("error = %q, want %q", err, part)
-			}
-		}
-		// The typed address is not echoed: the class is enough to act on.
-		if strings.Contains(err.Error(), "100.64.0.1") {
-			t.Fatalf("error = %q, want no address echoed", err)
-		}
-	})
-
-	t.Run("a LAN address shows both forms", func(t *testing.T) {
-		_, err := planTransport(Target{Gateway: "192.168.1.20:7777"})
-		if err == nil {
-			t.Fatal("planTransport accepted a LAN address with no choice")
-		}
-		for _, part := range []string{"--fingerprint", "--insecure-http", "rtk runtime pair --gateway ADDR --code CODE --fingerprint", "rtk runtime pair --gateway ADDR --code CODE --insecure-http"} {
-			if !strings.Contains(err.Error(), part) {
-				t.Fatalf("error = %q, want %q", err, part)
-			}
-		}
-	})
+	}
 }
 
 // TestScheme: a fingerprint always means https, and nothing else does.

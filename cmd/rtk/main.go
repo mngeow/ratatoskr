@@ -27,8 +27,9 @@ var version = "dev"
 
 const usage = `usage: rtk                                    open Claude Code and Codex side by side in this directory
        rtk --version                          print the version
-       rtk gateway --listen ADDR [--allow-lan [--insecure-http]]
-                                              run the gateway (Tailscale, loopback or, with --allow-lan, a LAN address)
+       rtk gateway [--listen ADDR] [--https]  run the gateway and its dashboard (http://HOST:7777/ui/): 0.0.0.0:7777 by default, every
+                                              interface, plain HTTP unless --https (self-signed; runtimes pair with --fingerprint);
+                                              no authentication on the dashboard, your firewall is the boundary
        rtk gateway pair HOST                  print a one-time code for HOST
        rtk gateway unpair HOST                remove HOST
        rtk gateway hosts                      list paired hosts and their state
@@ -38,14 +39,13 @@ const usage = `usage: rtk                                    open Claude Code an
        rtk gateway card-target set|show|clear where the gateway polls a host's card (see: rtk gateway card-target)
        rtk gateway --listen ADDR [--card-poll-interval 5s]
                                               how often the gateway polls registered card targets (2s to 1h, default 5s)
-       rtk gateway --listen ADDR [--participant-listen ADDR|off] [--participant-allow-lan] [--participant-insecure-http]
+       rtk gateway [--participant-listen ADDR|off] [--participant-insecure-http]
                                               the participant API listens on the --listen IP, port 7790, unless you give
-                                              an address or off (HTTPS by default on a Tailscale or LAN address; the host
-                                              --allow-lan also allows the default LAN address; --insecure-http is never
-                                              inherited)
+                                              an address or off; HTTPS unless --participant-insecure-http
+       (retired, accepted with a warning for one release: rtk gateway --allow-lan, --insecure-http, --participant-allow-lan)
        rtk gateway show ID                    show one message in full
-       rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256 | --insecure-http]
-                                              pair this machine with a gateway
+       rtk runtime pair --gateway ADDR --code CODE [--fingerprint SHA256]
+                                              pair this machine with a gateway (plain HTTP unless --fingerprint; --insecure-http is retired)
        rtk attach [--agents claude,codex] [--expect-session ID] [--entered-via-ssh]     open a window on the daemon's sessions, starting any listed session that is not running
        rtk runtime [--agents claude,codex]    an alias for rtk attach
        rtk daemon                             start this machine's daemon in the background
@@ -147,12 +147,22 @@ func main() {
 
 	switch cmd.kind {
 	case kindGatewayServe:
-		err = gateway.RunWith(ctx, stateDir, cmd.listen, cmd.allowLAN, cmd.insecureHTTP, gateway.ParticipantOptions{
+		// The retired flags still parse (N2, N4); each warning is printed once, before anything starts.
+		if cmd.allowLAN || cmd.insecureHTTP {
+			fmt.Fprintln(os.Stderr, gateway.RetiredGatewayFlagWarning)
+		}
+		if cmd.participantAllowLAN {
+			fmt.Fprintln(os.Stderr, gateway.RetiredParticipantAllowLANWarning)
+		}
+		err = gateway.RunWith(ctx, stateDir, cmd.listen, cmd.https, gateway.ParticipantOptions{
 			Listen: cmd.participantListen, AllowLAN: cmd.participantAllowLAN, InsecureHTTP: cmd.participantInsecureHTTP,
 		}, cmd.cardPollInterval, os.Stderr)
 	case kindGatewayAdmin:
 		err = gateway.RunAdmin(ctx, stateDir, cmd.admin, os.Stdout, os.Stderr, nil)
 	case kindRuntimePair:
+		if cmd.insecureHTTP {
+			fmt.Fprintln(os.Stderr, "warning: rtk runtime pair --insecure-http is retired and has no effect (accepted for one release): plain HTTP is the default unless you give --fingerprint.")
+		}
 		err = link.RunPair(ctx, stateDir, link.Target{
 			Gateway:      cmd.gatewayAddr,
 			Fingerprint:  cmd.fingerprint,

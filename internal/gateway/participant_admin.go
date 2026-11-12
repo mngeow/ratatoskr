@@ -110,12 +110,22 @@ func runParticipantPair(ctx context.Context, store *Store, args []string, out, e
 	if found && !existing.Revoked() {
 		fmt.Fprintln(out, "this is a rotation: redeeming the code replaces the credential and ends this participant's open sessions")
 	}
-	fmt.Fprintf(out, "participant API: %s://%s\n", endpoint.Scheme, endpoint.Listen)
+	// The recorded address is what was BOUND. A wildcard bind is never printed as a dial target: the line
+	// carries a suggested local address (or a visible placeholder), and the advice comes after the pin lines.
+	address, others := DialAddresses(endpoint.Listen)
+	hints := dialHintLines(endpoint.Listen, address, others)
+	if address == "" {
+		address = dialPlaceholder(endpoint.Listen)
+	}
+	fmt.Fprintf(out, "participant API: %s://%s\n", endpoint.Scheme, address)
 	if endpoint.Scheme == schemeHTTPS {
 		fmt.Fprintf(out, "certificate SHA-256 (the pin to use when your TLS library can pin a certificate): %s\n", endpoint.Fingerprint)
 		fmt.Fprintf(out, "key pin (a different rule, for clients that can pin only a public key): %s\n", endpoint.SPKIPin)
 	} else if endpoint.Class != "loopback" {
 		fmt.Fprintln(out, ParticipantPlainHTTPWarning)
+	}
+	for _, hint := range hints {
+		fmt.Fprintln(out, hint)
 	}
 	fmt.Fprintf(out, "the address above was recorded by the running gateway at its start; if the gateway has stopped or moved, it is stale (checked: %s)\n", participantEndpointName)
 	return nil

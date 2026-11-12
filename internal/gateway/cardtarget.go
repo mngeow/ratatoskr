@@ -98,7 +98,7 @@ func ParseCardTarget(raw, fingerprint string, insecureHTTP bool) (CardTarget, er
 		return CardTarget{}, fmt.Errorf("gateway: the card target path is fixed: leave it out, or give exactly %s", protocol.CardPath)
 	}
 
-	addr, class, err := parseAddressAs(subjectCardTarget, parsed.Host)
+	addr, class, err := parseAddressStrict(subjectCardTarget, parsed.Host)
 	if err != nil {
 		return CardTarget{}, err
 	}
